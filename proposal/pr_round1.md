@@ -20,7 +20,7 @@ Hercules root `$U/pr1` (`$U` = `/work2/noaa/co2/ash/ufs-chem-v1/upstream`). Issu
 | HAFS crash | a pre-existing SAMF instability (*HAFS crash*): any change to HAFS answers moves its tail. Posted first, as an issue (descriptions §8). SA1 is held with it (it raised the event rate 1.7×), with our cap |
 | Waiting upstream | TEMPO PR (1b) after ccpp-physics#389, SAMF PR (1a) after #390; resolved rebases prepared |
 | Hold-outs | R1, TOPT, MYNN and the owner-judgement bugs: `round2_issues.md` |
-| Posted | nothing |
+| Posted | nothing upstream. Working notes public: github.com/pera-noaa/ufs-water-conservation (`../publish/` has the recipe) |
 
 ## Rule for round 1
 

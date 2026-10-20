@@ -18,7 +18,7 @@
     screened. 1b's regional precipitation changes (−4 to +11 %) are the fixes' own signal (attributed to fix and part).
     1a global P8 check: only SAMF + PBL exceeds noise (+0.002 to +0.006 K, its ice-fusion heat). But 1a alone crashes
     `hafs_global_1nest_atm` in 2 of 3 members (RT member included); the 37 do not. Open. SA1 held with the SAMF instability issue to
-    @JongilHan66 (`pr_round1_descriptions.md` §8). Round-2 issues drafted (`../proposal/round2_issues.md`). Nothing posted.
+    @JongilHan66 (`pr_round1_descriptions.md` §8). Round-2 issues drafted (`../proposal/round2_issues.md`). Working notes public at github.com/pera-noaa/ufs-water-conservation (`../publish/`); no issue or PR posted.
 - Proposal: `../proposal/conservation_proposal.md`; manifest: `../proposal/conservation_patches.md`.
 - History of this file (every row as it evolved): `TRACKER.history.md`.
 
