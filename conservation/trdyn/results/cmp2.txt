@@ -1,0 +1,60 @@
+=== c0 vs o0
+atmf024: 25 variables bit-identical, 0 differ
+=== o0 vs a1
+atmf024: 22 variables bit-identical, 3 differ
+  DIFF pt_cplume: 2243229 of 7022592 values, max|d| 9.198e-09
+  DIFF pt_ghg: 5614532 of 7022592 values, max|d| 1.126e-08
+  DIFF pt_udry: 3403642 of 7022592 values, max|d| 9.786e-10
+=== e2 vs e2L
+atmf024: 25 variables bit-identical, 0 differ
+=== e2 vs e2R
+atmf024: 25 variables bit-identical, 0 differ
+=== n0 vs i1
+atmf024: 22 variables bit-identical, 3 differ
+  DIFF pt_cplume: 2244438 of 7022592 values, max|d| 3.308e-08
+  DIFF pt_ghg: 7008137 of 7022592 values, max|d| 6.788e-08
+  DIFF pt_udry: 3772222 of 7022592 values, max|d| 4.195e-11
+=== e2 vs e2R 018
+atmf018: 25 variables bit-identical, 0 differ
+=== e2L vs e2R RESTART 24h
+r_fv_core.res: 9 variables bit-identical, 0 differ
+r_fv_tracer.res: 21 variables bit-identical, 0 differ
+r_sfc_data: 105 variables bit-identical, 0 differ
+r_phy_data: 24 variables bit-identical, 0 differ
+=== tracer impact o0 -> a1 (class c), n0 -> e2 (c+d)
+tmp       identical=True  max|diff| 0.000e+00
+spfh      identical=True  max|diff| 0.000e+00
+clwmr     identical=True  max|diff| 0.000e+00
+dpres     identical=True  max|diff| 0.000e+00
+ugrd      identical=True  max|diff| 0.000e+00
+pressfc   identical=True  max|diff| 0.000e+00
+pt_cnv     rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.20440..2.49804 B 0.20440..2.49804 | q<0 A 0 B 0
+pt_umoist  rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.99572..1.02059 B 0.99572..1.02059 | q<0 A 0 B 0
+pt_ghg     rms 5.582e-02 max 2.043e+00 ppm-eq | dry ratio/mean A 0.20442..2.28976 B 0.20442..2.28981 | q<0 A 0 B 0
+pt_udry    rms 9.436e-03 max 3.924e-01 ppm-eq | dry ratio/mean A 0.99930..1.00098 B 1.00000..1.00000 | q<0 A 0 B 0
+pt_cplume  rms 4.066e-01 max 2.059e+01 ppm-eq | dry ratio/mean A -0.00000..11.87802 B -0.00000..11.87700 | q<0 A 2 B 2
+pt_plume   rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A -0.00000..12.16948 B -0.00000..12.16948 | q<0 A 82 B 82
+tmp       identical=True  max|diff| 0.000e+00
+spfh      identical=True  max|diff| 0.000e+00
+clwmr     identical=True  max|diff| 0.000e+00
+dpres     identical=True  max|diff| 0.000e+00
+ugrd      identical=True  max|diff| 0.000e+00
+pressfc   identical=True  max|diff| 0.000e+00
+pt_cnv     rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.20440..2.49804 B 0.20440..2.49804 | q<0 A 0 B 0
+pt_umoist  rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.99572..1.02059 B 0.99572..1.02059 | q<0 A 0 B 0
+pt_ghg     rms 2.140e+00 max 1.251e+01 ppm-eq | dry ratio/mean A 0.20442..2.28976 B 0.20442..2.28155 | q<0 A 0 B 0
+pt_udry    rms 9.461e-03 max 3.926e-01 ppm-eq | dry ratio/mean A 0.99930..1.00098 B 1.00000..1.00000 | q<0 A 0 B 0
+pt_cplume  rms 7.727e+00 max 7.633e+01 ppm-eq | dry ratio/mean A -0.00000..11.87802 B -0.00000..11.72570 | q<0 A 2 B 2
+pt_plume   rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A -0.00000..12.16948 B -0.00000..12.16948 | q<0 A 82 B 82
+tmp       identical=True  max|diff| 0.000e+00
+spfh      identical=True  max|diff| 0.000e+00
+clwmr     identical=True  max|diff| 0.000e+00
+dpres     identical=True  max|diff| 0.000e+00
+ugrd      identical=True  max|diff| 0.000e+00
+pressfc   identical=True  max|diff| 0.000e+00
+pt_cnv     rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.23848..2.65821 B 0.23848..2.65821 | q<0 A 0 B 0
+pt_umoist  rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.99766..1.02094 B 0.99766..1.02094 | q<0 A 0 B 0
+pt_ghg     rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.23848..2.65574 B 0.23848..2.65574 | q<0 A 0 B 0
+pt_udry    rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.99981..1.00015 B 0.99981..1.00015 | q<0 A 0 B 0
+pt_cplume  rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A -0.00000..11.90286 B -0.00000..11.90286 | q<0 A 3 B 3
+pt_plume   rms 0.000e+00 max 0.000e+00 ppm-eq | dry ratio/mean A 0.00000..11.90446 B 0.00000..11.90446 | q<0 A 0 B 0

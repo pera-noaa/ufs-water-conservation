@@ -1,0 +1,244 @@
+From bb6003cb12264d9c3bac07f79bc2cff8e6fde4b9 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:35:40 -0600
+Subject: [PATCH 05/13] Monotonic scalar transport: keep the upwind step
+ positive definite
+
+The flux-corrected (monotonic) scalar transport needs its low-order upwind
+solution to be non-negative; its bounds then keep the final solution
+non-negative. The upwind solution is non-negative only while each cell's
+upwind outflow in one step is at most its content. With a vertical Courant
+number above 1 (a deep updraft at dt = 12 s, dz = 500 m) it is not. The
+upwind solution goes negative, and the final max(0, .) in the copy back
+adds the missing mass.
+
+Measured on the idealized supercell (84x84 doubly periodic mesh, dx = 2 km,
+40 levels, Thompson microphysics with its water fixes, no surface fluxes,
+double precision, 2 h, dt = 12 s, vertical Courant number up to 1.17).
+Domain water plus accumulated precipitation gains 6.05e-5 kg/m2 (3.8e-5 of
+the precipitation), in steps at 0:50-1:20 and 1:30-1:40, exactly when the
+Courant number exceeds 1. A meter on that max(0, .) accounts for all of it.
+dt = 8 s (Courant number at most 0.78) closes to roundoff.
+
+Fix (Skamarock 2006, MWR 134, 2241-2250):
+- For each layer whose upwind outflow exceeds its content, scale the
+  vertical upwind fluxes leaving it by (content - horizontal outflow) /
+  (vertical outflow).
+- Each face is scaled by its donor layer's factor, so the step stays
+  conservative and column-local.
+- The horizontal upwind fluxes are computed first (they are independent of
+  the vertical step), so each cell's horizontal outflow is known.
+- Horizontal fluxes are not scaled. Scaling them would need the factors of
+  halo cells, whose wwAvg is not maintained. A cell whose horizontal
+  outflow alone exceeds its content (horizontal Courant number above 1) is
+  not made positive by this commit.
+- Where no layer's outflow exceeds its content, nothing is changed, bit for
+  bit.
+
+Unit tests of atm_upwind_vert_renorm, extracted verbatim, inside an
+emulation of the upwind step:
+- 1-D columns at Courant numbers 0.9 to 5: the unfixed step leaves up to
+  -1.8e-3 (q ~ 1e-3 kg/kg). With the fix, the minimum is -2.9e-19, which is
+  roundoff, and mass is conserved to 1.1e-15.
+- 2-D slabs and 3-D boxes with horizontal and vertical Courant numbers
+  combined above 1: the same, except cells whose horizontal outflow alone
+  exceeds their content.
+- No-op test: 492k columns in which no layer's outflow exceeds its content
+  were all unchanged, bit for bit.
+
+Staged, not yet run on the supercell: dt = 12 s, where I expect the clip to
+add only roundoff and the domain closure to be <= 1e-13 kg/m2; and dt = 8 s,
+where I expect bit identity with the unfixed tree.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../dynamics/mpas_atm_time_integration.F      | 136 ++++++++++++++----
+ 1 file changed, 107 insertions(+), 29 deletions(-)
+
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index 6f23b93..a2b0dc2 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -5163,6 +5163,7 @@ module atm_time_integration
+ 
+ 
+       real (kind=RKIND), dimension(nVertLevels) :: flux_upwind_arr
++      real (kind=RKIND), dimension(nVertLevels) :: mass_col, outh_col
+       real (kind=RKIND) :: flux3, flux4, flux_upwind
+       real (kind=RKIND) :: q_im2, q_im1, q_i, q_ip1, ua, coef3
+ #ifdef DEBUG_TRANSPORT
+@@ -5476,6 +5477,41 @@ module atm_time_integration
+ 
+          !$acc end parallel
+ 
++!$OMP BARRIER
++
++         !$acc parallel
++
++         !
++         !  horizontal flux divergence for upwind update (computed before the vertical step, which needs each cell's
++         !  horizontal upwind outflow)
++         !
++
++         !  upwind flux computation
++         !$acc loop gang worker
++         do iEdge=edgeStart,edgeEnd
++
++            cell1 = cellsOnEdge(1,iEdge)
++            cell2 = cellsOnEdge(2,iEdge)
++
++            !$acc loop vector
++            do k=1,nVertLevels
++               flux_upwind_tmp(k,iEdge) = dvEdge(iEdge) * dt *   &
++                      (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
++               flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge) - flux_upwind_tmp(k,iEdge)
++            end do
++
++            if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
++               !$acc loop vector
++               do k=1,nVertLevels
++                  flux_tmp(k,iEdge) = 0.0_RKIND
++                  flux_arr(k,iEdge) = flux_upwind_tmp(k,iEdge)
++               end do
++            end if
++
++         end do
++
++         !$acc end parallel
++
+ !$OMP BARRIER
+ 
+          !$acc parallel
+@@ -5484,9 +5520,23 @@ module atm_time_integration
+          !  vertical flux divergence for upwind update, we will put upwind update into scalar_new, and put factor of dt in fluxes
+          !
+ 
+-         !$acc loop gang worker private(flux_upwind_arr)
++         !$acc loop gang worker private(flux_upwind_arr, mass_col, outh_col)
+          do iCell=cellSolveStart,cellSolveEnd
+ 
++            !$acc loop vector
++            do k = 1, nVertLevels
++               mass_col(k) = scalar_old(k,iCell)*rho_zz_old(k,iCell)
++               outh_col(k) = 0.0_RKIND
++            end do
++            !$acc loop seq
++            do i=1,nEdgesOnCell(iCell)
++               iEdge = edgesOnCell(i,iCell)
++               !$acc loop vector
++               do k = 1, nVertLevels
++                  outh_col(k) = outh_col(k) + max(0.0_RKIND,edgesOnCell_sign(i,iCell)*flux_upwind_tmp(k,iEdge)) * invAreaCell(iCell)
++               end do
++            end do
++
+             k = 1
+             scalar_new(k,iCell) = scalar_old(k,iCell) * rho_zz_old(k,iCell)
+ 
+@@ -5496,6 +5546,10 @@ module atm_time_integration
+                flux_upwind_arr(k) = dt*(max(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k-1,iCell) + min(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k,iCell))
+             end do
+ 
++            ! keep the upwind update positive definite where a layer's upwind outflow exceeds its content
++            ! (vertical Courant number above 1)
++            call atm_upwind_vert_renorm(nVertLevels, mass_col, outh_col, wwAvg(:,iCell), rdnw, flux_upwind_arr)
++
+             !$acc loop vector
+             do k = 1, nVertLevels-1
+                scalar_new(k,iCell) = scalar_new(k,iCell) - flux_upwind_arr(k+1)*rdnw(k)
+@@ -5520,34 +5574,6 @@ module atm_time_integration
+ 
+          end do
+ 
+-         !
+-         !  horizontal flux divergence for upwind update
+-         !
+-
+-         !  upwind flux computation
+-         !$acc loop gang worker
+-         do iEdge=edgeStart,edgeEnd
+-
+-            cell1 = cellsOnEdge(1,iEdge)
+-            cell2 = cellsOnEdge(2,iEdge)
+-
+-            !$acc loop vector
+-            do k=1,nVertLevels
+-               flux_upwind_tmp(k,iEdge) = dvEdge(iEdge) * dt *   &
+-                      (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
+-               flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge) - flux_upwind_tmp(k,iEdge)
+-            end do
+-
+-            if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
+-               !$acc loop vector
+-               do k=1,nVertLevels
+-                  flux_tmp(k,iEdge) = 0.0_RKIND
+-                  flux_arr(k,iEdge) = flux_upwind_tmp(k,iEdge)
+-               end do
+-            end if
+-
+-         end do
+-
+          !$acc end parallel
+ 
+ !$OMP BARRIER
+@@ -5785,6 +5811,58 @@ module atm_time_integration
+    end subroutine atm_advance_scalars_mono_work
+ 
+ 
++   !-----------------------------------------------------------------------
++   !  routine atm_upwind_vert_renorm
++   !
++   !> \brief   Keeps the upwind (low-order) update of the monotonic transport positive definite
++   !> \details The upwind update of a layer stays non-negative only while its total upwind outflow, horizontal
++   !>          plus vertical, is at most its content; with a vertical Courant number above 1 it is not. For
++   !>          each layer whose outflow exceeds its content, the vertical upwind fluxes leaving it are scaled
++   !>          by (content - horizontal outflow)/(vertical outflow), as in Skamarock (2006, MWR 134, 2241-2250).
++   !>          Each face is scaled by its donor layer's factor, so the update stays conservative; a column is
++   !>          left unchanged, bit for bit, where no layer's outflow exceeds its content. The horizontal fluxes
++   !>          are not scaled (that would need the factors of halo cells); a layer whose horizontal outflow
++   !>          alone exceeds its content (horizontal Courant number above 1) is not made positive.
++   !>          mass(k): rho_zz_old*scalar_old; outh(k): horizontal upwind outflow (same units);
++   !>          ww(k): wwAvg at w level k; flux(k): dt * upwind vertical flux at w level k = 2..nz (inout).
++   !-----------------------------------------------------------------------
++   subroutine atm_upwind_vert_renorm(nz, mass, outh, ww, rdnw, flux)
++
++      !$acc routine seq
++
++      implicit none
++
++      integer, intent(in) :: nz
++      real (kind=RKIND), dimension(nz), intent(in) :: mass, outh, rdnw
++      real (kind=RKIND), dimension(nz+1), intent(in) :: ww
++      real (kind=RKIND), dimension(nz), intent(inout) :: flux
++
++      integer :: k
++      real (kind=RKIND) :: outv, r
++
++      do k = 1, nz
++         outv = 0.0_RKIND
++         if (k < nz) then
++            if (ww(k+1) > 0.0_RKIND) outv = outv + flux(k+1)
++         end if
++         if (k > 1) then
++            if (ww(k) < 0.0_RKIND) outv = outv - flux(k)
++         end if
++         outv = outv * rdnw(k)
++         if (outv > 0.0_RKIND .and. outh(k) + outv > mass(k)) then
++            r = max(0.0_RKIND, mass(k) - outh(k)) / outv
++            if (k < nz) then
++               if (ww(k+1) > 0.0_RKIND) flux(k+1) = flux(k+1) * r
++            end if
++            if (k > 1) then
++               if (ww(k) < 0.0_RKIND) flux(k) = flux(k) * r
++            end if
++         end if
++      end do
++
++   end subroutine atm_upwind_vert_renorm
++
++
+    subroutine atm_compute_dyn_tend(tend, tend_physics, state, diag, mesh, diag_physics, configs, nVertLevels, rk_step, dynamics_substep, dt, &
+                                    cellStart, cellEnd, vertexStart, vertexEnd, edgeStart, edgeEnd, &
+                                    cellSolveStart, cellSolveEnd, vertexSolveStart, vertexSolveEnd, edgeSolveStart, edgeSolveEnd)
+-- 
+2.55.0
+

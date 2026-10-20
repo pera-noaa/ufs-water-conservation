@@ -1,0 +1,351 @@
+diff --git a/phys/module_microphysics_driver.F b/phys/module_microphysics_driver.F
+index 114fe57b..a1093c15 100644
+--- a/phys/module_microphysics_driver.F
++++ b/phys/module_microphysics_driver.F
+@@ -1197,6 +1197,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+@@ -1292,6 +1293,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+@@ -1365,6 +1367,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+diff --git a/phys/module_mp_thompson.F b/phys/module_mp_thompson.F
+index d283b2f7..a624e71c 100644
+--- a/phys/module_mp_thompson.F
++++ b/phys/module_mp_thompson.F
+@@ -1070,7 +1070,7 @@
+       SUBROUTINE mp_gt_driver(qv, qc, qr, qi, qs, qg, qb, ni, nr, nc, ng,&
+                               nwfa, nifa, nbca, nwfa2d, nifa2d, nbca2d,  &
+                               aer_init_opt, wif_input_opt,               &
+-                              th, pii, p, w, dz,                         &
++                              th, pii, p, w, dz, rho_dry,                &
+                               dt_in, itimestep,                          &
+                               RAINNC, RAINNCV, &
+                               SNOWNC, SNOWNCV, &
+@@ -1095,6 +1095,7 @@
+                           qv, qc, qr, qi, qs, qg, ni, nr, th
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(INOUT):: &
+                           nc, nwfa, nifa, nbca, qb, ng
++      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: rho_dry
+       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(IN):: nwfa2d, nifa2d, &
+                                                                 nbca2d
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT):: &
+@@ -1223,6 +1224,9 @@
+             p1d(k) = p(i,k,j)
+             w1d(k) = w(i,k,j)
+             dz1d(k) = dz(i,k,j)
++            ! with the host's dry density, Thompson's rho*dz is exactly the host's dry-air mass
++            if (present(rho_dry)) dz1d(k) = dz(i,k,j)*rho_dry(i,k,j) &
++                 *R*t1d(k)*(MAX(1.E-10,qv(i,k,j))+0.622)/(0.622*p1d(k))
+             qv1d(k) = qv(i,k,j)
+             qc1d(k) = qc(i,k,j)
+             qi1d(k) = qi(i,k,j)
+@@ -1594,6 +1598,8 @@
+ 
+       REAL:: rgvm, delta_tp, orho, lfus2
+       REAL, DIMENSION(5):: onstep
++      REAL:: dtsed
++      INTEGER:: nstepc
+       DOUBLE PRECISION:: N0_exp, N0_min, lam_exp, lamc, lamr, lamg
+       DOUBLE PRECISION:: lami, ilami, ilamc
+       REAL:: xDc, Dc_b, Dc_g, xDi, xDr, xDs, xDg, Ds_m, Dg_m
+@@ -1619,6 +1625,8 @@
+       REAL:: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       REAL:: Ef_ra, Ef_sa, Ef_ga
+       REAL:: dtsave, odts, odt, odzq, hgt_agl
++      REAL:: rhon, xcl
++      REAL:: xdef, xavl, xcnd, frc
+       REAL:: xslw1, ygra1, zans1, eva_factor
+       REAL:: SR, melt_f
+       INTEGER:: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq, k_melting
+@@ -1841,6 +1849,9 @@
+                   / am_r*lamc**bm_r)
+             if (.NOT. is_aerosol_aware) nc(k) = Nt_c
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qc1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+             rc(k) = R1
+@@ -1868,6 +1879,9 @@
+              ni(k) = cig(1)*oig2*ri(k)/am_i*lami**bm_i
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qi1d(k)
++            t1d(k) = t1d(k) - lsub*qi1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+             ri(k) = R1
+@@ -1897,6 +1911,9 @@
+                nr(k) = crg(2)*org3*rr(k)*lamr**bm_r / am_r
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qr1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+             rr(k) = R1
+@@ -1908,6 +1925,9 @@
+             rs(k) = qs1d(k)*rho(k)
+             L_qs(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qs1d(k)
++            t1d(k) = t1d(k) - lsub*qs1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+             L_qs(k) = .false.
+@@ -1938,6 +1958,9 @@
+                ng(k) = cgg(2,1)*ogg3*rg(k)*lamg**bm_g / am_g(idx_bg(k))
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qg1d(k)
++            t1d(k) = t1d(k) - lsub*qg1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             ng1d(k) = 0.0
+             qb1d(k) = 0.0
+@@ -2017,6 +2040,10 @@
+ !.. condense cloud water, just exit quickly!
+ !+---+-----------------------------------------------------------------+
+ 
++!..Entry exchanges can leave vapour below the floor; such a column goes through the end-of-step refill.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) no_micro = .false.
++      enddo
+       if (no_micro) return
+ 
+ !+---+-----------------------------------------------------------------+
+@@ -2912,6 +2939,8 @@
+           prr_rcs(k) = prr_rcs(k) * ratio
+           prr_rcg(k) = prr_rcg(k) * ratio
+          endif
++         ! snow cannot gain more from rain-snow collection than the rain loses to it
++         if (twet(k).lt.T_0 .and. prs_rcs(k).gt.-prr_rcs(k)) prs_rcs(k) = -prr_rcs(k)
+ 
+ !..Snow conservation.
+          sump = prs_sde(k) - prs_ihm(k) - prr_sml(k) &
+@@ -2943,6 +2972,11 @@
+          ratio = MIN( ABS(prr_rcg(k)), ABS(prg_rcg(k)) )
+          prr_rcg(k) = ratio * SIGN(1.0, SNGL(prr_rcg(k)))
+          prg_rcg(k) = -prr_rcg(k)
++         ! graupel gains must match the (possibly limited) losses that feed them
++         prg_rci(k) = pri_rci(k) + prr_rci(k)
++         if (twet(k).lt.T_0) prg_rcs(k) = -(prr_rcs(k) + prs_rcs(k))
++         pbg_rci(k) = prg_rci(k)/rho_i
++         pbg_rcs(k) = prg_rcs(k)/rho_i
+          if (twet(k).gt.T_0) then
+             ratio = MIN( ABS(prr_rcs(k)), ABS(prs_rcs(k)) )
+             prr_rcs(k) = ratio * SIGN(1.0, SNGL(prr_rcs(k)))
+@@ -3086,6 +3120,9 @@
+               nrten(k) = (xnr-nr1d(k)*rho(k))*odts*orho
+            endif
+          else
++           ! rain left at or below R1 goes to vapour with its latent heat, not deleted
++           qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*dtsave)*odts
++           tten(k) = tten(k) - lvap(k)*ocp(k)*(qr1d(k) + qrten(k)*dtsave)*odts*(1-IFDRY)
+            qrten(k) = -qr1d(k)*odts
+            nrten(k) = -nr1d(k)*odts
+          endif
+@@ -3155,6 +3192,9 @@
+             endif
+ 
+          else
++           ! graupel left at or below R1 goes to vapour with its latent heat, not deleted
++           qvten(k) = qvten(k) + (qg1d(k) + qgten(k)*dtsave)*odts
++           tten(k) = tten(k) - lsub*ocp(k)*(qg1d(k) + qgten(k)*dtsave)*odts*(1-IFDRY)
+            qgten(k) = -qg1d(k)*odts
+            ngten(k) = -ng1d(k)*odts
+            qbten(k) = -qb1d(k)*odts
+@@ -3190,8 +3230,9 @@
+          otemp = 1./temp(k)
+          tempc = temp(k) - 273.15
+          qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+-         rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+-         rhof(k) = SQRT(RHO_NOT/rho(k))
++         ! rho stays the entry density so sedimentation conserves the host's column mass
++         rhon = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
++         rhof(k) = SQRT(RHO_NOT/rhon)
+          rhof2(k) = SQRT(rhof(k))
+          qvs(k) = rslf(pres(k), temp(k))
+          ssatw(k) = qv(k)/qvs(k) - 1.
+@@ -3202,7 +3243,7 @@
+          else
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+-         vsc2(k) = SQRT(rho(k)/visco(k))
++         vsc2(k) = SQRT(rhon/visco(k))
+          lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+          ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
+@@ -3487,7 +3528,6 @@
+           if (.NOT. is_aerosol_aware) nc(k) = Nt_c
+           qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+           temp(k) = t1d(k) + DT*tten(k)
+-          rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+           qvs(k) = rslf(pres(k), temp(k))
+           ssatw(k) = qv(k)/qvs(k) - 1.
+          endif
+@@ -3569,7 +3609,6 @@
+           qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+           nr(k) = MAX(R2, (nr1d(k) + DT*nrten(k))*rho(k))
+           temp(k) = t1d(k) + DT*tten(k)
+-          rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+          endif
+       enddo
+ #if ( WRF_CHEM == 1 )
+@@ -3822,17 +3861,28 @@
+ !+---+-----------------------------------------------------------------+
+ 
+       if (ANY(L_qc .eqv. .true.)) then
+-      do k = kte, kts, -1
+-         sed_c(k) = vtck(k)*rc(k)
+-         sed_n(k) = vtnck(k)*nc(k)
+-      enddo
++      ! substeps keep each layer's outflow within its content (Courant number <= 1), as for the other species
++      nstepc = 1
+       do k = ksed1(5), kts, -1
+-         odzq = 1./dzq(k)
+-         orho = 1./rho(k)
+-         qcten(k) = qcten(k) + (sed_c(k+1)-sed_c(k)) *odzq*orho
+-         ncten(k) = ncten(k) + (sed_n(k+1)-sed_n(k)) *odzq*orho
+-         rc(k) = MAX(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*DT)
+-         nc(k) = MAX(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*DT)
++         if (vtck(k) .gt. 0.) nstepc = MAX(nstepc, INT(DT*vtck(k)/dzq(k) + 1.))
++      enddo
++      onstep(5) = 1./REAL(nstepc)
++      dtsed = DT*onstep(5)
++      do n = 1, nstepc
++         do k = kte, kts, -1
++            sed_c(k) = vtck(k)*rc(k)
++            sed_n(k) = vtnck(k)*nc(k)
++         enddo
++         do k = ksed1(5), kts, -1
++            odzq = 1./dzq(k)
++            orho = onstep(5)/rho(k)
++            qcten(k) = qcten(k) + (sed_c(k+1)-sed_c(k)) *odzq*orho
++            ncten(k) = ncten(k) + (sed_n(k+1)-sed_n(k)) *odzq*orho
++            rc(k) = MAX(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*dtsed)
++            nc(k) = MAX(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*dtsed)
++         enddo
++         ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++         if (ksed1(5) .ge. kts) pptrain = pptrain + sed_c(kts)*dtsed
+       enddo
+       endif
+ 
+@@ -3969,9 +4019,42 @@
+ !+---+-----------------------------------------------------------------+
+ !.. All tendencies computed, apply and pass back final values to parent.
+ !+---+-----------------------------------------------------------------+
++      ! condensate the final clip would delete is exchanged with vapour (with its latent heat) instead
++      do k = kts, kte
++         xcl = qc1d(k) + qcten(k)*DT
++         if (xcl .le. R1) then
++            qcten(k) = qcten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qi1d(k) + qiten(k)*DT
++         if (xcl .le. R1) then
++            qiten(k) = qiten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qr1d(k) + qrten(k)*DT
++         if (xcl .le. R1) then
++            qrten(k) = qrten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qs1d(k) + qsten(k)*DT
++         if (xcl .le. R1) then
++            qsten(k) = qsten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qg1d(k) + qgten(k)*DT
++         if (xcl .le. R1) then
++            qgten(k) = qgten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++      enddo
+       do k = kts, kte
+          t1d(k)  = t1d(k) + tten(k)*DT
+-         qv1d(k) = MAX(1.E-10, qv1d(k) + qvten(k)*DT)
++         qv1d(k) = qv1d(k) + qvten(k)*DT
+          qc1d(k) = qc1d(k) + qcten(k)*DT
+          nc1d(k) = MAX(2./rho(k), MIN(nc1d(k) + ncten(k)*DT, Nt_c_max))
+          if (is_aerosol_aware) then
+@@ -4079,6 +4162,51 @@
+ 
+       enddo
+ 
++!..Vapour left below the floor is refilled, not created: first from the layer's
++!.. condensate, with its latent heat, then from the column's other vapour.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) then
++            xcnd = qc1d(k) + qr1d(k) + qi1d(k) + qs1d(k) + qg1d(k)
++            if (xcnd .gt. 0.) then
++               frc = MIN(1., (1.E-10 - qv1d(k))/xcnd)
++               t1d(k) = t1d(k) - frc*ocp(k)*(1-IFDRY)                           &
++                      * (lvap(k)*(qc1d(k)+qr1d(k)) + lsub*(qi1d(k)+qs1d(k)+qg1d(k)))
++               qv1d(k) = qv1d(k) + frc*xcnd
++               qc1d(k) = qc1d(k)*(1.-frc)
++               nc1d(k) = nc1d(k)*(1.-frc)
++               qr1d(k) = qr1d(k)*(1.-frc)
++               nr1d(k) = nr1d(k)*(1.-frc)
++               qi1d(k) = qi1d(k)*(1.-frc)
++               ni1d(k) = ni1d(k)*(1.-frc)
++               qs1d(k) = qs1d(k)*(1.-frc)
++               qg1d(k) = qg1d(k)*(1.-frc)
++               ng1d(k) = ng1d(k)*(1.-frc)
++               qb1d(k) = qb1d(k)*(1.-frc)
++            endif
++         endif
++      enddo
++      xdef = 0.
++      xavl = 0.
++      do k = kts, kte
++         xdef = xdef + MAX(1.E-10 - qv1d(k), 0.)*rho(k)*dzq(k)
++         xavl = xavl + MAX(qv1d(k) - 1.E-10, 0.)*rho(k)*dzq(k)
++      enddo
++      if (xdef .gt. 0. .and. xavl .gt. 0.) then
++         frc = MIN(1., xdef/xavl)
++         xcnd = MIN(1., xavl/xdef)
++         do k = kts, kte
++            if (qv1d(k) .lt. 1.E-10) then
++               qv1d(k) = qv1d(k) + (1.E-10 - qv1d(k))*xcnd
++            else
++               qv1d(k) = qv1d(k) - (qv1d(k) - 1.E-10)*frc
++            endif
++         enddo
++      endif
++!..Only a column with no vapour to spare is still floored.
++      do k = kts, kte
++         qv1d(k) = MAX(1.E-10, qv1d(k))
++      enddo
++
+       end subroutine mp_thompson
+ !+---+-----------------------------------------------------------------+
+ !ctrlL

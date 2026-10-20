@@ -1,0 +1,13 @@
+patching file UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+patching file UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
+Hunk #3 succeeded at 763 (offset 4 lines).
+patching file UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.meta
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1092 (offset 3 lines).
+Hunk #2 succeeded at 3807 (offset 14 lines).
+Hunk #3 FAILED at 4345.
+Hunk #4 FAILED at 5101.
+2 out of 4 hunks FAILED -- saving rejects to file UFSATM/ccpp/data/GFS_typedefs.F90.rej
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 5271 (offset 14 lines).
+stage REJ re-anchored: GFS_typedefs.F90 (replace), GFS_typedefs.F90 (insert) | rejects left: none

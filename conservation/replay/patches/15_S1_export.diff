@@ -1,0 +1,457 @@
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:53:12.000000000 -0500
+@@ -201,6 +201,11 @@
+     !-- Convection
+     real (kind=kind_phys), pointer :: ten_u_conv(:,:)  => null()  !< Zonal-wind tendency due to convection scheme
+     real (kind=kind_phys), pointer :: ten_v_conv(:,:)  => null()  !< Meridional-wind tendency ...
++    !-- precipitation mass through the bottom of physics layer k in the physics step (kg m-2), for the coupling
++    real (kind=kind_phys), pointer :: pflx_dc(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_sc(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_mpl(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_mpi(:,:) => null()
+ 
+     contains
+       procedure :: create  => stateout_create  !<   allocate array data
+@@ -1076,6 +1081,7 @@
+     real(kind=kind_phys) :: dt_inner        !< time step for the inner loop in s
+     logical              :: sedi_semi       !< flag for semi Lagrangian sedi of rain
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+     logical              :: thompson_mp_is_init=.false. !< Local scheme initialization flag
+@@ -2443,6 +2449,14 @@
+     Stateout%ten_v_pbl  = clear_val
+     Stateout%ten_u_conv = clear_val
+     Stateout%ten_v_conv = clear_val
++    allocate (Stateout%pflx_dc (IM,Model%levs+1))
++    Stateout%pflx_dc = clear_val
++    allocate (Stateout%pflx_sc (IM,Model%levs+1))
++    Stateout%pflx_sc = clear_val
++    allocate (Stateout%pflx_mpl (IM,Model%levs+1))
++    Stateout%pflx_mpl = clear_val
++    allocate (Stateout%pflx_mpi (IM,Model%levs+1))
++    Stateout%pflx_mpi = clear_val
+ 
+  end subroutine stateout_create
+ 
+@@ -3747,6 +3761,7 @@
+     real(kind=kind_phys) :: dt_inner       = -999.0             !< time step for the inner loop
+     logical              :: sedi_semi      = .false.            !< flag for semi Lagrangian sedi of rain
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+     real(kind=kind_phys) :: nt_c_o         = 50.e6              !< prescribed cloud liquid water number concentration over ocean
+@@ -4289,7 +4304,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff,                        &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff,                   &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5040,6 +5055,7 @@
+     endif
+     Model%sedi_semi        = sedi_semi
+     Model%thompson_kirchhoff = thompson_kirchhoff
++    Model%samf_kirchhoff = samf_kirchhoff
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+     Model%nt_c_o           = nt_c_o
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:53:12.000000000 -0500
+@@ -753,6 +753,34 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
++[pflx_dc]
++  standard_name = precipitation_mass_through_layer_bottom_from_deep_convection
++  long_name = deep convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_sc]
++  standard_name = precipitation_mass_through_layer_bottom_from_shallow_convection
++  long_name = shallow convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_mpl]
++  standard_name = liquid_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics liquid precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_mpi]
++  standard_name = frozen_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics frozen precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
+ 
+ ########################################################################
+ [ccpp-table-properties]
+@@ -5184,6 +5212,12 @@
+   dimensions = ()
+   type = real
+   kind = kind_phys
++[samf_kirchhoff]
++  standard_name = flag_for_samf_kirchhoff_latent_heat
++  long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
+ [thompson_kirchhoff]
+   standard_name = flag_for_thompson_kirchhoff_latent_heat
+   long_name = flag for Thompson latent heats and heat capacity of the host energy frame
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:53:38.000000000 -0500
+@@ -88,7 +88,7 @@
+      &    rainevap,sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,   
+      &    betascu,lbb1,lbb2,lbb3,dt_decay,maxMF,do_mynnedmf,            
+      &    sigmab_coldstart,cat_adj_deep,samf_cmt_heat,                  
+-     &    errmsg,errflg)
++     &    pflx,samf_kirchhoff,errmsg,errflg)
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+@@ -133,6 +133,9 @@
+      &   rn(:),                                                         
+      &   dd_mf(:,:), dt_mf(:,:)
+       real(kind=kind_phys), intent(out) :: ud_mf(:,:)
++      real(kind=kind_phys), intent(inout) :: pflx(:,:)
++      logical, intent(in) :: samf_kirchhoff
++      real(kind=kind_phys) :: pfk(im,km+1), ck
+       real(kind=kind_phys), dimension(:,:), intent(inout), optional ::
+      &   qlcn, qicn, w_upi, cnv_mfd, cnv_dqldt, clcn
+      &,  cnv_fice, cnv_ndrop, cnv_nice, cf_upi
+@@ -345,6 +348,8 @@
+       ! Initialize CCPP error handling variables
+       errmsg = ''
+       errflg = 0
++      pflx = 0.0_kind_phys
++      pfk = 0.0_kind_phys
+ 
+       gravinv = 1.0_conv_wp/real(grav, kind=conv_wp)
+       invdelt = 1.0_conv_wp/real(delt, kind=conv_wp)
+@@ -3657,6 +3662,7 @@
+               deltbar(i) = deltbar(i) + deltv(i) * tem1
+             endif
+           endif
++          pfk(i,k) = max(rn(i), 0.0_kind_phys)
+         enddo
+       enddo
+ 
+@@ -3984,6 +3990,23 @@
+           endif
+         enddo
+       endif
++!  rain mass through layer bottoms (kg m-2); option: condensate formed
++!  in layer k (net rain production + detrained cloud) at L_v(T), not hvap
++      do k = 1, km
++        do i = 1, im
++          if (cnvflg(i) .and. rn(i) > 0.0_kind_phys) then
++            pflx(i,k) = 1000.0_kind_phys * pfk(i,k)
++            if (samf_kirchhoff .and. k <= km) then
++              ck = 1000.0_kind_phys * (pfk(i,k) - pfk(i,k+1))
++     &           * grav / delp(i,k)
++              if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
++     &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
++              new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++            endif
++          endif
++        enddo
++      enddo
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 20:53:38.000000000 -0500
+@@ -865,6 +865,21 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[pflx]
++  standard_name = precipitation_mass_through_layer_bottom_from_deep_convection
++  long_name = deep convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[samf_kirchhoff]
++  standard_name = flag_for_samf_kirchhoff_latent_heat
++  long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:53:38.000000000 -0500
+@@ -61,7 +61,7 @@
+      &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+      &     sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,betascu,   &
+      &     lbb1,lbb2,lbb3,dt_decay,cat_adj_shal,samf_cmt_heat,
+-     &     errmsg,errflg)
++     &     pflx,samf_kirchhoff,errmsg,errflg)
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+@@ -99,6 +99,9 @@
+      &   cnvw(:,:), cnvc(:,:), dt_mf(:,:)
+ !
+       real(kind=kind_phys), intent(out) :: ud_mf(:,:)
++      real(kind=kind_phys), intent(inout) :: pflx(:,:)
++      logical, intent(in) :: samf_kirchhoff
++      real(kind=kind_phys) :: pfk(im,km+1), ck
+       real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),   &
+      &   omegaout(:,:)
+ 
+@@ -289,6 +292,8 @@
+ ! Initialize CCPP error handling variables
+       errmsg = ''
+       errflg = 0
++      pflx = 0.0_kind_phys
++      pfk = 0.0_kind_phys
+ 
+       gravinv = 1.0_conv_wp/real(grav, kind=conv_wp)
+       invdelt = 1.0_conv_wp/real(delt, kind=conv_wp)
+@@ -2603,6 +2608,7 @@
+               deltbar(i) = deltbar(i) + deltv(i) * factor
+             endif
+           endif
++          pfk(i,k) = max(rn(i), 0.0_kind_phys)
+         enddo
+       enddo
+ cj
+@@ -2809,6 +2815,23 @@
+           endif
+         enddo
+       endif
++!  rain mass through layer bottoms (kg m-2); option: condensate formed
++!  in layer k (net rain production + detrained cloud) at L_v(T), not hvap
++      do k = 1, km
++        do i = 1, im
++          if (cnvflg(i)) then
++            pflx(i,k) = 1000.0_kind_phys * pfk(i,k)
++            if (samf_kirchhoff .and. k <= km1) then
++              ck = 1000.0_kind_phys * (pfk(i,k) - pfk(i,k+1))
++     &           * grav / delp(i,k)
++              if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
++     &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
++              new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++            endif
++          endif
++        enddo
++      enddo
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_u = real((new_u1 - real(u1, kind=conv_wp)) / real(delt,
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 20:53:38.000000000 -0500
+@@ -653,6 +653,21 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[pflx]
++  standard_name = precipitation_mass_through_layer_bottom_from_shallow_convection
++  long_name = shallow convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[samf_kirchhoff]
++  standard_name = flag_for_samf_kirchhoff_latent_heat
++  long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90 b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-17 20:53:12.000000000 -0500
+@@ -217,6 +217,7 @@
+    real(wp),            private :: olfus        !set in thompson_init
+ !..Latent heat slopes and moist heat capacity factor; thompson_kirchhoff: those of the host's (FV3) frame
+    logical                      :: thompson_kirchhoff = .false.
++   real(wp), public, save :: tsf(2, 200, 4096) = 0.   ! sedimented mass through layer bottoms (kg m-2): liquid, ice
+    real(wp),            private :: dlv = 2106.0 - 4218.0, dls = 0., dlf = 0., cpq = 0.887
+ 
+ !..Ice initiates with this mass (kg), corresponding diameter calc.
+@@ -2044,6 +2045,7 @@
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+       real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
++      real(wp) :: msl0(kts:kte), msi0(kts:kte), fsl, fsi
+       real(wp) :: xcl
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+       integer :: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq
+@@ -2069,6 +2071,7 @@
+       endif
+ 
+       no_micro = .true.
++      tsf(:,:,ii) = 0.
+       dtsave = dt
+       odt = 1./dt
+       odts = 1./dtsave
+@@ -4008,6 +4011,10 @@
+ !! cloud ice has proper differential sedimentation.
+ !+---+-----------------------------------------------------------------+
+ 
++      do k = kts, kte
++         msl0(k) = (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzq(k)
++         msi0(k) = (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzq(k)
++      enddo
+       if (ANY(L_qr .eqv. .true.)) then
+          nstep = nint(1./onstep(1))
+ 
+@@ -4260,6 +4267,15 @@
+       endif 
+ 
+ !+---+-----------------------------------------------------------------+
++      ! mass through the bottom of layer k = sedimentation loss of the layers above and of k
++      fsl = 0.
++      fsi = 0.
++      do k = kte, kts, -1
++         fsl = fsl + msl0(k) - (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzq(k)
++         fsi = fsi + msi0(k) - (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzq(k)
++         tsf(1,k,ii) = fsl
++         tsf(2,k,ii) = fsi
++      enddo
+ !> - Instantly melt any cloud ice into cloud water if above 0C and
+ !! instantly freeze any cloud water found below HGFR.
+ !+---+-----------------------------------------------------------------+
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90 b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-17 20:53:12.000000000 -0500
+@@ -10,7 +10,7 @@
+       use mpi_f08
+       use machine, only : kind_phys
+ 
+-      use module_mp_thompson, only : thompson_init, mp_gt_driver, thompson_final, calc_effectRad
++      use module_mp_thompson, only : thompson_init, mp_gt_driver, thompson_final, calc_effectRad, tsf
+       use module_mp_thompson, only : naIN0, naIN1, naCCN0, naCCN1, eps
+       use module_mp_thompson, only : re_qc_min, re_qc_max, re_qi_min, re_qi_max, re_qs_min, re_qs_max
+ 
+@@ -388,7 +388,7 @@
+                               is_initialized, fs_fac_rain, fs_fac_snow, &
+                               ten_q, dspechum, dqc, dqr,           &
+                               dqi, dqs, dqg, dni, dnr, dnc, dnwfa, &
+-                              dnifa, dtgrs, ten_u, ten_v, errmsg, errflg)
++                              dnifa, dtgrs, ten_u, ten_v, pflx_mpl, pflx_mpi, errmsg, errflg)
+ 
+          implicit none
+ 
+@@ -485,6 +485,7 @@
+          ! ice and liquid water 3d precipitation fluxes - only allocated if cplchm is .true.
+          real(kind=kind_phys), intent(inout), dimension(:,:), optional :: pfi_lsan
+          real(kind=kind_phys), intent(inout), dimension(:,:), optional :: pfl_lsan
++         real(kind=kind_phys), intent(inout) :: pflx_mpl(:,:), pflx_mpi(:,:)
+ 
+          ! fall speed adjustment
+          real(kind_phys),           intent(in), optional :: fs_fac_rain, fs_fac_snow
+@@ -812,6 +813,11 @@
+             ncten3     => diag3d(:,:,36:36)
+             qcten3     => diag3d(:,:,37:37)
+          end if set_extended_diagnostic_pointers
++         if (istep == 1) then
++            pflx_mpl = 0.
++            pflx_mpi = 0.
++         endif
++         tsf(:,:,1:ncol) = 0.
+          !> - Call mp_gt_driver() with or without aerosols, with or without effective radii, ...
+          if (is_aerosol_aware) then
+             call mp_gt_driver(qv=qv, qc=new_qc, qr=new_qr, qi=new_qi, qs=new_qs, qg=new_qg, ni=new_ni, nr=new_nr,        &
+@@ -942,6 +948,8 @@
+                               fs_fac_rain=fs_fac_rain, fs_fac_snow=fs_fac_snow)
+          end if
+          if (errflg/=0) return
++         pflx_mpl(:,1:nlev) = pflx_mpl(:,1:nlev) + transpose(tsf(1,1:nlev,1:ncol))
++         pflx_mpi(:,1:nlev) = pflx_mpi(:,1:nlev) + transpose(tsf(2,1:nlev,1:ncol))
+ 
+          ! DH* - do this only if istep == nsteps? Would be ok if it was
+          ! guaranteed that nothing else in the same subcycle group
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-17 20:53:12.000000000 -0500
+@@ -1093,6 +1093,22 @@
+   type = real
+   kind = kind_phys
+   intent = out
++[pflx_mpl]
++  standard_name = liquid_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics liquid precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[pflx_mpi]
++  standard_name = frozen_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics frozen precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90 b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:53:07.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:53:12.000000000 -0500
+@@ -2728,6 +2728,7 @@
+    real(kind=kind_phys), parameter :: c_liq = 4.1855e+3, c_ice = 1972., t_frz = 273.15  ! = fv_mapz c_liq, c_ice
+    real(kind=kind_phys) :: dpn(npz), dm(npz), dmv(npz), tk(npz), phib(npz+1), ftop(npz+1)
+    real(kind=kind_phys) :: qpe(npz), qfw(npz), qse(npz), qp, cb, e
++   real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr
+    integer :: ix, i, j, im, k, k1, n, nwat
+    n = mygrid
+    nwat = Atm(n)%flagstruct%nwat
+@@ -2763,13 +2764,20 @@
+          qpe(k1) = 0.5*(ftop(k1) + ftop(k1+1))*(phib(k1) - phib(k1+1))
+          qfw(k1) = rvgas*tk(k1)*dmv(k1)
+       enddo
++      ! precipitation through the bottom of dycore layer k1 (Pa); residual net flux (vapour) by its direction
++      do k1 = 1, npz
++         k = k1
++         if (flip_vc) k = npz+1-k1
++         fpl(k1+1) = grav*(IPD_Stateout%pflx_dc(im,k) + IPD_Stateout%pflx_sc(im,k) + IPD_Stateout%pflx_mpl(im,k))
++         fpi(k1+1) = grav*IPD_Stateout%pflx_mpi(im,k)
++      enddo
+       do k1 = 1, npz-1
+-         if (ftop(k1+1) >= 0.) then
+-            cb = c_liq
+-            if (tk(k1) < t_frz) cb = c_ice
+-            qse(k1+1) = qse(k1+1) - ftop(k1+1)*cb*(tk(k1+1) - tk(k1))
++         qse(k1+1) = qse(k1+1) - (fpl(k1+1)*c_liq + fpi(k1+1)*c_ice)*(tk(k1+1) - tk(k1))
++         fr = ftop(k1+1) - fpl(k1+1) - fpi(k1+1)
++         if (fr >= 0.) then
++            qse(k1+1) = qse(k1+1) - fr*cp_vapor*(tk(k1+1) - tk(k1))
+          else
+-            qse(k1) = qse(k1) - ftop(k1+1)*cp_vapor*(tk(k1+1) - tk(k1))
++            qse(k1) = qse(k1) - fr*cp_vapor*(tk(k1+1) - tk(k1))
+          endif
+       enddo
+       do k1 = 1, npz

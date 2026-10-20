@@ -1,0 +1,57 @@
+From aeb6fdb290de90d9b7716286d40bac7e4e6bd8e7 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:04:22 -0600
+Subject: [PATCH 04/18] noahmpdrv: hand the atmosphere the water Noah-MP
+ removed, not latent heat / con_hvap
+
+evap was latent_heat_total/density/con_hvap (2.5e6 J/kg), while Noah-MP
+removes the water with its own hvap = 2.5104e6 and, over frozen surfaces,
+hsub = 2.844e6. The atmosphere therefore received 0.4 % more water than
+unfrozen land lost and 14 % more over snow and frozen ground.
+
+Use the water flux Noah-MP itself computes, (ecan+etran+edir)/density, as the
+WRF, HRLDAS, MPAS and LIS Noah-MP drivers do (QFX). Noah-MP's latent heat flux
+is unchanged. The host's latent-heat output, rho*con_hvap*evap, now follows
+the water: up to 12 % lower where sublimation dominates, -4.2 % over
+snow-covered land in a 24-h C96 forecast.
+
+Measured with in-model meters (C96 control_p8_ugwpv1): the atmosphere gained
++0.07 to +0.10 % of global precipitation more water than the land lost; with
+the fix the two agree to machine precision. Note this lowers the water flux
+over frozen surfaces by up to 12 %. See also NCAR/ccpp-physics#582.
+
+Over land ice this branch sets evaporation_canopy and transpiration to
+undefined (9.99e20), so the sum must not read them: set the two to 0
+there, as upstream did for all the glacier fields in 3fe1f187.
+---
+ physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+index 6aff5066..4b3062d3 100644
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -927,8 +927,8 @@
+         soil_carbon_fast       = undefined
+         leaf_area_index        = undefined
+         stem_area_index        = undefined
+-        evaporation_canopy     = undefined
+-        transpiration          = undefined
++        evaporation_canopy     = 0.0  ! no canopy on land ice; evap below sums these
++        transpiration          = 0.0  ! no canopy on land ice; evap below sums these
+         aquifer_water          = undefined
+         precip_adv_heat_total  = undefined
+         soil_moisture_wtd      = 0.0
+@@ -1251,7 +1251,8 @@
+ !  --- change units for output
+ !
+       hflx(i) = hflx(i) / density / con_cp
+-      evap(i) = evap(i) / density / con_hvap
++      ! the water Noah-MP removed (its own hvap/hsub), not latent heat / con_hvap
++      evap(i) = (ecan(i) + etran(i) + edir(i)) / density
+ 
+ !
+ !  --- calculate potential evaporation using noah code
+-- 
+2.55.0
+

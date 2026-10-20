@@ -1,0 +1,59 @@
+From 8ff2711a57b327813a5070e2d26d0cc74cd69c28 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:52 -0500
+Subject: [PATCH 6/6] d_sw: damp inline_q tracers with the pre-update delp
+
+With inline_q the del-n damping of tracers is weighted by the post-update
+delp on a PE's own cells and the pre-update delp in its halo, so two PEs
+add different fluxes on the same face and tracer mass is not conserved.
+
+Keep the pre-update delp for the tracer damping fluxes everywhere.
+
+Measured (C96, 24 h, inline_q): tracer mass 1.0-1.9e-9 -> 5.9-8.4e-15 per
+day; dry air -8.6e-12 -> 5.1e-17. With inline_q off (every regression
+test): bitwise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ model/sw_core.F90 | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/model/sw_core.F90 b/model/sw_core.F90
+index 64bd011..4c07d60 100644
+--- a/model/sw_core.F90
++++ b/model/sw_core.F90
+@@ -583,6 +583,7 @@
+       real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+       real :: gx(bd%is:bd%ie+1,bd%js:bd%je  )
+       real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< work Y-dir flux array
++      real :: dpm(bd%isd:bd%ied,bd%jsd:bd%jed) !< inline_q: delp before this update, for the tracer damping fluxes
+       logical :: fill_c
+ 
+       real :: dt2, dt4, dt5, dt6
+@@ -1025,6 +1026,12 @@
+ #endif
+ 
+      if ( inline_q ) then
++! tracer damping mass: pre-update delp everywhere, so a PE-boundary face flux is the same on both PEs
++        do j=jsd,jed
++           do i=isd,ied
++              dpm(i,j) = delp(i,j)
++           enddo
++        enddo
+         do j=js,je
+            do i=is,ie
+                 wk(i,j) = delp(i,j)
+@@ -1040,7 +1047,7 @@
+         do iq=1,nq
+            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+-                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
++                         mfx=fx, mfy=fy, mass=dpm, nord=nord_t, damp_c=damp_t)
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
+-- 
+2.31.1
+

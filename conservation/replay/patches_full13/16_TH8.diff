@@ -1,0 +1,39 @@
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90 b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 01:11:11.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 01:11:20.000000000 -0500
+@@ -4046,7 +4046,7 @@
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (rr(kts).gt.R1*rr_min) then
++               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rr(kts) > R1*rr_min)
+                   pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+                endif 
+             enddo
+@@ -4157,7 +4157,7 @@
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (ri(kts).gt.R1*rr_min) then
++            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was ri(kts) > R1*rr_min)
+                pptice = pptice + sed_i(kts)*DT*onstep(2)
+             endif 
+          enddo
+@@ -4187,7 +4187,7 @@
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (rs(kts).gt.R1*rr_min) then
++            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rs(kts) > R1*rr_min)
+                pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+             endif 
+          enddo
+@@ -4218,7 +4218,7 @@
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (rg(kts).gt.R1*rr_min) then
++               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rg(kts) > R1*rr_min)
+                   pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+                endif
+             enddo

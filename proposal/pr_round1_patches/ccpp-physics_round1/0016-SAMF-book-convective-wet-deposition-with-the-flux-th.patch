@@ -1,0 +1,76 @@
+From 8f7cbd60159be5b4611bf700d241cda09c0d4b1e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:52 -0500
+Subject: [PATCH 16/29] SAMF: book convective wet deposition with the flux that
+ removes it
+
+Two defects in the tracer scavenging of samfdeepcnv and samfshalcnv:
+- the booked deposition chem_pw uses eta(k-1) while the tracer loss uses
+  eta(k);
+- where a tracer would go negative, wet_dep is zeroed before it is added
+  back to the tracer, so the deposition is erased and the tracer left
+  negative.
+
+Use eta(k), and add wet_dep back before zeroing it.
+
+Measured (C96 control_p8_ugwpv1, 24 h, a scavenged test tracer, fscav 0.5):
+tracer + deposition -7.42e-4 -> +3.0e-15 of the mass per day; column
+residual over deposition deep 2.0e-3 -> 6e-16, shallow 1.5e-2 -> 1e-15.
+With fscav 0 byte-identical; prognostic fields unchanged in 24 h.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/CONV/SAMF/samfdeepcnv.f | 4 ++--
+ physics/CONV/SAMF/samfshalcnv.f | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 36283463..99f0caad 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -1359,7 +1359,7 @@ c
+                    chem_c(i,k,n) = real(fscav(n), kind=conv_wp)
+      &                           * ecko(i,k,kk)
+                    tem = chem_c(i,k,n) / (1.0_conv_wp + c0t(i,k) * dz)
+-                   chem_pw(i,k,n) = c0t(i,k) * dz * tem * eta(i,k-1)
++                   chem_pw(i,k,n) = c0t(i,k) * dz * tem * eta(i,k)
+                    ecko(i,k,kk) = tem + ecko(i,k,kk) - chem_c(i,k,n)
+                  endif
+                endif
+@@ -3527,9 +3527,9 @@ c
+                       wet_dep(i,k,n) = wet_dep(i,k,n) - tem
+                       new_qtr(i,k,kk) = 0.0_conv_wp
+                     else
+-                      wet_dep(i,k,n) = 0.0_conv_wp
+                       new_qtr(i,k,kk) = new_qtr(i,k,kk)
+      &                                + wet_dep(i,k,n) / dp
++                      wet_dep(i,k,n) = 0.0_conv_wp
+                     endif
+                   endif
+                 endif
+diff --git a/physics/CONV/SAMF/samfshalcnv.f b/physics/CONV/SAMF/samfshalcnv.f
+index 0245f37c..850cba87 100644
+--- a/physics/CONV/SAMF/samfshalcnv.f
++++ b/physics/CONV/SAMF/samfshalcnv.f
+@@ -1162,7 +1162,7 @@ c
+                    chem_c(i,k,n) = escav * real(fscav(n), kind=conv_wp)
+      &                            * ecko(i,k,kk)
+                    tem = chem_c(i,k,n) / (1.0_conv_wp + c0t(i,k) * dz)
+-                   chem_pw(i,k,n) = c0t(i,k) * dz * tem * eta(i,k-1)
++                   chem_pw(i,k,n) = c0t(i,k) * dz * tem * eta(i,k)
+                    ecko(i,k,kk) = tem + ecko(i,k,kk) - chem_c(i,k,n)
+                  endif
+                endif
+@@ -2486,9 +2486,9 @@ c
+                       wet_dep(i,k,n) = wet_dep(i,k,n) - tem
+                       new_qtr(i,k,kk) = 0.0_conv_wp
+                     else
+-                      wet_dep(i,k,n) = 0.0_conv_wp
+                       new_qtr(i,k,kk) = new_qtr(i,k,kk) + wet_dep(i,k,n)
+      &                                / dp
++                      wet_dep(i,k,n) = 0.0_conv_wp
+                     endif
+                   endif
+                 endif

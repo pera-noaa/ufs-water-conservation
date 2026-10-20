@@ -1,0 +1,24 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -779,7 +779,8 @@
+ 
+   do iz = isnow+1, 0
+       bdsnoi(iz) = (snice(iz)+snliq(iz))/dzsnso(iz)
+-      cvsno(iz) = cice*snicev(iz)+cwat*snliqv(iz)
++      ! cs1: heat capacity per mass (the volume fractions are capped for porosity and conductivity)
++      cvsno(iz) = (cice/denice*snice(iz) + cwat/denh2o*snliq(iz))/dzsnso(iz)
+ !      cvsno(iz) = 0.525e06                          ! constant
+   enddo
+ 
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -2658,7 +2658,8 @@
+ 
+   do iz = isnow+1, 0
+       bdsnoi(iz) = (snice(iz)+snliq(iz))/dzsnso(iz)
+-      cvsno(iz) = cice*snicev(iz)+cwat*snliqv(iz)
++      ! cs1: heat capacity per mass (the volume fractions are capped for porosity and conductivity)
++      cvsno(iz) = (cice/denice*snice(iz) + cwat/denh2o*snliq(iz))/dzsnso(iz)
+ !      cvsno(iz) = 0.525e06                          ! constant
+   enddo
+ 

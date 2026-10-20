@@ -1,0 +1,11 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+patching file UFSATM/ccpp/driver/GFS_restart.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta

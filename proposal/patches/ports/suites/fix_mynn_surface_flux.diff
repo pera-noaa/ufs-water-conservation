@@ -1,0 +1,37 @@
+--- a/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
++++ b/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+@@ -4388,7 +4388,7 @@
+     a(k)=  -dtz(k)*khdz(k)*rhoinv(k)
+     b(k)=1.+dtz(k)*(khdz(k+1)+khdz(k))*rhoinv(k) - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+     c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)           - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+-    d(k)=sqw(k)  + dtz(k)*rhosfc*flq*rhoinv(k) + qcd(k)*delt - dtz(k)*rhoinv(k)*s_awqt(k+1) - dtz(k)*rhoinv(k)*sd_awqt(k+1)
++    d(k)=sqw(k)  + dtz(k)*rho(kts)*flq*rhoinv(k) + qcd(k)*delt - dtz(k)*rhoinv(k)*s_awqt(k+1) - dtz(k)*rhoinv(k)*sd_awqt(k+1)
+ 
+     DO k=kts+1,kte-1
+        a(k)=  -dtz(k)*khdz(k)*rhoinv(k)     + 0.5*dtz(k)*rhoinv(k)*s_aw(k) + 0.5*dtz(k)*rhoinv(k)*sd_aw(k)
+@@ -4453,7 +4453,7 @@
+     a(k)=  -dtz(k)*khdz(k)*rhoinv(k)
+     b(k)=1.+dtz(k)*(khdz(k+1)+khdz(k))*rhoinv(k) - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+     c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)           - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+-    d(k)=sqc(k)  + dtz(k)*rhosfc*flqc*rhoinv(k) + qcd(k)*delt &
++    d(k)=sqc(k)  + dtz(k)*rho(kts)*flqc*rhoinv(k) + qcd(k)*delt &
+        &  - dtz(k)*rhoinv(k)*s_awqc(k+1) - dtz(k)*rhoinv(k)*sd_awqc(k+1) + &
+        &  det_sqc(k)*delt
+ 
+@@ -4511,14 +4511,14 @@
+     qvflux = flqv
+     if (qvflux < 0.0) then
+        !do not allow specified surface flux to reduce qv below 1e-8 kg/kg
+-       qvflux = max(qvflux, (min(0.9*sqv(kts) - 1e-8, 0.0)/dtz(kts)))
++       qvflux = max(qvflux, -max(0.9*sqv(kts) - 1e-8, 0.0)/dtz(kts))
+     endif
+ 
+ !rho-weighted:  rhosfc*X*rhoinv(k)
+     a(k)=  -dtz(k)*khdz(k)*rhoinv(k)
+     b(k)=1.+dtz(k)*(khdz(k+1)+khdz(k))*rhoinv(k) - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+     c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)           - 0.5*dtz(k)*rhoinv(k)*s_aw(k+1) - 0.5*dtz(k)*rhoinv(k)*sd_aw(k+1)
+-    d(k)=sqv(k)  + dtz(k)*rhosfc*qvflux*rhoinv(k) + qcd(k)*delt &
++    d(k)=sqv(k)  + dtz(k)*rho(kts)*qvflux*rhoinv(k) + qcd(k)*delt &
+        &  - dtz(k)*rhoinv(k)*s_awqv(k+1) - dtz(k)*rhoinv(k)*sd_awqv(k+1) + &
+        & sub_sqv(k)*delt + det_sqv(k)*delt
+ 

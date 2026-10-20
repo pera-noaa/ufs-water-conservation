@@ -1,0 +1,17 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -6860,8 +6860,12 @@
+                if (mliq(j)*mice(j)>0.) stc(j) = tfrz
+                if (mice(j) == 0.) then         ! barlage
+                   stc(j) = tfrz                ! barlage
+-                  hm(j+1) = hm(j+1) + heatr    ! barlage
+-                  xm(j+1) = hm(j+1)*dt/hfus    ! barlage
++                  if (imelt(j+1) > 0) then
++                    hm(j+1) = hm(j+1) + heatr    ! barlage
++                    xm(j+1) = hm(j+1)*dt/hfus    ! barlage
++                  else
++                    stc(j+1) = stc(j+1) + fact(j+1)*heatr  ! layer below not melting: warm it
++                  endif
+                endif 
+             end if
+          endif

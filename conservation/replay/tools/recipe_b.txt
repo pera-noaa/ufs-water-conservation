@@ -1,0 +1,14 @@
+# A.3 full6
+16_TH8 P . 1 $A/23_energy_06_TH8_thompson_count_all_sedimented_precip.diff
+17_S1K P . 1 $SRC/energy/patches/07_ccpp-samf_kirchhoff_ice_and_initial_T.diff
+18_TFH P . 1 $SRC/energy/patches/08_ccpp-thompson_frame_F_heating.diff
+19_PBK P . 1 $SRC/energy/patches/09_ccpp-satmedmfvdifq_filler_kirchhoff.diff
+20_C8 P . 1 $SRC/energy/patches/10_fv3-cpl_water_energy_bit8_water_KE.diff
+21_D7S P . 1 $SRC/energy/patches/11_fv3-cpl_ke_smooth.diff
+22_PBF P . 1 $SRC/energy/patches/12_ccpp-fv3-pbl_condensate_flux_export.diff
+CMP $E/full6/ufs-weather-model
+23_F3_01a P . 1 $A/12_latent_01a_F3_samf_scavenging_booking.diff
+24_F3_01b P . 1 $A/13_latent_01b_F3_samf_wet_deposition_export_on_all_full.diff
+25_SAMF32 P . 1 $A/14_latent_02_SAMF32_cmake_filter_dependencies.diff
+26_TOPT P . 1 $A/15_latent_03_TOPT_process_split_sum_applied_once.diff
+CMP $E/full6/ufs-weather-model

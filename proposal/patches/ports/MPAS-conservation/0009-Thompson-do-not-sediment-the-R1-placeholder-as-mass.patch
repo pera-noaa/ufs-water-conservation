@@ -1,0 +1,145 @@
+From 1909a75ea0a896c589e1725f026cdd4c32cb6b92 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Thu, 15 Oct 2026 00:33:18 -0600
+Subject: [PATCH 09/13] Thompson: do not sediment the R1 placeholder as mass
+
+In flux-form rain, ice, snow and graupel sedimentation, a layer below
+falling hydrometeors holds the R1 placeholder and inherits the fall speed
+of the layer above, and the in-loop max(R1, ...) floors re-create it every
+substep. The placeholder is therefore transported out of the lowest layer
+as if it were mass, and with the lowest-layer thresholds removed (previous
+commit) it is booked as a trace of grid-scale precipitation almost
+everywhere. Start the substeps from each layer's actual content and floor
+at 0 inside the loop.
+
+Held together with the previous commit. With this fix and Noah-MP's
+precipitation-phase rule, counting all lowest-layer sedimentation is
+within the noise of bit-perturbed initial conditions from 6 to 24 h at
+C96, but not in the first 6 h (land canopy evaporation -2.4 %): genuine
+sub-threshold traces of snow reach Noah-MP's canopy, where any intercepted
+ice hides the liquid (an open issue). Ported from the UFS held diff 13a.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/physics_wrf/module_mp_thompson.F  | 32 ++++++++++++++-----
+ 1 file changed, 24 insertions(+), 8 deletions(-)
+
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index abd7518..ad08664 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -3443,6 +3443,10 @@
+ 
+       if (ANY(L_qr .eqv. .true.)) then
+       nstep = NINT(1./onstep(1))
++      ! floored layers carry their actual rain, so the R1 placeholder is not sedimented as mass
++      do k = kts, kte
++         if (rr(k) .le. R1) rr(k) = MAX(0., (qr1d(k) + qrten(k)*DT)*rho(k))
++      enddo
+       do n = 1, nstep
+          do k = kte, kts, -1
+             sed_r(k) = vtrk(k)*rr(k)
+@@ -3453,7 +3457,7 @@
+          orho = 1./rho(k)
+          qrten(k) = qrten(k) - sed_r(k)*odzq*onstep(1)*orho
+          nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+-         rr(k) = MAX(R1, rr(k) - sed_r(k)*odzq*DT*onstep(1))
++         rr(k) = MAX(0., rr(k) - sed_r(k)*odzq*DT*onstep(1))
+          nr(k) = MAX(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
+          do k = ksed1(1), kts, -1
+             odzq = 1./dzq(k)
+@@ -3462,7 +3466,7 @@
+                                                *odzq*onstep(1)*orho
+             nrten(k) = nrten(k) + (sed_n(k+1)-sed_n(k))                 &
+                                                *odzq*onstep(1)*orho
+-            rr(k) = MAX(R1, rr(k) + (sed_r(k+1)-sed_r(k)) &
++            rr(k) = MAX(0., rr(k) + (sed_r(k+1)-sed_r(k)) &
+                                            *odzq*DT*onstep(1))
+             nr(k) = MAX(R2, nr(k) + (sed_n(k+1)-sed_n(k)) &
+                                            *odzq*DT*onstep(1))
+@@ -3505,6 +3509,10 @@
+ 
+       if (ANY(L_qi .eqv. .true.)) then
+       nstep = NINT(1./onstep(2))
++      ! floored layers carry their actual ice, so the R1 placeholder is not sedimented as mass
++      do k = kts, kte
++         if (ri(k) .le. R1) ri(k) = MAX(0., (qi1d(k) + qiten(k)*DT)*rho(k))
++      enddo
+       do n = 1, nstep
+          do k = kte, kts, -1
+             sed_i(k) = vtik(k)*ri(k)
+@@ -3515,7 +3523,7 @@
+          orho = 1./rho(k)
+          qiten(k) = qiten(k) - sed_i(k)*odzq*onstep(2)*orho
+          niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+-         ri(k) = MAX(R1, ri(k) - sed_i(k)*odzq*DT*onstep(2))
++         ri(k) = MAX(0., ri(k) - sed_i(k)*odzq*DT*onstep(2))
+          ni(k) = MAX(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
+          do k = ksed1(2), kts, -1
+             odzq = 1./dzq(k)
+@@ -3524,7 +3532,7 @@
+                                                *odzq*onstep(2)*orho
+             niten(k) = niten(k) + (sed_n(k+1)-sed_n(k))                 &
+                                                *odzq*onstep(2)*orho
+-            ri(k) = MAX(R1, ri(k) + (sed_i(k+1)-sed_i(k)) &
++            ri(k) = MAX(0., ri(k) + (sed_i(k+1)-sed_i(k)) &
+                                            *odzq*DT*onstep(2))
+             ni(k) = MAX(R2, ni(k) + (sed_n(k+1)-sed_n(k)) &
+                                            *odzq*DT*onstep(2))
+@@ -3539,6 +3547,10 @@
+ 
+       if (ANY(L_qs .eqv. .true.)) then
+       nstep = NINT(1./onstep(3))
++      ! floored layers carry their actual snow, so the R1 placeholder is not sedimented as mass
++      do k = kts, kte
++         if (rs(k) .le. R1) rs(k) = MAX(0., (qs1d(k) + qsten(k)*DT)*rho(k))
++      enddo
+       do n = 1, nstep
+          do k = kte, kts, -1
+             sed_s(k) = vtsk(k)*rs(k)
+@@ -3547,13 +3559,13 @@
+          odzq = 1./dzq(k)
+          orho = 1./rho(k)
+          qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+-         rs(k) = MAX(R1, rs(k) - sed_s(k)*odzq*DT*onstep(3))
++         rs(k) = MAX(0., rs(k) - sed_s(k)*odzq*DT*onstep(3))
+          do k = ksed1(3), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+             qsten(k) = qsten(k) + (sed_s(k+1)-sed_s(k))                 &
+                                                *odzq*onstep(3)*orho
+-            rs(k) = MAX(R1, rs(k) + (sed_s(k+1)-sed_s(k)) &
++            rs(k) = MAX(0., rs(k) + (sed_s(k+1)-sed_s(k)) &
+                                            *odzq*DT*onstep(3))
+          enddo
+ 
+@@ -3566,6 +3578,10 @@
+ 
+       if (ANY(L_qg .eqv. .true.)) then
+       nstep = NINT(1./onstep(4))
++      ! floored layers carry their actual graupel, so the R1 placeholder is not sedimented as mass
++      do k = kts, kte
++         if (rg(k) .le. R1) rg(k) = MAX(0., (qg1d(k) + qgten(k)*DT)*rho(k))
++      enddo
+       do n = 1, nstep
+          do k = kte, kts, -1
+             sed_g(k) = vtgk(k)*rg(k)
+@@ -3574,13 +3590,13 @@
+          odzq = 1./dzq(k)
+          orho = 1./rho(k)
+          qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+-         rg(k) = MAX(R1, rg(k) - sed_g(k)*odzq*DT*onstep(4))
++         rg(k) = MAX(0., rg(k) - sed_g(k)*odzq*DT*onstep(4))
+          do k = ksed1(4), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+             qgten(k) = qgten(k) + (sed_g(k+1)-sed_g(k))                 &
+                                                *odzq*onstep(4)*orho
+-            rg(k) = MAX(R1, rg(k) + (sed_g(k+1)-sed_g(k)) &
++            rg(k) = MAX(0., rg(k) + (sed_g(k+1)-sed_g(k)) &
+                                            *odzq*DT*onstep(4))
+          enddo
+ 
+-- 
+2.55.0
+

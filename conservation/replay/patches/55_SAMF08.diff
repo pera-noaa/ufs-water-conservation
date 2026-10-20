@@ -1,0 +1,81 @@
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+@@ -314,6 +314,8 @@
+       real(kind=conv_wp), parameter :: trcmax = 0.5_conv_wp
+ !
+       logical do_aerosols, totflg, cnvflg(im), asqecflg(im), flg(im)
++!  columns the cellular-automaton trigger can turn on again (ca_trigger)
++      logical caon(im)
+ !
+ !    asqecflg: flag for the quasi-equilibrium assumption of Arakawa-Schubert
+ !
+@@ -416,6 +418,9 @@
+       wet_dep = 0.0_conv_wp
+ !
+       do i=1,im
++        caon(i) = .false.
++        if(do_ca .and. ca_trigger) caon(i) =
++     &    real(ca_deep(i), kind=conv_wp) > real(nthresh, kind=conv_wp)
+         cnvflg(i) = .true.
+         if(do_mynnedmf) then
+             if(real(maxMF(i), kind=conv_wp) .gt. 0.0_conv_wp)
+@@ -852,7 +857,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -915,7 +922,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -972,7 +981,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1022,7 +1033,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1447,7 +1460,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i = 1, im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1533,7 +1548,9 @@
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif

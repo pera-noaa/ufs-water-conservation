@@ -1,0 +1,6 @@
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+Hunk #1 succeeded at 1367 (offset 9 lines).
+Hunk #2 succeeded at 3553 (offset 9 lines).
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+Hunk #1 succeeded at 1171 (offset 10 lines).
+Hunk #2 succeeded at 2497 (offset 10 lines).

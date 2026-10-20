@@ -1,0 +1,40 @@
+From 5315361af3087a9dd4bc623f204770ecc7624060 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 20:51:41 -0600
+Subject: [PATCH 5/6] phys/TEMPO: TEMPO water-closure series (round 2) on
+ 881614f
+
+TEMPO 881614f creates water: in em_quarter_ss (supercell, doubly
+periodic, no surface fluxes, 2 h, mp_physics=88) domain water plus
+accumulated precipitation grows by +1.111e-2 of the precipitation, and
+the per-call meter in WRF's dry mass shows +1.167e-2 from TEMPO alone.
+
+Moves the submodule to 881614f plus the three round-2 TEMPO commits
+(closing the water budget: settling, graupel re-closure, sedimentation
+density, clips and surface threshold; semi-Lagrangian sedimentation falls
+back to piecewise constant on a negative edge; water at or below r1 goes
+to vapour instead of being deleted). The submodule tree is identical to
+git am of the exported round-2 patches on 881614f.
+
+Measured in em_quarter_ss, 2 h, mp_physics=88:
+- per-call meter (WRF dry mass): +1.167e-2 -> -1.385e-4 of precipitation;
+  in TEMPO's own density: +1.181e-2 -> +8.2e-7 (the remainder is the
+  layer-mass mismatch, fixed in the next commit);
+- domain W+P residual at 2 h: +1.111e-2 -> -7.22e-4 of precipitation
+  (round 1 of the series: -7.03e-4).
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ phys/TEMPO | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/phys/TEMPO b/phys/TEMPO
+index 881614f6..85e0fe9e 160000
+--- a/phys/TEMPO
++++ b/phys/TEMPO
+@@ -1 +1 @@
+-Subproject commit 881614f68aa65de8f383d56139162049baf600fa
++Subproject commit 85e0fe9e30e38cbbe86e268433a640a02655824a
+-- 
+2.55.0
+

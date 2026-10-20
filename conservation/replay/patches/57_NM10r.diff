@@ -1,0 +1,37 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:48.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -1168,7 +1168,7 @@
+     integer              :: iopt_diag !2m t/q diagnostic approach (1->external GFS sfc_diag 2->original NoahMP 2-title 3->NoahMP
+     integer              :: noahmp_fwet_opt    !< Noah-MP canopy wetted fraction: 0 stock, 1 mass-weighted, 2 larger, 3 dominant phase
+     integer              :: noahmp_canopy_heat !< Noah-MP canopy heat: 0 stock, 1 massless canopy, 2 heat storage over the step
+-    logical              :: precip_phase_host  !< flag: surfaces take the host convective snow decision and the atmosphere pays hfus for it
++    logical              :: precip_phase_host  !< flag: glaciers take the host convective snow decision and the atmosphere pays hfus for it
+     logical              :: noahmp_sw_radshare !< flag: Noah-MP absorbs the radiation share of net shortwave for the land
+     logical              :: lw_sfc_consistent  !< flag: lowest layer gets the surface-booked minus radiation-time net longwave
+     logical              :: sfc_evap_enthalpy  !< flag: lowest layer gets the land evaporation enthalpy the vapour does not carry
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 13:12:48.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -1213,7 +1213,8 @@
+           fpice = 0.0
+         endif
+ 	
+-        ! the microphysics fraction is for grid-scale precipitation; convective precipitation is snow below freezing
++        ! the microphysics fraction is for grid-scale precipitation; convective precipitation takes the host's
++        ! decision (srflag), or is snow below freezing when the host gives none
+         if(prcpconv + prcpshcv > 0.) then
+           fpcv = 0.0
+           if(sfctmp < tfrz) fpcv = 1.0
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:12:48.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -1331,9 +1331,9 @@
+ 
+         ice_flag = 0 
+ 
+-        ! PH2: the host's convective decision (GFS_MP_generic_post: csnow = rainc when tsfc < 273.15)
++        ! the host's convective decision (GFS_MP_generic_post: csnow = rainc when tsfc < 273.15), from srflag
+         fpcvh = -1.
+-        if (pph .and. precip_convective > 0.) then
++        if (precip_convective > 0.) then
+           fpcvh = 0.
+           if (srflag(i)*precipitation_forcing - (precip_snow + precip_graupel + precip_hail) &
+               > 0.5*precip_convective) fpcvh = 1.

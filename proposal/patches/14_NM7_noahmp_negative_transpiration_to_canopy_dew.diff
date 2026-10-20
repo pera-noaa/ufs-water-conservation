@@ -1,0 +1,21 @@
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7336,7 +7336,8 @@
+       if (.not.frozen_canopy) then             ! barlage: change to frozen_canopy
+         etran = max( fctr/hvap, 0. )
+         qevac = max( fcev/hvap, 0. )
+-        qdewc = abs( min( fcev/hvap, 0. ) )
++        ! condensation in the transpiration pathway (fctr < 0) is dew on the canopy
++        qdewc = abs( min( fcev/hvap, 0. ) ) + abs( min( fctr/hvap, 0. ) )
+         qsubc = 0.
+         qfroc = 0.
+       else
+@@ -7344,7 +7345,7 @@
+         qevac = 0.
+         qdewc = 0.
+         qsubc = max( fcev/hsub, 0. )
+-        qfroc = abs( min( fcev/hsub, 0. ) )
++        qfroc = abs( min( fcev/hsub, 0. ) ) + abs( min( fctr/hsub, 0. ) )
+       endif
+ 
+ ! canopy water balance. for convenience allow dew to bring canliq above

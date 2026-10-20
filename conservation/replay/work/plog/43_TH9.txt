@@ -1,0 +1,12 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1087 (offset 1 line).
+Hunk #2 succeeded at 3796 (offset 6 lines).
+Hunk #3 succeeded at 4355 (offset 9 lines).
+Hunk #4 succeeded at 5110 (offset 10 lines).
+Hunk #5 succeeded at 7232 (offset 13 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 5267 (offset 7 lines).
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta
+stage TH9 re-anchored: none | rejects left: none

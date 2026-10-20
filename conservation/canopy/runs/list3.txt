@@ -1,0 +1,4 @@
+qF1c|fv3_c_b1.exe|noahmp_fwet_opt=1,consv_te=0.999|||all
+qT8F2|fv3_c_b1.exe|noahmp_fwet_opt=2||CANOPY_TH8_OFF=1|all
+qT9F2|fv3_c_b1.exe|noahmp_fwet_opt=2,thompson_sed_actual=.true.|||all
+qF2c|fv3_c_b1.exe|noahmp_fwet_opt=2,consv_te=0.999|||all

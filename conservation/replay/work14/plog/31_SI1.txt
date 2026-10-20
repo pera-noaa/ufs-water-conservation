@@ -1,0 +1,2 @@
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta

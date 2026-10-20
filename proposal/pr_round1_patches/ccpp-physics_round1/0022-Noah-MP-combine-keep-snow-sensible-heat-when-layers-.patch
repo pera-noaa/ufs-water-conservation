@@ -1,0 +1,251 @@
+From 4162b6715e4238b339a6ffe095124942e49b604e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:54 -0500
+Subject: [PATCH 22/29] Noah-MP combine: keep snow sensible heat when layers
+ merge or vanish
+
+Three energy leaks in combine (both modules):
+- a thin layer merged by mass keeps the receiver's temperature;
+- snow that stops being layered drops its layers' sensible heat;
+- truncated bulk snow changes the top soil layer's ice at that layer's
+  temperature without its heat.
+
+Merge and hand over the sensible heat with the heat capacities csnow uses
+(per mass) and the top soil layer's heat capacity, as thermoprop.
+
+Measured (C96 control_p8_ugwpv1, 24 h, with the csnow and combo fixes):
+Noah-MP soil energy residual 3.9e-4 -> 4.3e-8 W/m2, all of it at step 1
+(the initial state). With them and the combine-count fix: T rms 0.147 K;
+land fields at noise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ .../Land/Noahmp/module_sf_noahmp_glacier.F90  | 29 ++++++++++++
+ .../Land/Noahmp/module_sf_noahmplsm.F90       | 46 ++++++++++++++++++-
+ 2 files changed, 74 insertions(+), 1 deletion(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index 260ad46c..e5ed0a44 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -2888,6 +2888,13 @@ end if   ! opt_gla == 1
+   end subroutine compact_glacier
+ ! ==================================================================================================
+ !>\ingroup NoahMP_LSM
++  real (kind=kind_phys) function snow_hcap_glacier(wice, wliq, dz)
++    ! sl2: sensible heat capacity of a snow layer (j/m2/k), per mass as csnow uses it (cs1)
++    real (kind=kind_phys), intent(in) :: wice, wliq, dz
++    snow_hcap_glacier = 0.
++    if (dz > 0.) snow_hcap_glacier = cice/denice*max(0.,wice) + cwat/denh2o*max(0.,wliq)
++  end function snow_hcap_glacier
++
+   subroutine combine_glacier (nsnow    ,nsoil  ,                         & !in
+                               isnow    ,sh2o   ,stc    ,snice  ,snliq  , & !inout
+                               dzsnso   ,sice   ,snowh  ,sneqv  ,         & !inout
+@@ -2922,6 +2929,7 @@ end if   ! opt_gla == 1
+     integer :: neibor                !< adjacent node selected for combination
+     real (kind=kind_phys)    :: zwice                 !< total ice mass in snow
+     real (kind=kind_phys)    :: zwliq                 !< total liquid water in snow
++    real (kind=kind_phys)    :: hsn, hgnd, hc1        ! sl2: snow heat merged / to the ground
+     real (kind=kind_phys)    :: dzmin(3)              !< minimum of top snow layer
+ !    data dzmin /0.045, 0.05, 0.2/
+     data dzmin /0.025, 0.025, 0.1/  ! mb: change limit
+@@ -2929,17 +2937,26 @@ end if   ! opt_gla == 1
+ 
+        isnow_old = isnow
+ 
++       hgnd = 0.
+        do j = isnow_old+1,0
+           if (snice(j) <= .1) then
+              if(j /= 0) then
++                hsn = snow_hcap_glacier(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz) &
++                    + snow_hcap_glacier(snice(j+1),snliq(j+1),dzsnso(j+1))*(stc(j+1)-tfrz)
+                 snliq(j+1) = snliq(j+1) + snliq(j)
+                 snice(j+1) = snice(j+1) + snice(j)
+                 dzsnso(j+1) = dzsnso(j+1) + dzsnso(j)
++                hc1 = snow_hcap_glacier(snice(j+1),snliq(j+1),dzsnso(j+1))
++                if (hc1 > 0.) stc(j+1) = tfrz + hsn/hc1
+              else
+                if (isnow < -1) then
++                hsn = snow_hcap_glacier(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz) &
++                    + snow_hcap_glacier(snice(j-1),snliq(j-1),dzsnso(j-1))*(stc(j-1)-tfrz)
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                 dzsnso(j-1) = dzsnso(j-1) + dzsnso(j)
++                hc1 = snow_hcap_glacier(snice(j-1),snliq(j-1),dzsnso(j-1))
++                if (hc1 > 0.) stc(j-1) = tfrz + hsn/hc1
+                else
+                  if(snice(j) >= 0.) then
+                   ponding1 = snliq(j)    ! isnow will get set to zero below; ponding1 will get
+@@ -2954,6 +2971,7 @@ end if   ! opt_gla == 1
+                   sneqv = 0.0
+                   snowh = 0.0
+                  end if
++                 hgnd = hgnd + snow_hcap_glacier(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz)
+                  snliq(j) = 0.0
+                  snice(j) = 0.0
+                  dzsnso(j) = 0.0
+@@ -2982,6 +3000,10 @@ end if   ! opt_gla == 1
+           sice(1) = 0.
+        end if
+ 
++       if (hgnd /= 0.) then   ! sl2: heat of snow that is no longer layered
++          stc(1) = stc(1) + hgnd/(1.e6*(0.8194 + 0.1309*0.5*dzsnso(1))*dzsnso(1))
++          hgnd = 0.
++       endif
+        if(isnow ==0) return   ! mb: get out if no longer multi-layer
+ 
+        sneqv  = 0.
+@@ -3001,6 +3023,9 @@ end if   ! opt_gla == 1
+ 
+        if (snowh < 0.025 .and. isnow < 0 ) then ! mb: change limit
+ !       if (snowh < 0.05 .and. isnow < 0 ) then
++          do i = isnow+1, 0
++             hgnd = hgnd + snow_hcap_glacier(snice(i),snliq(i),dzsnso(i))*(stc(i)-tfrz)
++          enddo
+           isnow  = 0
+           sneqv = zwice
+           ponding2 = ponding2 + zwliq           ! limit of isnow < 0 means input ponding
+@@ -3068,6 +3093,10 @@ end if   ! opt_gla == 1
+ 
+        end if
+ 
++       if (hgnd /= 0.) then   ! sl2: heat of snow that is no longer layered
++          stc(1) = stc(1) + hgnd/(1.e6*(0.8194 + 0.1309*0.5*dzsnso(1))*dzsnso(1))
++          hgnd = 0.
++       endif
+   end subroutine combine_glacier
+ ! ==================================================================================================
+ 
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 4f2ddadd..e7229152 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7627,6 +7627,21 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+ !>\ingroup NoahMP_LSM
+ !!
++  real (kind=kind_phys) function snow_hcap(wice, wliq, dz)
++    ! sl2: sensible heat capacity of a snow layer (j/m2/k), per mass as csnow uses it (cs1)
++    real (kind=kind_phys), intent(in) :: wice, wliq, dz
++    snow_hcap = 0.
++    if (dz > 0.) snow_hcap = cice/denice*max(0.,wice) + cwat/denh2o*max(0.,wliq)
++  end function snow_hcap
++
++  real (kind=kind_phys) function soil_hcap1(parameters, sh2o1, sice1, dz)
++    ! sl2: heat capacity of the top soil layer (j/m2/k), as thermoprop
++    type (noahmp_parameters), intent(in) :: parameters
++    real (kind=kind_phys), intent(in) :: sh2o1, sice1, dz
++    soil_hcap1 = dz*(sh2o1*cwat + (1.0-parameters%smcmax(1))*parameters%csoil &
++               + (parameters%smcmax(1)-sh2o1-sice1)*cpair + sice1*cice)
++  end function soil_hcap1
++
+   subroutine combine (parameters,nsnow  ,nsoil  ,iloc   ,jloc   ,         & !in
+                       isnow  ,sh2o   ,stc    ,snice  ,snliq  , & !inout
+                       dzsnso ,sice   ,snowh  ,sneqv  ,         & !inout
+@@ -7664,6 +7679,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+     integer :: neibor                ! adjacent node selected for combination
+     real (kind=kind_phys)    :: zwice                 ! total ice mass in snow
+     real (kind=kind_phys)    :: zwliq                 ! total liquid water in snow
++    real (kind=kind_phys)    :: hsn, hgnd, hc1        ! sl2: snow heat merged / to the ground
+ 
+     real (kind=kind_phys)    :: dzmin(3)              ! minimum of top snow layer
+ !    data dzmin /0.045, 0.05, 0.2/
+@@ -7672,17 +7688,26 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+        isnow_old = isnow
+ 
++       hgnd = 0.
+        do j = isnow_old+1,0
+           if (snice(j) <= .1) then
+              if(j /= 0) then
++                hsn = snow_hcap(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz) &
++                    + snow_hcap(snice(j+1),snliq(j+1),dzsnso(j+1))*(stc(j+1)-tfrz)
+                 snliq(j+1) = snliq(j+1) + snliq(j)
+                 snice(j+1) = snice(j+1) + snice(j)
+                 dzsnso(j+1) = dzsnso(j+1) + dzsnso(j)
++                hc1 = snow_hcap(snice(j+1),snliq(j+1),dzsnso(j+1))
++                if (hc1 > 0.) stc(j+1) = tfrz + hsn/hc1
+              else
+                if (isnow < -1) then
++                hsn = snow_hcap(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz) &
++                    + snow_hcap(snice(j-1),snliq(j-1),dzsnso(j-1))*(stc(j-1)-tfrz)
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                 dzsnso(j-1) = dzsnso(j-1) + dzsnso(j)
++                hc1 = snow_hcap(snice(j-1),snliq(j-1),dzsnso(j-1))
++                if (hc1 > 0.) stc(j-1) = tfrz + hsn/hc1
+                else
+                  if(snice(j) >= 0.) then
+                   ponding1 = snliq(j)    ! isnow will get set to zero below; ponding1 will get 
+@@ -7691,12 +7716,15 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                  else   ! snice over-sublimated earlier
+                   ponding1 = snliq(j) + snice(j)
+                   if(ponding1 < 0.) then  ! if snice and snliq sublimates remove from soil
++                   hc1 = soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1))
+                    sice(1) = max(0.0,sice(1)+ponding1/(dzsnso(1)*1000.))
++                   stc(1) = tfrz + hc1*(stc(1)-tfrz)/soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1))
+                    ponding1 = 0.0
+                   end if
+                   sneqv = 0.0
+                   snowh = 0.0
+                  end if
++                 hgnd = hgnd + snow_hcap(snice(j),snliq(j),dzsnso(j))*(stc(j)-tfrz)
+                  snliq(j) = 0.0
+                  snice(j) = 0.0
+                  dzsnso(j) = 0.0
+@@ -7725,6 +7753,10 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+           sice(1) = 0.
+        end if
+ 
++       if (hgnd /= 0.) then   ! sl2: heat of snow that is no longer layered
++          stc(1) = stc(1) + hgnd/(soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1)))
++          hgnd = 0.
++       endif
+        if(isnow ==0) return   ! mb: get out if no longer multi-layer
+ 
+        sneqv  = 0.
+@@ -7744,6 +7776,9 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+        if (snowh < 0.025 .and. isnow < 0 ) then ! mb: change limit
+ !       if (snowh < 0.05 .and. isnow < 0 ) then
++          do i = isnow+1, 0
++             hgnd = hgnd + snow_hcap(snice(i),snliq(i),dzsnso(i))*(stc(i)-tfrz)
++          enddo
+           isnow  = 0
+           sneqv = zwice
+           ponding2 = zwliq           ! limit of isnow < 0 means input ponding
+@@ -7811,6 +7846,10 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+        end if
+ 
++       if (hgnd /= 0.) then   ! sl2: heat of snow that is no longer layered
++          stc(1) = stc(1) + hgnd/(soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1)))
++          hgnd = 0.
++       endif
+   end subroutine combine
+ 
+ !== begin divide ===================================================================================
+@@ -8162,6 +8201,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+    real (kind=kind_phys), dimension(-nsnow+1:0) :: epore     !effective porosity = porosity - vol_ice
+    real (kind=kind_phys) :: propor, temp
+    real (kind=kind_phys) :: ponding1, ponding2
++   real (kind=kind_phys) :: hc1
+    real (kind=kind_phys), parameter :: max_liq_mass_fraction = 0.4
+ ! ----------------------------------------------------------------------
+ 
+@@ -8200,7 +8240,11 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+    if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
+      ! the truncated snow goes to the top soil layer as ice
+-     if(isnow == 0) sice(1) = sice(1) + sneqv/(dzsnso(1)*1000.)
++     if(isnow == 0) then
++        hc1 = soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1))
++        sice(1) = sice(1) + sneqv/(dzsnso(1)*1000.)
++        stc(1) = tfrz + hc1*(stc(1)-tfrz)/soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1))  ! sl2: joins at tfrz
++     endif
+      snowh = 0.0
+      sneqv = 0.0
+    end if

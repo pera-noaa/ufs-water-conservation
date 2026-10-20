@@ -1,0 +1,73 @@
+From fe84daea7d282e3ba8b21712ad72be056f88ff8e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:54 -0500
+Subject: [PATCH 24/29] Noah-MP combo: heat capacities per kg
+
+combo multiplies cice and cwat (J m-3 K-1) by layer masses (kg m-2), and its
+branches set T = tfrz or drop hfus*wliq without a phase change.
+
+Use cice/denice and cwat/denh2o, and one enthalpy expression; phasechange
+settles the phases. Both modules.
+
+Effect measured with the combine fix (sensible heat when layers merge).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ .../Land/Noahmp/module_sf_noahmp_glacier.F90        | 13 ++++---------
+ .../SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90  | 13 ++++---------
+ 2 files changed, 8 insertions(+), 18 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index 25203d7f..b33fbde2 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -3135,17 +3135,12 @@ end if   ! opt_gla == 1
+     dzc = dz+dz2
+     wicec = (wice+wice2)
+     wliqc = (wliq+wliq2)
+-    h = (cice*wice+cwat*wliq) * (t-tfrz)+hfus*wliq
+-    h2= (cice*wice2+cwat*wliq2) * (t2-tfrz)+hfus*wliq2
++    ! cb1: per-kg heat capacities (cice, cwat are per m3); phases kept, phasechange settles them
++    h = (cice/denice*wice+cwat/denh2o*wliq) * (t-tfrz)+hfus*wliq
++    h2= (cice/denice*wice2+cwat/denh2o*wliq2) * (t2-tfrz)+hfus*wliq2
+ 
+     hc = h + h2
+-    if(hc < 0.)then
+-       tc = tfrz + hc/(cice*wicec + cwat*wliqc)
+-    else if (hc.le.hfus*wliqc) then
+-       tc = tfrz
+-    else
+-       tc = tfrz + (hc - hfus*wliqc) / (cice*wicec + cwat*wliqc)
+-    end if
++    tc = tfrz + (hc - hfus*wliqc) / (cice/denice*wicec + cwat/denh2o*wliqc)
+ 
+     dz = dzc
+     wice = wicec
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 57ffae6f..101d5897 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -8020,17 +8020,12 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+     dzc = dz+dz2
+     wicec = (wice+wice2)
+     wliqc = (wliq+wliq2)
+-    h = (cice*wice+cwat*wliq) * (t-tfrz)+hfus*wliq
+-    h2= (cice*wice2+cwat*wliq2) * (t2-tfrz)+hfus*wliq2
++    ! cb1: per-kg heat capacities (cice, cwat are per m3); phases kept, phasechange settles them
++    h = (cice/denice*wice+cwat/denh2o*wliq) * (t-tfrz)+hfus*wliq
++    h2= (cice/denice*wice2+cwat/denh2o*wliq2) * (t2-tfrz)+hfus*wliq2
+ 
+     hc = h + h2
+-    if(hc < 0.)then
+-       tc = tfrz + hc/(cice*wicec + cwat*wliqc)
+-    else if (hc.le.hfus*wliqc) then
+-       tc = tfrz
+-    else
+-       tc = tfrz + (hc - hfus*wliqc) / (cice*wicec + cwat*wliqc)
+-    end if
++    tc = tfrz + (hc - hfus*wliqc) / (cice/denice*wicec + cwat/denh2o*wliqc)
+ 
+     dz = dzc
+     wice = wicec

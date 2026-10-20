@@ -1,0 +1,1017 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/data/GFS_typedefs.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -372,6 +372,7 @@
+     real (kind=kind_phys), pointer :: albdirnir_lnd_rad (:) => null()  !< land albedo the radiation used (direct NIR)
+     real (kind=kind_phys), pointer :: albdifvis_lnd_rad (:) => null()  !< land albedo the radiation used (diffuse visible)
+     real (kind=kind_phys), pointer :: albdifnir_lnd_rad (:) => null()  !< land albedo the radiation used (diffuse NIR)
++    real (kind=kind_phys), pointer :: ulw_lnd_rad (:) => null()  !< land upward LW at the last radiation call
+ 
+     real (kind=kind_phys), pointer :: albdirvis_ice (:) => null()  !<
+     real (kind=kind_phys), pointer :: albdifvis_ice (:) => null()  !<
+@@ -1158,6 +1159,9 @@
+     logical              :: sfc_evap_enthalpy  !< flag: lowest layer gets the land evaporation enthalpy the vapour does not carry
+     logical              :: noahmp_heat_advect !< flag: soil water moved between layers carries its sensible heat
+     logical              :: noahmp_kirchhoff   !< flag: Noah-MP phase change with L_f(T) consistent with its heat capacities
++    logical              :: sfc_precip_enthalpy!< flag: precipitation lands with its frame-F enthalpy (Noah-MP, sea ice)
++    logical              :: lw_sfc_return      !< flag: land keeps the LW it emits beyond the radiation-time land emission
++    logical              :: noahmp_pore_air    !< flag: Noah-MP soil pores keep the air heat when water moves
+                                       !2-title + internal GFS sfc_diag  )
+ 
+     ! -- RUC LSM options
+@@ -2526,6 +2530,7 @@
+     allocate (Sfcprop%albdirnir_lnd_rad (IM))
+     allocate (Sfcprop%albdifvis_lnd_rad (IM))
+     allocate (Sfcprop%albdifnir_lnd_rad (IM))
++    allocate (Sfcprop%ulw_lnd_rad (IM))
+     allocate (Sfcprop%emis_lnd (IM))
+     allocate (Sfcprop%emis_ice (IM))
+     allocate (Sfcprop%emis_wat (IM))
+@@ -2587,6 +2592,7 @@
+     Sfcprop%albdirnir_lnd_rad = -1.0_kind_phys
+     Sfcprop%albdifvis_lnd_rad = -1.0_kind_phys
+     Sfcprop%albdifnir_lnd_rad = -1.0_kind_phys
++    Sfcprop%ulw_lnd_rad = -1.0_kind_phys
+     Sfcprop%emis_lnd  = clear_val
+     Sfcprop%emis_ice  = clear_val
+     Sfcprop%emis_wat  = clear_val
+@@ -3835,6 +3841,9 @@
+     logical              :: sfc_evap_enthalpy  = .false.
+     logical              :: noahmp_heat_advect = .false.
+     logical              :: noahmp_kirchhoff   = .false.
++    logical              :: sfc_precip_enthalpy= .false.
++    logical              :: lw_sfc_return      = .false.
++    logical              :: noahmp_pore_air    = .false.
+                                                  !3->NoahMP 2-title + internal GFS sfc_diag  )
+ 
+     integer              :: mosaic_lu      =  0  ! 1 - used of fractional landuse in RUC lsm
+@@ -4320,6 +4329,7 @@
+                                noahmp_canopy_heat, precip_phase_host, noahmp_sw_radshare,   &
+                                lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect,    &
+                                noahmp_kirchhoff,                                            &
++                               sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air,         &
+                           !    RUC lsm options
+                                add_fire_heat_flux,                                          &
+                                mosaic_lu, mosaic_soil, isncond_opt, isncovr_opt,            &
+@@ -5233,6 +5243,9 @@
+     Model%sfc_evap_enthalpy = sfc_evap_enthalpy
+     Model%noahmp_heat_advect = noahmp_heat_advect
+     Model%noahmp_kirchhoff = noahmp_kirchhoff
++    Model%sfc_precip_enthalpy = sfc_precip_enthalpy
++    Model%lw_sfc_return = lw_sfc_return
++    Model%noahmp_pore_air = noahmp_pore_air
+ 
+ ! RUC lsm options
+     Model%mosaic_lu        = mosaic_lu
+@@ -7272,6 +7285,9 @@
+         print *, ' sfc_evap_enthalpy : ', Model%sfc_evap_enthalpy
+         print *, ' noahmp_heat_advect : ', Model%noahmp_heat_advect
+         print *, ' noahmp_kirchhoff : ', Model%noahmp_kirchhoff
++        print *, ' sfc_precip_enthalpy : ', Model%sfc_precip_enthalpy
++        print *, ' lw_sfc_return : ', Model%lw_sfc_return
++        print *, ' noahmp_pore_air : ', Model%noahmp_pore_air
+       elseif (Model%lsm == Model%lsm_ruc) then
+         print *,' RUC Land Surface Model used'
+         print *, 'The Physics options are'
+--- fx/ufs-weather-model/UFSATM/ccpp/data/GFS_typedefs.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -1896,6 +1896,13 @@
+   dimensions = (horizontal_dimension)
+   type = real
+   kind = kind_phys
++[ulw_lnd_rad]
++  standard_name = surface_upwelling_longwave_flux_over_land_on_radiation_timestep
++  long_name = land upward LW at the last radiation call
++  units = W m-2
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [albdirvis_ice]
+   standard_name = surface_albedo_direct_visible_over_ice
+   long_name = direct surface albedo visible band over ice
+@@ -5692,6 +5699,24 @@
+ [noahmp_kirchhoff]
+   standard_name = flag_for_noahmp_kirchhoff_consistent_phase_change
+   long_name = flag: Noah-MP phase change with L_f(T) consistent with its heat capacities
++  units = flag
++  dimensions = ()
++  type = logical
++[sfc_precip_enthalpy]
++  standard_name = flag_for_surface_precipitation_enthalpy
++  long_name = flag: precipitation lands with its frame-F enthalpy (Noah-MP, sea ice)
++  units = flag
++  dimensions = ()
++  type = logical
++[lw_sfc_return]
++  standard_name = flag_for_land_keeps_longwave_excess
++  long_name = flag: land keeps the LW it emits beyond the radiation-time land emission
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_pore_air]
++  standard_name = flag_for_noahmp_pore_air_heat_kept
++  long_name = flag: Noah-MP soil pores keep the air heat when water moves
+   units = flag
+   dimensions = ()
+   type = logical
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+@@ -28,7 +28,7 @@
+         graupelprv, draincprv, drainncprv, diceprv, dsnowprv, dgraupelprv, dtp, num_diag_buckets,                         &
+         dtend, dtidx, index_of_temperature, index_of_process_mp,ldiag3d, qdiag3d,dqdt_qmicro, lssav, num_dfi_radar,       &
+         fh_dfi_radar,index_of_process_dfi_radar, ix_dfi_radar, dfi_radar_tten, radar_tten_limits, fhour, prevsq,      &
+-        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp)
++        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp, sfc_precip_enthalpy, con_cliq, tgrs)
+ !
+       use machine, only: kind_phys
+       use calpreciptype_mod, only: calpreciptype
+@@ -54,6 +54,10 @@
+       real(kind=kind_phys),                    intent(in)    :: dtf, frain, con_g, rainmin, rhowater
+       logical, optional,                       intent(in)    :: precip_phase_host
+       real(kind=kind_phys),                    intent(in)    :: con_hfus, con_cp
++      logical, optional,                       intent(in)    :: sfc_precip_enthalpy
++      real(kind=kind_phys),                    intent(in)    :: con_cliq
++      real(kind=kind_phys), dimension(:,:), optional, intent(in) :: tgrs
++      real(kind=kind_phys)                                   :: lfph
+       real(kind=kind_phys), dimension(:),      intent(in)    :: rain1, xlat, xlon, tsfc
+       real(kind=kind_phys), dimension(:),      intent(inout) :: ice, snow, graupel, rainc
+       real(kind=kind_phys), dimension(:),      intent(in), optional :: rain0, ice0, snow0, graupel0
+@@ -477,8 +481,14 @@
+             endif
+             ! PH1: convective precipitation the host calls snow froze aloft; the atmosphere pays hfus
+             if (present(precip_phase_host)) then
++              ! with sfc_precip_enthalpy the surface receives the snow at the step-start T1 with its frame-F
++              ! enthalpy (FV3 c_ice): freezing the rain there releases L_f(T1) = hfus + (c_l - c_i)(T1 - T0)
++              lfph = con_hfus
++              if (present(sfc_precip_enthalpy) .and. present(tgrs)) then
++                if (sfc_precip_enthalpy) lfph = con_hfus + (con_cliq - 1972.0_kind_phys)*(tgrs(i,1) - con_t0c)
++              endif
+               if (precip_phase_host .and. csnow > zero) gt0(i,1) = gt0(i,1)                  &
+-                + con_hfus*rhowater*csnow*con_g / (con_cp*(prsi(i,1)-prsi(i,2)))
++                + lfph*rhowater*csnow*con_g / (con_cp*(prsi(i,1)-prsi(i,2)))
+             endif
+ !            if (snow0(i,1)+ice0(i,1)+graupel0(i,1)+csnow > rain0(i,1)+crain) then
+ !            if (snow0(i)+ice0(i)+graupel0(i)+csnow > 0.0) then
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+@@ -1067,3 +1067,28 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[sfc_precip_enthalpy]
++  standard_name = flag_for_surface_precipitation_enthalpy
++  long_name = flag: precipitation frame-F enthalpy
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[con_cliq]
++  standard_name = specific_heat_of_liquid_water_at_constant_pressure
++  long_name = specific heat of liquid water
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[tgrs]
++  standard_name = physics_timestep_initial_air_temperature
++  long_name = model layer mean temperature at the start of physics
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.F90
+@@ -35,7 +35,7 @@
+       sigmaf, zvfun, lheatstrg, h0facu, h0facs, hflxq, hffac, stc, lkm, iopt_lake, iopt_lake_clm, use_lake_model,                                                               &
+       grav, prsik1, prslk1, prslki, z1, ztmax_wat, ztmax_lnd, ztmax_ice, huge, errmsg, errflg,                    &
+       lw_sfc_consistent, sfc_evap_enthalpy, adjsfcdlw, adjsfculw_land, adjsfculw_ice, adjsfculw_water,           &
+-      sfcdlw_rad, sfculw_rad, hflx_evap_enth, prsi, dtdt, con_cp)
++      sfcdlw_rad, sfculw_rad, hflx_evap_enth, prsi, dtdt, con_cp, lw_sfc_return, ulw_lnd_rad)
+ 
+       implicit none
+ 
+@@ -82,6 +82,9 @@
+       real(kind=kind_phys), dimension(:,:), optional, intent(inout) :: dtdt
+       real(kind=kind_phys), intent(in) :: con_cp
+       logical :: lwc, eve
++      logical, optional, intent(in) :: lw_sfc_return
++      real(kind=kind_phys), dimension(:), optional, intent(in) :: ulw_lnd_rad
++      logical :: lwr
+       real(kind=kind_phys) :: qsfc_heat
+ 
+       ! Local variables
+@@ -325,6 +328,9 @@
+       ! LW1 / EV1: heat the lowest layer by what the surfaces booked and the atmosphere did not receive
+       lwc = .false.
+       if (present(lw_sfc_consistent)) lwc = lw_sfc_consistent
++      lwr = .false.
++      if (present(lw_sfc_return)) lwr = lw_sfc_return
++      lwc = lwc .or. lwr
+       eve = .false.
+       if (present(sfc_evap_enthalpy)) eve = sfc_evap_enthalpy
+       if (lwc .or. eve) then
+@@ -343,6 +349,11 @@
+             if (txl > zero) qsfc_heat = qsfc_heat + txl*(adjsfculw_land(i) - adjsfcdlw(i))
+             if (txi > zero) qsfc_heat = qsfc_heat + txi*(adjsfculw_ice(i) - adjsfcdlw(i))
+             if (txo > zero) qsfc_heat = qsfc_heat + txo*(adjsfculw_water(i) - adjsfcdlw(i))
++            ! lw2: the land kept what it emitted beyond its radiation-time emission
++            if (lwr .and. txl > zero .and. dry(i)) then
++              if (ulw_lnd_rad(i) >= zero) qsfc_heat = qsfc_heat                                   &
++                - txl*((adjsfculw_land(i) - adjsfcdlw(i)) - (ulw_lnd_rad(i) - sfcdlw_rad(i)))
++            endif
+             qsfc_heat = qsfc_heat - (sfculw_rad(i) - sfcdlw_rad(i))
+           endif
+           if (eve .and. dry(i)) qsfc_heat = qsfc_heat + txl*hflx_evap_enth(i)
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.meta
+@@ -1216,3 +1216,20 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[lw_sfc_return]
++  standard_name = flag_for_land_keeps_longwave_excess
++  long_name = flag: land keeps its LW excess
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[ulw_lnd_rad]
++  standard_name = surface_upwelling_longwave_flux_over_land_on_radiation_timestep
++  long_name = land upward LW at the last radiation call
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -27,6 +27,9 @@
+   real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
++  ! energy options and frame F constants, set in noahmpdrv_run (same values from every call)
++  logical               :: opt_ep_gla = .false., opt_ev_gla = .false.
++  real (kind=kind_phys) :: cl_f_gla = 4185.5, cpv_f_gla = 1846.0, ci_f_gla = 1972.0, t0_f_gla = 273.15
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+@@ -141,7 +144,7 @@
+                    qsnbot    ,ponding ,ponding1 ,ponding2 ,t2m,q2e ,z0h_total , & ! out :
+ #ifdef CCPP
+                    emissi    ,fpice   ,ch2b     , esnow   , albsnd , albsni   , &
+-                   errmsg    ,errflg, fpice_host, sw_target) 
++                   errmsg    ,errflg, fpice_host, sw_target, lwnet_ref, hevap, hprec_out, hlw_out) 
+ #else
+                    emissi    ,fpice   ,ch2b     , esnow.  , albsnd , albsni) 
+ #endif
+@@ -239,6 +242,11 @@
+   real (kind=kind_phys), optional                 , intent(in)    :: fpice_host !< host frozen fraction (srflag)
+   real (kind=kind_phys), optional                 , intent(in)    :: sw_target  !< absorbed SW imposed by the host
+   real (kind=kind_phys)                                           :: fpih, swt
++  real (kind=kind_phys), optional                 , intent(in)    :: lwnet_ref  !< radiation-time net upward LW, lw2
++  real (kind=kind_phys), optional                 , intent(out)   :: hevap      !< ev1 (w/m2)
++  real (kind=kind_phys), optional                 , intent(out)   :: hprec_out  !< ep1 heat to the top layer (j/m2)
++  real (kind=kind_phys), optional                 , intent(out)   :: hlw_out    !< lw2 heat kept (j/m2)
++  real (kind=kind_phys)                                           :: hsng, hprg, dqp, dqlw, hcg
+   real (kind=kind_phys)                           , intent(out)   :: ch2b
+   real (kind=kind_phys)                           , intent(out)   :: esnow
+   real (kind=kind_phys), dimension(1:2)           , intent(out)   :: albsnd !< snow albedo (direct)
+@@ -322,6 +330,20 @@
+     if (errflg /= 0) return
+ #endif
+ 
++    ! lw2: the glacier keeps the LW it emitted beyond the radiation-time land emission
++    dqlw = 0.
++    if (present(lwnet_ref)) then
++       if (lwnet_ref > -1.e10) then
++          dqlw = (fira - lwnet_ref)*dt
++          if (isnow < 0) then
++             hcg = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))
++          else
++             hcg = 1.e6*(0.8194 + 0.1309*0.5*dzsnso(1))*dzsnso(1)
++          endif
++          stc(isnow+1) = stc(isnow+1) + dqlw/hcg
++       endif
++    endif
++    if (present(hlw_out)) hlw_out = dqlw
+     sice = max(0.0, smc - sh2o)   
+     sneqvo  = sneqv
+ 
+@@ -336,13 +358,32 @@
+                          isnow  ,snowh  ,sneqv   ,snice    ,snliq    ,stc    , & !inout
+                          dzsnso ,sh2o   ,sice    ,ponding  ,zsnso    ,fsh    , & !inout
+                          runsrf ,runsub ,qsnow   ,ponding1 ,ponding2 ,qsnbot , & !out
+-                         fpice  ,esnow  ,fpih)                                   !out
++                         fpice  ,esnow  ,fpih   ,hsng   ,hprg )                  !out
+ 
+      if(opt_gla == 2) then
+        edir = qvap - qdew
+        fgev = edir * lathea
+      end if
+ 
++     ! ev1: per kg the glacier loses hsub (charged) plus its ice's content; the vapour carries hvap + cp_v (T1-T0)
++     if (present(hevap)) then
++        hevap = 0.
++        if (opt_ev_gla) hevap = (qvap - qdew)*(cl_f_gla*(tfrz - t0_f_gla) - cpv_f_gla*(sfctmp - t0_f_gla)) + hsng/dt
++     endif
++     ! ep1: precipitation lands with its frame-F enthalpy (no PAH on glaciers)
++     dqp = 0.
++     if (opt_ep_gla) then
++        dqp = (prcp*(1.-fpice)*cl_f_gla*(sfctmp - tfrz) &
++            + prcp*fpice*(ci_f_gla*(sfctmp - t0_f_gla) - cl_f_gla*(tfrz - t0_f_gla)))*dt - hprg
++        if (isnow < 0) then
++           hcg = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))
++        else
++           hcg = 1.e6*(0.8194 + 0.1309*0.5*dzsnso(1))*dzsnso(1)
++        endif
++        stc(isnow+1) = stc(isnow+1) + dqp/hcg
++     endif
++     if (present(hprec_out)) hprec_out = dqp
++
+ !    if(maxval(sice) < 0.0001) then
+ !      write(message,*) "glacier has melted at:",iloc,jloc," are you sure this should be a glacier point?"
+ !      call wrf_debug(10,trim(message))
+@@ -2424,7 +2465,7 @@
+                             isnow  ,snowh  ,sneqv   ,snice    ,snliq    ,stc    , & !inout
+                             dzsnso ,sh2o   ,sice    ,ponding  ,zsnso    ,fsh    , & !inout
+                             runsrf ,runsub ,qsnow   ,ponding1 ,ponding2 ,qsnbot , & !out
+-                            fpice  ,esnow  ,fpih)                                   !out
++                            fpice  ,esnow  ,fpih   ,hsng   ,hprg )                  !out
+ ! ----------------------------------------------------------------------  
+ ! code history:
+ ! initial code: guo-yue niu, oct. 2007
+@@ -2436,6 +2477,8 @@
+   integer,                                          intent(in)    :: nsoil   !< no. of soil layers
+   integer, dimension(-nsnow+1:0) ,                  intent(in)    :: imelt   !< melting state index [1-melt; 2-freeze]
+   real (kind=kind_phys),                            intent(in)    :: fpih    !< host frozen fraction (< 0: T rule)
++  real (kind=kind_phys),                            intent(out)   :: hsng    !< sublimated snow content (j/m2)
++  real (kind=kind_phys),                            intent(out)   :: hprg    !< stored precipitation content (j/m2)
+   real (kind=kind_phys),                            intent(in)    :: dt      !< main time step (s)
+   real (kind=kind_phys),                            intent(in)    :: prcp    !< precipitation (mm/s)
+   real (kind=kind_phys),                            intent(in)    :: sfctmp  !< surface air temperature [k]
+@@ -2551,7 +2594,7 @@
+                              isnow   ,snowh   ,sneqv    ,snice  ,snliq  , & !inout
+                              sh2o    ,sice    ,stc      ,dzsnso ,zsnso  , & !inout
+                              fsh     ,                                    & !inout
+-                             qsnbot  ,snoflow ,ponding1 ,ponding2)          !out
++                             qsnbot  ,snoflow ,ponding1 ,ponding2, hsng, hprg)  !out
+ 
+     !ponding: melting water from snow when there is no layer
+     
+@@ -2598,7 +2641,7 @@
+                                 isnow   ,snowh   ,sneqv    ,snice  ,snliq  , & !inout
+                                 sh2o    ,sice    ,stc      ,dzsnso ,zsnso  , & !inout
+                                 fsh     ,                                    & !inout
+-                                qsnbot  ,snoflow ,ponding1 ,ponding2)          !out
++                                qsnbot  ,snoflow ,ponding1 ,ponding2, hsng, hprg)  !out
+ ! ----------------------------------------------------------------------
+   implicit none
+ ! ----------------------------------------------------------------------
+@@ -2634,6 +2677,9 @@
+   real (kind=kind_phys),                              intent(out) :: snoflow!< glacier flow [mm]
+   real (kind=kind_phys),                              intent(out) :: ponding1 !<
+   real (kind=kind_phys),                              intent(out) :: ponding2 !<
++  real (kind=kind_phys),                              intent(out) :: hsng   !< sublimated snow content (j/m2)
++  real (kind=kind_phys),                              intent(out) :: hprg   !< stored precipitation content (j/m2)
++  real (kind=kind_phys)                                           :: hpf, hpr
+ 
+ ! local
+   integer :: iz
+@@ -2647,7 +2693,7 @@
+    call snowfall_glacier (nsoil  ,nsnow  ,dt     ,qsnow  ,snowhin, & !in
+                           sfctmp ,                                 & !in
+                           isnow  ,snowh  ,dzsnso ,stc    ,snice  , & !inout
+-                          snliq  ,sneqv  )                           !inout
++                          snliq  ,sneqv  ,hpf )                      !inout
+ 
+    if(isnow < 0) then        !when more than one layer
+      call  compact_glacier (nsnow  ,nsoil  ,dt     ,stc    ,snice  , & !in
+@@ -2670,7 +2716,8 @@
+                           isnow    ,dzsnso   ,snowh  ,sneqv  ,snice  , & !inout
+                           snliq    ,sh2o     ,sice   ,stc    ,         & !inout
+                           ponding1 ,ponding2 ,fsh    ,                 & !inout
+-                          qsnbot )                                       !out
++                          qsnbot ,hsng   ,hpr )                          !out
++   hprg = hpf + hpr
+ 
+ !the reset below keeps 600 mm of ice: the liquid it removes leaves as surface runoff and
+ !the ice it adds or removes is booked as glacier flow, so it creates no water
+@@ -2758,7 +2805,7 @@
+   subroutine snowfall_glacier (nsoil  ,nsnow  ,dt     ,qsnow  ,snowhin , & !in
+                                sfctmp ,                                  & !in
+                                isnow  ,snowh  ,dzsnso ,stc    ,snice   , & !inout
+-                               snliq  ,sneqv  )                            !inout
++                               snliq  ,sneqv  ,hpf )                       !inout
+ ! ----------------------------------------------------------------------
+ !> snow depth and density to account for the new snowfall.
+ !! new values of snow depth & density returned.
+@@ -2787,8 +2834,10 @@
+ ! local
+ 
+   integer :: newnode            !< 0-no new layers, 1-creating new layers
++  real (kind=kind_phys), intent(out) :: hpf  !< sensible content created by the snowfall (j/m2, rel. tfrz)
+ ! ----------------------------------------------------------------------
+     newnode  = 0
++    hpf = 0.
+ 
+ ! shallow snow / no layer
+ 
+@@ -2808,12 +2857,15 @@
+       snice(0) = sneqv
+       snliq(0) = 0.
+     end if
++    if (newnode == 1) hpf = snow_hcap_glacier(snice(0), snliq(0), dzsnso(0))*(stc(0) - tfrz)
+ 
+ ! snow with layers
+ 
+     if(isnow <  0 .and. newnode == 0 .and. qsnow > 0.) then
++         hpf = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz)
+          snice(isnow+1)  = snice(isnow+1)   + qsnow   * dt
+          dzsnso(isnow+1) = dzsnso(isnow+1)  + snowhin * dt
++         hpf = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz) - hpf
+     endif
+ 
+ ! ----------------------------------------------------------------------
+@@ -3314,7 +3366,7 @@
+                               isnow    ,dzsnso   ,snowh  ,sneqv  ,snice  , & !inout
+                               snliq    ,sh2o     ,sice   ,stc    ,         & !inout
+                               ponding1 ,ponding2 ,fsh    ,                 & !inout
+-                              qsnbot )                                       !out
++                              qsnbot ,hsng   ,hpr )                          !out
+ ! ----------------------------------------------------------------------
+ !> renew the mass of ice lens (snice) and liquid (snliq) of the
+ !! surface snow layer resulting from sublimation (frost) / evaporation (dew)
+@@ -3355,6 +3407,8 @@
+    real (kind=kind_phys)                        :: qin       !< water flow into the element (mm/s)
+    real (kind=kind_phys)                        :: qout      !< water flow out of the element (mm/s)
+    real (kind=kind_phys)                        :: wgdif     !< ice mass after minus sublimation
++   real (kind=kind_phys), intent(out)           :: hsng      !< sublimated snow content (j/m2)
++   real (kind=kind_phys), intent(out)           :: hpr       !< rain stored in snow content (j/m2)
+    real (kind=kind_phys), dimension(-nsnow+1:0) :: vol_liq   !< partial volume of liquid water in layer
+    real (kind=kind_phys), dimension(-nsnow+1:0) :: vol_ice   !< partial volume of ice lens in layer
+    real (kind=kind_phys), dimension(-nsnow+1:0) :: epore     !< effective porosity = porosity - vol_ice
+@@ -3363,6 +3417,8 @@
+ 
+ !for the case when sneqv becomes '0' after 'combine'
+ 
++   hsng = 0.
++   hpr = 0.
+    if(sneqv == 0.) then
+      if(opt_gla == 1) then
+        sice(1) =  sice(1) + (qsnfro-qsnsub)*dt/(dzsnso(1)*1000.)
+@@ -3413,6 +3469,7 @@
+ 
+    if ( isnow < 0 ) then !kwm added this if statement to prevent out-of-bounds array references
+ 
++      hsng = (qsnsub - qsnfro)*dt*cice/denice*(stc(isnow+1) - tfrz)
+       wgdif = snice(isnow+1) - qsnsub*dt + qsnfro*dt
+       snice(isnow+1) = wgdif
+       if (wgdif < 1.e-6 .and. isnow <0) then
+@@ -3423,8 +3480,10 @@
+       endif
+       !kwm:  subroutine combine can change isnow to make it 0 again?
+       if ( isnow < 0 ) then !kwm added this if statement to prevent out-of-bounds array references
++         hpr = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz)
+          snliq(isnow+1) = snliq(isnow+1) + qrain * dt
+          snliq(isnow+1) = max(0., snliq(isnow+1))
++         hpr = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz) - hpr
+       endif
+       
+    endif !kwm  -- can the endif be moved toward the end of the subroutine (just set qsnbot=0)?
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -21,6 +21,10 @@
+   logical, save :: opt_adv = .false.  ! soil water moved between layers carries its sensible heat
+   real (kind=kind_phys), save :: cl_f = 4185.5, cpv_f = 1846.0, t0_f = 273.15  ! frame F constants
+   public  :: noahmp_options_energy
++  logical, save :: opt_ep  = .false.  ! precipitation lands with its frame-F enthalpy
++  logical, save :: opt_air = .false.  ! soil pores keep the air heat when water moves
++  real (kind=kind_phys), save :: ci_f = 1972.0  ! frame F ice heat capacity (FV3 c_ice)
++  public  :: noahmp_options_energy2
+   public  :: sfcdif4
+   public  :: psi_init
+ 
+@@ -424,6 +428,26 @@
+ 
+ !>\ingroup NoahMP_LSM
+ !!
++  real (kind=kind_phys) function top_hcap(parameters, nsnow, isnow, snice, snliq, dzsnso, sh2o, sice)
++    ! heat capacity (j/m2/k) of the top layer, snow if layered, else soil, as the thermal properties use it
++    type (noahmp_parameters), intent(in) :: parameters
++    integer, intent(in) :: nsnow, isnow
++    real (kind=kind_phys), intent(in) :: snice(-nsnow+1:0), snliq(-nsnow+1:0), dzsnso(-nsnow+1:), sh2o(:), sice(:)
++    if (isnow < 0) then
++       top_hcap = snow_hcap(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))
++    else
++       top_hcap = soil_hcap1(parameters, sh2o(1), sice(1), dzsnso(1))
++    endif
++  end function top_hcap
++
++  subroutine noahmp_options_energy2(ep, air, ci)
++    logical, intent(in) :: ep, air
++    real (kind=kind_phys), intent(in) :: ci
++    opt_ep = ep
++    opt_air = air
++    ci_f = ci
++  end subroutine noahmp_options_energy2
++
+   subroutine noahmp_options_energy(cnh, kir, adv, cl, cpv, t0)
+     integer, intent(in) :: cnh
+     logical, intent(in) :: kir, adv
+@@ -471,7 +495,7 @@
+                    pahg    , pahb    , pah     , esnow   , canhs   , laisun  , &
+                    laisha  , rb      , qsfcveg , qsfcbare                      &
+ #ifdef CCPP
+-                   ,errmsg, errflg, fpcv_host, sw_target, hevap)
++                   ,errmsg, errflg, fpcv_host, sw_target, hevap, lwnet_ref, hprec_out, hlw_out)
+ #else
+                    )
+ #endif
+@@ -632,6 +656,7 @@
+   real (kind=kind_phys), intent(out) :: tgb
+   real (kind=kind_phys)              :: q1
+   real (kind=kind_phys)              :: fpcvh, swt, hev
++  real (kind=kind_phys)              :: hprec, dqp, dqlw
+   real (kind=kind_phys), intent(out) :: emissi
+ !jref:end
+ #ifdef CCPP
+@@ -640,6 +665,9 @@
+   real (kind=kind_phys), optional, intent(in)  :: fpcv_host !< host frozen fraction of convective precipitation
+   real (kind=kind_phys), optional, intent(in)  :: sw_target !< absorbed SW imposed by the host (w/m2)
+   real (kind=kind_phys), optional, intent(out) :: hevap     !< evaporation enthalpy not carried by the vapour (w/m2)
++  real (kind=kind_phys), optional, intent(in)  :: lwnet_ref !< radiation-time land net upward LW (w/m2), lw2
++  real (kind=kind_phys), optional, intent(out) :: hprec_out !< ep1 heat given to the top layer (j/m2)
++  real (kind=kind_phys), optional, intent(out) :: hlw_out   !< lw2 heat kept by the top layer (j/m2)
+ #endif
+ 
+ ! local
+@@ -886,6 +914,16 @@
+                  emissi ,pah    ,canhs,                           &
+                  shg,shc,shb,evg,evb,ghv,ghb,irg,irc,irb,tr,evc,chleaf,chuc,chv2,chb2, swt )                                            !out
+ 
++    ! lw2: the land keeps the LW it emitted beyond the radiation-time land emission
++    dqlw = 0.
++    if (present(lwnet_ref)) then
++       if (lwnet_ref > -1.e10) then
++          dqlw = (fira - lwnet_ref)*dt
++          stc(isnow+1) = stc(isnow+1) + dqlw/top_hcap(parameters, nsnow, isnow, snice, snliq, dzsnso, sh2o, &
++                                                    smc - sh2o)
++       endif
++    endif
++    if (present(hlw_out)) hlw_out = dqlw
+     qsfcveg  = eah*ep_2/(sfcprs + epsm1*eah)
+     qsfcbare = qsfc
+     qsfc     = q1
+@@ -914,10 +952,17 @@
+                  smcwtd ,deeprech,rech                          , & !inout
+                  cmc    ,ecan   ,etran  ,fwet   ,runsrf ,runsub , & !out
+                  qin    ,qdis   ,ponding1       ,ponding2,&
+-                 qsnbot ,esnow  ,hev )  !out
++                 qsnbot ,esnow  ,hev    ,hprec )  !out
+ 
+ !     write(*,'(a20,10f15.5)') 'sflx:runoff=',runsrf*dt,runsub*dt,edir*dt
+      if (present(hevap)) hevap = hev
++     ! ep1: precipitation lands with its frame-F enthalpy; PAH and the stored water's content supplied hprec
++     dqp = 0.
++     if (opt_ep) then
++        dqp = (rain*cl_f*(sfctmp - tfrz) + snow*(ci_f*(sfctmp - t0_f) - cl_f*(tfrz - t0_f)) - pah)*dt - hprec
++        stc(isnow+1) = stc(isnow+1) + dqp/top_hcap(parameters, nsnow, isnow, snice, snliq, dzsnso, sh2o, sice)
++     endif
++     if (present(hprec_out)) hprec_out = dqp
+ 
+ ! compute carbon budgets (carbon storages and co2 & bvoc fluxes)
+ 
+@@ -6914,8 +6959,7 @@
+             if (opt_kir) then
+                ! the remainder heats the layer at its new composition: L_f(T) = hfus + (c_w-c_i)(T-tfrz)
+                if (j <= 0) then
+-                  svn  = min(1., mice(j)/(dzsnso(j)*denice))
+-                  hcpn = cice*svn + cwat*min(1.-svn, mliq(j)/(dzsnso(j)*denh2o))
++                  hcpn = (cice/denice*mice(j) + cwat/denh2o*mliq(j))/dzsnso(j)   ! per mass (cs1)
+                else
+                   hcpn = dt/(fact(j)*dzsnso(j)) + (cwat*(mliq(j)-wliq0(j)) + cice*(mice(j)-wice0(j))) &
+                          / (1000.*dzsnso(j))
+@@ -7130,7 +7174,7 @@
+                     smcwtd ,deeprech,rech                          , & !inout
+                     cmc    ,ecan   ,etran  ,fwet   ,runsrf ,runsub , & !out
+                     qin    ,qdis   ,ponding1       ,ponding2,        &
+-                    qsnbot ,esnow  ,hevap) 
++                    qsnbot ,esnow  ,hevap  ,hprec) 
+ ! ----------------------------------------------------------------------  
+ ! code history:
+ ! initial code: guo-yue niu, oct. 2007
+@@ -7228,6 +7272,8 @@
+   real (kind=kind_phys)                                           :: lheat   !latent heat charged minus latent heat used by the ground vapour [j/m2]
+   real (kind=kind_phys)                                           :: lheatc  !heat charged to the canopy that it cannot carry [j/m2]
+   real (kind=kind_phys), intent(out)                              :: hevap   !evaporation enthalpy not carried by the vapour [w/m2]
++  real (kind=kind_phys), intent(out)                              :: hprec   !content of the precipitation stored [j/m2]
++  real (kind=kind_phys)                                           :: hprcs, qairh
+   real (kind=kind_phys)                                           :: cwk, cik, csk, hvt1, esrc, edef, sice1
+   real (kind=kind_phys), dimension(       1:nsoil)                :: sh2o0, bnd, hcp0
+   real (kind=kind_phys)                                           :: dflx, qadv(nsoil), hsnow
+@@ -7287,9 +7333,10 @@
+           &          qrain+qcanl,ficeold,iloc   ,jloc   ,         & !in
+           &          isnow  ,snowh  ,sneqv  ,snice  ,snliq  , & !inout
+           &          sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+-          &          qsnbot ,snoflow,ponding1       ,ponding2, hsnow)  !out
++          &          qsnbot ,snoflow,ponding1       ,ponding2, hsnow, hprcs)  !out
+ 
+    hevap = hevap + (qsnsub - qsnfro)*hvt1 + hsnow/dt
++   hprec = hprcs
+    lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt + lheatc
+    if(frozen_ground) then
+       sice(1) =  sice(1) + (qsdew-qseva)*dt/(dzsnso(1)*1000.)
+@@ -7373,6 +7420,14 @@
+        qinfh = 0.
+        if (qinsur > 0.) qinfh = cwk*qinfl/qinsur*dt*(qthru*(tg - stc(1)) + qcold*(tfrz - stc(1)) &
+                                                     + qsnbot*(tsbot - stc(1)))
++       ! rain throughfall stored in the soil: at tg with advection, else at the layer-1 temperature
++       if (qinsur > 0.) then
++          if (opt_adv) then
++             hprec = hprec + cwk*qinfl/qinsur*dt*qthru*(tg - tfrz)
++          else
++             hprec = hprec + cwk*qinfl/qinsur*dt*qthru*(stc(1) - tfrz)
++          endif
++       endif
+  
+        if(opt_run == 1) then 
+           call groundwater (parameters,nsnow  ,nsoil  ,dt     ,sice   ,zsoil  , & !in
+@@ -7403,11 +7458,13 @@
+           endif
+        enddo
+        dflx = dflx - ((sh2o(nsoil) - sh2o0(nsoil))*dzsnso(nsoil)*1000. - bnd(nsoil))  ! 0 if all is booked
+-       if (opt_adv) then
+-          do iz = 1, nsoil
+-             stc(iz) = stc(iz) + qadv(iz)/(dzsnso(iz)*(hcp0(iz) + (cwat - cpair)*(sh2o(iz) - sh2o0(iz))))
+-          enddo
+-       endif
++       do iz = 1, nsoil
++          qairh = 0.
++          if (opt_air) qairh = cpair*(sh2o(iz) - sh2o0(iz))*dzsnso(iz)*(stc(iz) - tfrz)  ! air1: pore air heat kept
++          if (.not. opt_adv) qadv(iz) = 0.
++          if (opt_adv .or. opt_air) stc(iz) = stc(iz) + (qadv(iz) + qairh) &
++                                 /(dzsnso(iz)*(hcp0(iz) + (cwat - cpair)*(sh2o(iz) - sh2o0(iz))))
++       enddo
+ 
+        if(opt_run == 5) then
+           call shallowwatertable (parameters,nsnow  ,nsoil, zsoil, dt       , & !in
+@@ -7590,7 +7647,7 @@
+                         qrain  ,ficeold,iloc   ,jloc   ,         & !in
+                         isnow  ,snowh  ,sneqv  ,snice  ,snliq  , & !inout
+                         sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+-                        qsnbot ,snoflow,ponding1       ,ponding2, hsnow)  !out
++                        qsnbot ,snoflow,ponding1       ,ponding2, hsnow, hprcs)  !out
+ ! ----------------------------------------------------------------------
+   implicit none
+ ! ----------------------------------------------------------------------
+@@ -7629,6 +7686,8 @@
+   real (kind=kind_phys),                              intent(out) :: ponding1 !<
+   real (kind=kind_phys),                              intent(out) :: ponding2 !<
+   real (kind=kind_phys),                              intent(out) :: hsnow  !< sensible content of sublimated water [j/m2]
++  real (kind=kind_phys),                              intent(out) :: hprcs  !< content of precipitation stored in snow [j/m2]
++  real (kind=kind_phys)                                               :: hpf, hpr
+ 
+ ! local
+   integer :: iz,i
+@@ -7641,7 +7700,7 @@
+    call snowfall (parameters,nsoil  ,nsnow  ,dt     ,qsnow  ,snowhin, & !in
+                   sfctmp ,iloc   ,jloc   ,                 & !in
+                   isnow  ,snowh  ,dzsnso ,stc    ,snice  , & !inout
+-                  snliq  ,sneqv  )                           !inout
++                  snliq  ,sneqv  ,hpf )                      !inout
+ 
+ ! mb: do each if block separately
+ 
+@@ -7664,7 +7723,8 @@
+                   qrain  ,iloc   ,jloc   ,                 & !in
+                   isnow  ,dzsnso ,snowh  ,sneqv  ,snice  , & !inout
+                   snliq  ,sh2o   ,sice   ,stc    ,         & !inout
+-                  qsnbot ,ponding1       ,ponding2, hsnow)   !out
++                  qsnbot ,ponding1       ,ponding2, hsnow, hpr)   !out
++   hprcs = hpf + hpr
+ 
+ !set empty snow layers to zero
+ 
+@@ -7727,7 +7787,7 @@
+   subroutine snowfall (parameters,nsoil  ,nsnow  ,dt     ,qsnow  ,snowhin , & !in
+                        sfctmp ,iloc   ,jloc   ,                  & !in
+                        isnow  ,snowh  ,dzsnso ,stc    ,snice   , & !inout
+-                       snliq  ,sneqv  )                            !inout
++                       snliq  ,sneqv  ,hpf )                       !inout
+ ! ----------------------------------------------------------------------
+ ! snow depth and density to account for the new snowfall.
+ ! new values of snow depth & density returned.
+@@ -7759,8 +7819,10 @@
+ ! local
+ 
+   integer :: newnode            ! 0-no new layers, 1-creating new layers
++  real (kind=kind_phys), intent(out) :: hpf  !< sensible content created by the snowfall (j/m2, rel. tfrz)
+ ! ----------------------------------------------------------------------
+     newnode  = 0
++    hpf = 0.
+ 
+ ! shallow snow / no layer
+ 
+@@ -7781,12 +7843,15 @@
+       snice(0) = sneqv
+       snliq(0) = 0.
+     end if
++    if (newnode == 1) hpf = snow_hcap(snice(0), snliq(0), dzsnso(0))*(stc(0) - tfrz)
+ 
+ ! snow with layers
+ 
+     if(isnow <  0 .and. newnode == 0 .and. qsnow > 0.) then
++         hpf = snow_hcap(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz)
+          snice(isnow+1)  = snice(isnow+1)   + qsnow   * dt
+          dzsnso(isnow+1) = dzsnso(isnow+1)  + snowhin * dt
++         hpf = snow_hcap(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz) - hpf
+     endif
+ 
+ ! ----------------------------------------------------------------------
+@@ -8319,7 +8384,7 @@
+                       qrain  ,iloc   ,jloc   ,                 & !in
+                       isnow  ,dzsnso ,snowh  ,sneqv  ,snice  , & !inout
+                       snliq  ,sh2o   ,sice   ,stc    ,         & !inout
+-                      qsnbot ,ponding1       ,ponding2, hsnow)   !out
++                      qsnbot ,ponding1       ,ponding2, hsnow, hpr)   !out
+ ! ----------------------------------------------------------------------
+ ! renew the mass of ice lens (snice) and liquid (snliq) of the
+ ! surface snow layer resulting from sublimation (frost) / evaporation (dew)
+@@ -8342,6 +8407,7 @@
+ 
+    real (kind=kind_phys),                            intent(out)   :: qsnbot !< melting water out of snow bottom [mm/s]
+    real (kind=kind_phys),                            intent(out)   :: hsnow  !< sensible content of sublimated water [j/m2]
++   real (kind=kind_phys),                            intent(out)   :: hpr    !< content of rain stored in snow [j/m2]
+ 
+ ! input and output
+ 
+@@ -8373,6 +8439,7 @@
+ 
+ !for the case when sneqv becomes '0' after 'combine'
+ 
++   hpr = 0.
+    hsnow = 0.
+    if(sneqv == 0.) then
+       sice(1) =  sice(1) + (qsnfro-qsnsub)*dt/(dzsnso(1)*1000.)  ! barlage: sh2o->sice v3.6
+@@ -8435,8 +8502,10 @@
+       endif
+       !kwm:  subroutine combine can change isnow to make it 0 again?
+       if ( isnow < 0 ) then !kwm added this if statement to prevent out-of-bounds array references
++         hpr = snow_hcap(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz)
+          snliq(isnow+1) = snliq(isnow+1) + qrain * dt
+          snliq(isnow+1) = max(0., snliq(isnow+1))
++         hpr = snow_hcap(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))*(stc(isnow+1) - tfrz) - hpr
+       endif
+       
+    endif !kwm  -- can the endif be moved toward the end of the subroutine (just set qsnbot=0)?
+@@ -8454,9 +8523,8 @@
+    do j = isnow+1, 0
+      if (opt_adv .and. qin > 0.) then
+         ! AD1: liquid from the layer above arrives at that layer's temperature
+-        svn  = min(1., snice(j)/(dzsnso(j)*denice))
+-        hcpo = (cice*svn + cwat*min(1.-svn, snliq(j)/(dzsnso(j)*denh2o)))*dzsnso(j)
+-        hcpn = (cice*svn + cwat*min(1.-svn, (snliq(j)+qin)/(dzsnso(j)*denh2o)))*dzsnso(j)
++        hcpo = cice/denice*snice(j) + cwat/denh2o*snliq(j)          ! per mass (cs1)
++        hcpn = cice/denice*snice(j) + cwat/denh2o*(snliq(j)+qin)
+         stc(j) = tfrz + (hcpo*(stc(j)-tfrz) + cwat/denh2o*qin*(stc(j-1)-tfrz))/hcpn
+      endif
+      snliq(j) = snliq(j) + qin
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -455,7 +455,8 @@
+       lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect, noahmp_kirchhoff, &
+       lsswr, landfrac, adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd,               &
+       albdvis_rad, albdnir_rad, albivis_rad, albinir_rad, adjsfculw_land,       &
+-      hflx_evap_enth, con_cliq, con_cvap, con_t0c                                &
++      hflx_evap_enth, con_cliq, con_cvap, con_t0c,                               &
++      sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air, ulw_lnd_rad, sfcdlw_rad &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -465,6 +466,7 @@
+   use module_sf_noahmp_glacier
+   use module_sf_noahmplsm,    only : hvap_lsm => hvap, hsub_lsm => hsub, hfus_lsm => hfus
+   use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus
++  use noahmp_glacier_globals, only : opt_ep_gla, opt_ev_gla, cl_f_gla, cpv_f_gla, ci_f_gla, t0_f_gla
+   use noahmp_tables
+ 
+   implicit none
+@@ -543,6 +545,11 @@
+   real(kind=kind_phys), dimension(:), optional, intent(inout) :: albdvis_rad, albdnir_rad, albivis_rad, albinir_rad
+   real(kind=kind_phys), dimension(:), optional, intent(inout) :: adjsfculw_land, hflx_evap_enth
+   real(kind=kind_phys), intent(in) :: con_cliq, con_cvap, con_t0c  ! constants: not optional (CCPP passes parameters)
++  logical, optional, intent(in) :: sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air
++  real(kind=kind_phys), dimension(:), optional, intent(inout) :: ulw_lnd_rad
++  real(kind=kind_phys), dimension(:), optional, intent(in)    :: sfcdlw_rad
++  logical :: epd, lwr, aird
++  real(kind=kind_phys) :: lwref
+   logical :: kir_d, adv_d
+   integer :: opt_cnh_d
+   logical :: pph, swr, lwc, eve
+@@ -998,6 +1005,19 @@
+   adv_d = .false.
+   if (present(noahmp_heat_advect)) adv_d = noahmp_heat_advect
+   call noahmp_options_energy(opt_cnh_d, kir_d, adv_d, con_cliq, con_cvap, con_t0c)
++  epd = .false.
++  if (present(sfc_precip_enthalpy)) epd = sfc_precip_enthalpy
++  lwr = .false.
++  if (present(lw_sfc_return)) lwr = lw_sfc_return .and. present(ulw_lnd_rad) .and. present(sfcdlw_rad)
++  aird = .false.
++  if (present(noahmp_pore_air)) aird = noahmp_pore_air
++  call noahmp_options_energy2(epd, aird, 1972.0_kind_phys)   ! FV3's c_ice (frame F)
++  opt_ep_gla = epd
++  opt_ev_gla = eve
++  cl_f_gla = con_cliq
++  cpv_f_gla = con_cvap
++  ci_f_gla = 1972.0_kind_phys
++  t0_f_gla = con_t0c
+   ! the radiation ran this step with the land albedos Noah-MP left last step: keep them
+   if (present(albdvis_rad) .and. present(lsswr) .and. first_iter) then
+     if (lsswr) then
+@@ -1005,6 +1025,7 @@
+       albdnir_rad(1:im) = albdnir(1:im)
+       albivis_rad(1:im) = albivis(1:im)
+       albinir_rad(1:im) = albinir(1:im)
++      if (present(ulw_lnd_rad) .and. present(adjsfculw_land)) ulw_lnd_rad(1:im) = adjsfculw_land(1:im)
+     endif
+   endif
+ 
+@@ -1183,6 +1204,10 @@
+         endif
+       endif
+       hev = 0.
++      lwref = -1.e20
++      if (lwr) then
++        if (ulw_lnd_rad(i) >= 0.) lwref = ulw_lnd_rad(i) - sfcdlw_rad(i)
++      endif
+       call noahmp_options(idveg ,iopt_crs, iopt_btr , iopt_run, iopt_sfc,  &
+                                  iopt_frz, iopt_inf , iopt_rad, iopt_alb,  &
+                                  iopt_snf, iopt_tbot, iopt_stc, iopt_rsf,  &
+@@ -1226,7 +1251,8 @@
+           emissivity_total     ,precip_frozen_frac   ,ch_bare_ground_2m    ,snow_sublimation     , &
+ #ifdef CCPP
+           albedo_direct        ,albedo_diffuse,       errmsg               ,errflg ,  &
+-          fpice_host=merge(srflag(i), -1.0_kind_phys, pph), sw_target=swt)
++          fpice_host=merge(srflag(i), -1.0_kind_phys, pph), sw_target=swt,              &
++          lwnet_ref=lwref, hevap=hev)
+ #else
+           albedo_direct        ,albedo_diffuse)
+ #endif
+@@ -1360,7 +1386,7 @@
+ #ifdef CCPP
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   ,                        &
+           errmsg                ,errflg                ,                        &
+-          fpcv_host=fpcvh, sw_target=swt, hevap=hev)
++          fpcv_host=fpcvh, sw_target=swt, hevap=hev, lwnet_ref=lwref)
+ #else
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   )
+ #endif
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+@@ -1805,3 +1805,45 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[sfc_precip_enthalpy]
++  standard_name = flag_for_surface_precipitation_enthalpy
++  long_name = flag: precipitation frame-F enthalpy
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[lw_sfc_return]
++  standard_name = flag_for_land_keeps_longwave_excess
++  long_name = flag: land keeps its LW excess
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[noahmp_pore_air]
++  standard_name = flag_for_noahmp_pore_air_heat_kept
++  long_name = flag: pore air heat kept
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[ulw_lnd_rad]
++  standard_name = surface_upwelling_longwave_flux_over_land_on_radiation_timestep
++  long_name = land upward LW at the last radiation call
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = inout
++  optional = True
++[sfcdlw_rad]
++  standard_name = surface_downwelling_longwave_flux_on_radiation_timestep
++  long_name = total sky sfc downward lw flux
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -44,7 +44,7 @@
+      &       snwdph, qss_i, qss_w, snowmt, gflux, cmm, chh,             &
+      &       evapi, evapw, hflxi, hflxw, islmsk,                        &
+      &       errmsg, errflg, iter, lw_sfc_consistent, adjsfcdlw,
+-     &       adjsfculw_ice
++     &       adjsfculw_ice, sfc_precip_enthalpy, con_hfus, con_cliq
+      &     )
+ 
+ ! ===================================================================== !
+@@ -163,6 +163,12 @@
+       real (kind=kind_phys), dimension(:), optional, intent(inout) ::
+      &       adjsfculw_ice
+       real (kind=kind_phys) :: tice0(im), tref0(im)
++      logical, optional, intent(in) :: sfc_precip_enthalpy
++      real (kind=kind_phys), intent(in) :: con_hfus, con_cliq
++      real (kind=kind_phys) :: snowm(im), dqp, e1, e1x, b1x, tc1
++      real (kind=kind_phys), parameter :: di_e = 917.0_kind_phys,
++     &  ci_e = 2054.0_kind_phys, li_e = 3.34e5_kind_phys,
++     &  tfi_e = -0.054_kind_phys, tfi0_e = tfi_e - 0.0001_kind_phys
+       logical, intent(in) :: lprnt
+       logical, intent(in) :: thsfc_loc
+ 
+@@ -235,11 +241,13 @@
+ !       endif
+       enddo
+       if (.not. do_sice) return
++      snowm = zero
+ 
+       do i = 1, im
+         if (flag(i)) then
+           if (srflag(i) > zero) then
+             ep(i)    = ep(i)*(one-srflag(i))
++            snowm(i) = 1000.0_kind_phys*tprcp(i)*srflag(i)
+             weasd(i) = weasd(i) + 1000.0_kind_phys*tprcp(i)*srflag(i)
+             tprcp(i) = tprcp(i)*(one-srflag(i))
+           endif
+@@ -402,6 +410,27 @@
+ 
+         endif
+       enddo
++
++!     ep1: snowfall (stored at -li_e) gets its frame-F content (FV3 c_ice 1972, hfus) in ice layer 1
++      if (present(sfc_precip_enthalpy)) then
++      if (sfc_precip_enthalpy) then
++      do i = 1, im
++        if (flag(i) .and. snowm(i) > zero .and. hice(i) > zero) then
++          dqp = snowm(i)*(1972.0_kind_phys*(t1(i) - t0c) - con_hfus
++     &        - con_cliq*tfi_e + li_e)
++          tc1 = min(stsice(i,1) - t0c, tfi0_e)
++          e1  = ci_e*(tc1 - tfi_e) - li_e*(one - tfi_e/tc1)
++          e1  = e1 + dqp/(di_e*0.5_kind_phys*hice(i))
++          e1x = ci_e*(tfi0_e - tfi_e) - li_e*(one - tfi_e/tfi0_e)
++          e1  = min(e1, e1x)
++          b1x = e1 + ci_e*tfi_e + li_e
++          stsice(i,1) = (b1x - sqrt(b1x*b1x
++     &                - 4.0_kind_phys*ci_e*li_e*tfi_e))
++     &                / (ci_e+ci_e) + t0c
++        endif
++      enddo
++      endif
++      endif
+ 
+       do k = 1, kice
+         do i = 1, im
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+@@ -473,3 +473,27 @@
+   kind = kind_phys
+   intent = inout
+   optional = True
++[sfc_precip_enthalpy]
++  standard_name = flag_for_surface_precipitation_enthalpy
++  long_name = flag: precipitation frame-F enthalpy
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cliq]
++  standard_name = specific_heat_of_liquid_water_at_constant_pressure
++  long_name = specific heat of liquid water
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in

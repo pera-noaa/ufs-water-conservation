@@ -1,0 +1,159 @@
+diff --git a/dyn_em/module_big_step_utilities_em.F b/dyn_em/module_big_step_utilities_em.F
+index 597908a4..b0b228e2 100644
+--- a/dyn_em/module_big_step_utilities_em.F
++++ b/dyn_em/module_big_step_utilities_em.F
+@@ -3162,11 +3162,14 @@ j_loop_s : DO j = j_start, j_end
+        DO i = i_start, i_end
+          vflux(i,k)=kvdif*rdn(k+1)/(0.5*(alt(i,k,j)+alt(i,k+1,j)))   &
+                   *(field(i,k+1,j)-field(i,k,j))
++         ! mass flux: times g*rho/mu at the w level, so the tendency below telescopes
++         vflux(i,k)=vflux(i,k)*g*0.5*(1./((c1(k  )*MUT(i,j)+c2(k  ))*alt(i,k  ,j))    &
++                                     +1./((c1(k+1)*MUT(i,j)+c2(k+1))*alt(i,k+1,j)))
+        ENDDO
+      ENDDO
+ 
+      DO i = i_start, i_end
+-       vflux(i,0)=vflux(i,1)
++       vflux(i,0)=0.   ! no flux through the ground
+      ENDDO
+ 
+      DO i = i_start, i_end
+@@ -3175,8 +3178,7 @@ j_loop_s : DO j = j_start, j_end
+ 
+      DO k=kts,ktf
+        DO i = i_start, i_end
+-         tendency(i,k,j)=tendency(i,k,j)+g*g/(c1(k)*MUT(i,j)+c2(k))/alt(i,k,j)  &
+-                *rdnw(k)*(vflux(i,k)-vflux(i,k-1))
++         tendency(i,k,j)=tendency(i,k,j)+g*rdnw(k)*(vflux(i,k)-vflux(i,k-1))
+        ENDDO
+      ENDDO
+ 
+@@ -3258,11 +3260,14 @@ j_loop_s : DO j = j_start, j_end
+        DO i = i_start, i_end
+          vflux(i,k)=kvdif*rdn(k+1)/(0.5*(alt(i,k,j)+alt(i,k+1,j)))   &
+                     *(field(i,k+1,j)-field(i,k,j)-base(k+1)+base(k))
++         ! mass flux: times g*rho/mu at the w level, so the tendency below telescopes
++         vflux(i,k)=vflux(i,k)*g*0.5*(1./((c1(k  )*MUT(i,j)+c2(k  ))*alt(i,k  ,j))    &
++                                     +1./((c1(k+1)*MUT(i,j)+c2(k+1))*alt(i,k+1,j)))
+        ENDDO
+      ENDDO
+ 
+      DO i = i_start, i_end
+-       vflux(i,0)=vflux(i,1)
++       vflux(i,0)=0.   ! no flux through the ground
+      ENDDO
+ 
+      DO i = i_start, i_end
+@@ -3271,8 +3276,7 @@ j_loop_s : DO j = j_start, j_end
+ 
+      DO k=kts,ktf
+        DO i = i_start, i_end
+-         tendency(i,k,j)=tendency(i,k,j)+g*g/(c1(k)*MUT(i,j)+c2(k))/alt(i,k,j)  &
+-                *rdnw(k)*(vflux(i,k)-vflux(i,k-1))
++         tendency(i,k,j)=tendency(i,k,j)+g*rdnw(k)*(vflux(i,k)-vflux(i,k-1))
+        ENDDO
+      ENDDO
+ 
+@@ -3353,11 +3357,14 @@ j_loop_s : DO j = j_start, j_end
+          vflux(i,k)=kvdif*rdn(k+1)/(0.5*(alt(i,k,j)+alt(i,k+1,j)))   &
+                     *(   field(i,k+1,j)  -field(i,k,j)               &
+                       -base_3d(i,k+1,j)+base_3d(i,k,j) )
++         ! mass flux: times g*rho/mu at the w level, so the tendency below telescopes
++         vflux(i,k)=vflux(i,k)*g*0.5*(1./((c1(k  )*MUT(i,j)+c2(k  ))*alt(i,k  ,j))    &
++                                     +1./((c1(k+1)*MUT(i,j)+c2(k+1))*alt(i,k+1,j)))
+        ENDDO
+      ENDDO
+ 
+      DO i = i_start, i_end
+-       vflux(i,0)=vflux(i,1)
++       vflux(i,0)=0.   ! no flux through the ground
+      ENDDO
+ 
+      DO i = i_start, i_end
+@@ -3366,8 +3373,7 @@ j_loop_s : DO j = j_start, j_end
+ 
+      DO k=kts,ktf
+        DO i = i_start, i_end
+-         tendency(i,k,j)=tendency(i,k,j)+g*g/(c1(k)*MUT(i,j)+c2(k))/alt(i,k,j)  &
+-                *rdnw(k)*(vflux(i,k)-vflux(i,k-1))
++         tendency(i,k,j)=tendency(i,k,j)+g*rdnw(k)*(vflux(i,k)-vflux(i,k-1))
+        ENDDO
+      ENDDO
+ 
+diff --git a/dyn_em/module_diffusion_em.F b/dyn_em/module_diffusion_em.F
+index 21d602fd..1f2c0f55 100644
+--- a/dyn_em/module_diffusion_em.F
++++ b/dyn_em/module_diffusion_em.F
+@@ -3772,8 +3772,10 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+                                                                      H1, &
+                                                                      H2, &
+                                                                  xkxavg, &
+-                                                                zx_at_m, &
+-                                                                zy_at_m
++                                                                zx_at_w, &
++                                                                zy_at_w, &
++                                                                     F1, &
++                                                                     F2
+ 
+    REAL , DIMENSION( its:ite, kts:kte, jts:jte)            ::  tmptendf
+ 
+@@ -3875,6 +3877,7 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H1(i,k,j)=-msfux(i,j)*xkxavg(i,k,j)*(                      &
+                  rdx*(var(i,k,j)-var(i-1,k,j)) - tmpzx*         &
+                      (H1avg(i,k+1,j)-H1avg(i,k,j))*rdzu )
++      F1(i,k,j)=H1(i,k,j)/(rdzu*msfuy(i,j))  ! flux through the u face (face depth, face length)
+ 
+ !      tmpzeta_z = 0.5*(zeta_z(i,j)+zeta_z(i-1,j))
+ !      H1(i,k,j)=-msfuy(i,j)*xkxavg(i,k,j)*(                         &
+@@ -3924,6 +3927,8 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H2(i,k,j)=-msfvy(i,j)*xkxavg(i,k,j)*(                       &
+                  rdy*(var(i,k,j)-var(i,k,j-1)) - tmpzy*          &
+                      (H2avg(i ,k+1,j)-H2avg(i,k,j))*rdzv)
++      F2(i,k,j)=0.                           ! msfvx is 0 at the poles of a global grid
++      IF (msfvx(i,j) .NE. 0.) F2(i,k,j)=H2(i,k,j)/(rdzv*msfvx(i,j))
+ 
+ !      tmpzeta_z = 0.5*(zeta_z(i,j)+zeta_z(i,j-1))
+ !      H2(i,k,j)=-msfvy(i,j)*xkxavg(i,k,j)*(                         &
+@@ -3947,8 +3952,8 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+ ! H1avg(i,k,j)=zx*H1avg*zeta_z
+ ! H2avg(i,k,j)=zy*H2avg*zeta_z
+ 
+-      zx_at_m(i, k, j) = 0.25*(zx(i,k,j)+ zx(i+1,k,j) + zx(i,k+1,j)+ zx(i+1,k+1,j))
+-      zy_at_m(i, k, j) = 0.25*(zy(i,k,j)+ zy(i,k,j+1) + zy(i,k+1,j)+ zy(i,k+1,j+1))
++      zx_at_w(i, k, j) = 0.5*(zx(i,k,j)+ zx(i+1,k,j))
++      zy_at_w(i, k, j) = 0.5*(zy(i,k,j)+ zy(i,k,j+1))
+ 
+ !      H1avg(i,k,j)=H1avg(i,k,j)*tmpzx*zeta_z(i,j)
+ !      H2avg(i,k,j)=H2avg(i,k,j)*tmpzy*zeta_z(i,j)
+@@ -3962,8 +3967,10 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H1avg(i,ktf+1,j)=0.
+       H2avg(i,kts  ,j)=0.
+       H2avg(i,ktf+1,j)=0.
+-      zx_at_m(i, kts, j) = 0.25*(zx(i,kts,j)+ zx(i+1,kts,j) + zx(i,kts+1,j)+ zx(i+1,kts+1,j))
+-      zy_at_m(i, kts, j) = 0.25*(zy(i,kts,j)+ zy(i,kts,j+1) + zy(i,kts+1,j)+ zy(i,kts+1,j+1))
++      zx_at_w(i, kts  , j) = 0.5*(zx(i,kts  ,j)+ zx(i+1,kts  ,j))
++      zy_at_w(i, kts  , j) = 0.5*(zy(i,kts  ,j)+ zy(i,kts  ,j+1))
++      zx_at_w(i, ktf+1, j) = 0.5*(zx(i,ktf+1,j)+ zx(i+1,ktf+1,j))
++      zy_at_w(i, ktf+1, j) = 0.5*(zy(i,ktf+1,j)+ zy(i,ktf+1,j+1))
+ 
+    ENDDO
+    ENDDO
+@@ -3975,11 +3982,13 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       mrdx=msftx(i,j)*rdx
+       mrdy=msfty(i,j)*rdy
+ 
+-      tendency(i,k,j)=tendency(i,k,j) +   g/(dnw(k)*rdzw(i,k,j)) * &
+-           (mrdx*(H1(i+1,k,j)-H1(i  ,k,j)) +                       &
+-            mrdy*(H2(i,k,j+1)-H2(i,k,j  )) -                       &
+-            msftx(i,j)*zx_at_m(i, k, j)*(H1avg(i,k+1,j)-H1avg(i,k,j))*rdzw(i,k,j) - &
+-            msfty(i,j)*zy_at_m(i, k, j)*(H2avg(i,k+1,j)-H2avg(i,k,j))*rdzw(i,k,j)   &
++! flux form, so the sum of mu*dnw*var over the domain telescopes:
++! face fluxes carry the face depth, the slope terms are differences of w-level fluxes
++      tendency(i,k,j)=tendency(i,k,j) +   g/dnw(k) *                           &
++           (msfty(i,j)*mrdx*(F1(i+1,k,j)-F1(i  ,k,j)) +                        &
++            msftx(i,j)*mrdy*(F2(i,k,j+1)-F2(i,k,j  )) -                        &
++            msftx(i,j)*(zx_at_w(i,k+1,j)*H1avg(i,k+1,j)-zx_at_w(i,k,j)*H1avg(i,k,j)) - &
++            msfty(i,j)*(zy_at_w(i,k+1,j)*H2avg(i,k+1,j)-zy_at_w(i,k,j)*H2avg(i,k,j))   &
+            )
+    ENDDO
+    ENDDO

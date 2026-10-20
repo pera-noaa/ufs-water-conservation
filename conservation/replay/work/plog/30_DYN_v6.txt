@@ -1,0 +1,20 @@
+patching file UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+Hunk #2 succeeded at 293 (offset 2 lines).
+Hunk #3 succeeded at 469 (offset 2 lines).
+Hunk #4 succeeded at 594 (offset 2 lines).
+Hunk #5 succeeded at 1918 (offset 108 lines).
+patching file UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+Hunk #1 succeeded at 782 (offset 3 lines).
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+Hunk #1 succeeded at 363 (offset 3 lines).
+Hunk #2 succeeded at 960 (offset 6 lines).
+Hunk #3 FAILED at 1106.
+1 out of 3 hunks FAILED -- saving rejects to file UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90.rej
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
+Hunk #6 succeeded at 1533 (offset 16 lines).
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_nesting.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_tracer2d.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90
+re-anchored: fv3/atmos_cubed_sphere/model/fv_control.F90 | rejects left: none

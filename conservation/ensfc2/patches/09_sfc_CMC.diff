@@ -1,0 +1,81 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7154,6 +7154,7 @@
+   real (kind=kind_phys)                                           :: qsnfro  !snow surface frost rate[mm/s]
+   real (kind=kind_phys)                                           :: qsnsub  !snow surface sublimation rate [mm/s]
+   real (kind=kind_phys)                                           :: lheat   !latent heat charged minus latent heat used by the ground vapour [j/m2]
++  real (kind=kind_phys)                                           :: lheatc  !heat charged to the canopy that it cannot carry [j/m2]
+   real (kind=kind_phys), dimension(       1:nsoil)                :: etrani  !transpiration rate (mm/s) [+]
+   real (kind=kind_phys), dimension(       1:nsoil)                :: wcnd   !hydraulic conductivity (m/s)
+   real (kind=kind_phys)                                           :: qdrain  !soil-bottom free drainage [mm/s] 
+@@ -7179,7 +7180,7 @@
+                   bdfall ,frozen_canopy  , & !in     
+                   canliq ,canice ,tv     ,                 & !inout
+                   cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+-                  fwet      )                           !out
++                  fwet   ,lheatc )                       !out
+ 
+ ! sublimation, frost, evaporation, and dew
+ 
+@@ -7203,7 +7204,7 @@
+           &          sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+           &          qsnbot ,snoflow,ponding1       ,ponding2)  !out
+ 
+-   lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt
++   lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt + lheatc
+    if(frozen_ground) then
+       sice(1) =  sice(1) + (qsdew-qseva)*dt/(dzsnso(1)*1000.)
+       lheat = lheat + (latheag - hsub)*(qseva - qsdew)*dt
+@@ -7295,7 +7296,7 @@
+                        bdfall ,frozen_canopy  ,  & !in      
+                        canliq ,canice ,tv     ,                 & !inout
+                        cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+-                       fwet      )                           !out
++                       fwet   ,lheatc )                       !out
+ 
+ ! ------------------------ code history ------------------------------
+ ! canopy hydrology
+@@ -7329,6 +7330,7 @@
+   real (kind=kind_phys), intent(out)   :: fwet    !< wetted or snowed fraction of the canopy (-)
+   real (kind=kind_phys), intent(out)   :: qcanl   !< truncated canopy water to the ground (mm/s)
+   real (kind=kind_phys), intent(out)   :: qcani   !< truncated canopy ice to the ground (mm/s)
++  real (kind=kind_phys), intent(out)   :: lheatc  !< heat charged to the canopy that it cannot carry [j/m2]
+ ! --------------------------------------------------------------------
+ 
+ ! ------------------------ local variables ---------------------------
+@@ -7347,6 +7349,7 @@
+       ecan    = 0.0
+       qcanl   = 0.0
+       qcani   = 0.0
++      lheatc  = 0.0
+ 
+ ! --------------------------- liquid water ------------------------------
+ ! maximum canopy water
+@@ -7373,6 +7376,8 @@
+ ! canopy water balance. for convenience allow dew to bring canliq above
+ ! maxh2o or else would have to re-adjust drip
+ 
++       ! evaporation the canopy water cannot supply was charged in the energy step: its heat returns
++       lheatc = (qevac - min(canliq/dt,qevac))*hvap*dt
+        qevac = min(canliq/dt,qevac)
+        canliq=max(0.,canliq+(qdewc-qevac)*dt)
+        if(canliq <= 1.e-06) then
+@@ -7386,6 +7391,7 @@
+ 
+       maxsno = 6.6*(0.27+46./bdfall) * (elai+ esai)
+ 
++      lheatc = lheatc + (qsubc - min(canice/dt,qsubc))*hsub*dt
+       qsubc = min(canice/dt,qsubc) 
+       canice= max(0.,canice + (qfroc-qsubc)*dt)
+       if(canice.le.1.e-6) then
+@@ -7429,6 +7435,10 @@
+ ! total canopy evaporation
+ 
+       ecan = qevac + qsubc - qdewc - qfroc
++
++! frozen canopy: transpiration was charged hsub but is soil liquid; canopy melt/freeze latent heat
++      if (frozen_canopy) lheatc = lheatc + (hsub - hvap)*etran*dt
++      lheatc = lheatc - hfus*(qmeltc - qfrzc)*dt
+ 
+   end subroutine canwater
+ 

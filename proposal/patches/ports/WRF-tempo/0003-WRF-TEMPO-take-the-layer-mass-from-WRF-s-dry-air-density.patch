@@ -1,0 +1,49 @@
+From 90d461e01e80169933bde2f60d8887cd89e10c8e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 20:51:41 -0600
+Subject: [PATCH 6/6] TEMPO: take the layer mass from WRF's dry-air density
+
+TEMPO computes its own dry density from p, T and qv and uses rho*dz8w as
+each layer's air mass, while WRF's dry-air mass per layer is rho*dz8w
+with rho = 1/alt from the dynamics. The two differ slightly, so TEMPO's
+sedimentation moves WRF's water by the wrong amount.
+
+Passes rho_dry=rho to tempo_run (new optional argument in the TEMPO
+submodule, which then scales dz so that TEMPO's rho*dz is WRF's dry-air
+mass) and moves phys/TEMPO to that commit. Same fix as Thompson's
+RHO_DRY (M4).
+
+Measured in em_quarter_ss (supercell, doubly periodic, no surface fluxes,
+2 h, mp_physics=88), with the round-2 TEMPO series:
+- per-call meter in WRF's dry mass: -1.385e-4 -> +8.4e-7 of
+  precipitation (in TEMPO's own density: +8.2e-7 -> +1.401e-4);
+- domain W+P residual at 2 h: -7.22e-4 -> -5.81e-4 of precipitation.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ phys/TEMPO                        | 2 +-
+ phys/module_microphysics_driver.F | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/phys/TEMPO b/phys/TEMPO
+index 85e0fe9e..97e7bfa8 160000
+--- a/phys/TEMPO
++++ b/phys/TEMPO
+@@ -1 +1 @@
+-Subproject commit 85e0fe9e30e38cbbe86e268433a640a02655824a
++Subproject commit 97e7bfa8deea81d312e5a3927c022155e75f97c4
+diff --git a/phys/module_microphysics_driver.F b/phys/module_microphysics_driver.F
+index a1093c15..00d47441 100644
+--- a/phys/module_microphysics_driver.F
++++ b/phys/module_microphysics_driver.F
+@@ -1441,6 +1441,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      p=p,                                &
+                      w=w,                                &
+                      dz=dz8w,                            &
++                     rho_dry=rho,                        & ! tempo's rho*dz is WRF's dry-air mass
+                      qv=qv_curr,                         &
+                      qc=qc_curr,                         &
+                      qr=qr_curr,                         &
+-- 
+2.55.0
+

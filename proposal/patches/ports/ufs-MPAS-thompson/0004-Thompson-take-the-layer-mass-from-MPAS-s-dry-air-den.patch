@@ -1,0 +1,92 @@
+From 112f0185ddd38e57407b0f2618ef2a7cb9b3c0e4 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 19:23:39 -0600
+Subject: [PATCH 4/4] Thompson: take the layer mass from MPAS's dry-air density
+
+Thompson computes its own dry density, rho_t = 0.622 p/(R T (qv+0.622))
+with R = 287.04, and uses rho_t*dz as each layer's air mass, while MPAS's
+dry-air mass per layer is rho_p*dz_p with rho_p = zz*rho_zz (R_d = 287.0).
+The two differ by about 287.04/287 - 1 = 1.4e-4 plus the 0.622-versus-
+R_d/R_v term, so sedimentation moved MPAS's water by the wrong amount (the
+MPAS counterpart of ufs-community/ccpp-physics fix M4). mp_gt_driver gets an
+optional rho_dry and, when present, sets dz1d = dz*rho_dry/rho_t, so
+Thompson's rho*dz is MPAS's dry-air mass to rounding; both mp_gt_driver
+calls pass rho_dry = rho_p, which microphysics_from_MPAS sets to the dry
+density just before the call. Each call has no inner loop, so dz1d and
+rho_t refer to the same state (MPAS's own microphysics substeps call the
+driver afresh).
+
+Measured in MPAS (supercell as in the first commit, 2 h): with the previous
+commits, water plus precipitation changes by -1.2e-4 of the precipitation,
+and setting Thompson's R to 287.0 alone moves it by 1.38e-4 (predicted
+1.39e-4). With this commit the microphysics, metered per call in MPAS's frame and
+across microphysics_from_MPAS/microphysics_to_MPAS, closes to 1e-15 kg/m2.
+The domain also stays at 1e-14 until 0:50; from 1:00 it gains +6.0e-5 kg/m2
+(+3.8e-5 of the precipitation at 2 h), all of it from the monotonic scalar
+transport's max(0, ...) clip where the vertical Courant number exceeds 1
+(1.07-1.17 in the strongest updrafts at dt = 12 s; Kessler stays below 0.96).
+With dt = 8 s the domain closes to roundoff for the full 2 h.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/mpas_atmphys_driver_microphysics.F             | 4 ++--
+ .../physics/physics_wrf/module_mp_thompson.F               | 7 ++++++-
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/core_atmosphere/physics/mpas_atmphys_driver_microphysics.F b/src/core_atmosphere/physics/mpas_atmphys_driver_microphysics.F
+index 44e0f1f4..e5484a32 100644
+--- a/src/core_atmosphere/physics/mpas_atmphys_driver_microphysics.F
++++ b/src/core_atmosphere/physics/mpas_atmphys_driver_microphysics.F
+@@ -653,7 +653,7 @@
+                   th        = th_p        , qv         = qv_p         , qc         = qc_p         , &
+                   qr        = qr_p        , qi         = qi_p         , qs         = qs_p         , &
+                   qg        = qg_p        , ni         = ni_p         , nr         = nr_p         , &
+-                  pii       = pi_p        , p          = pres_p       , dz         = dz_p         , &
++                  pii       = pi_p        , p          = pres_p       , dz         = dz_p         , rho_dry    = rho_p        , &
+                   w         = w_p         , dt_in      = dt_microp    , itimestep  = itimestep    , &
+                   rainnc    = rainnc_p    , rainncv    = rainncv_p    , snownc     = snownc_p     , &
+                   snowncv   = snowncv_p   , graupelnc  = graupelnc_p  , graupelncv = graupelncv_p , &
+@@ -677,7 +677,7 @@
+                   th        = th_p        , qv         = qv_p         , qc         = qc_p         , &
+                   qr        = qr_p        , qi         = qi_p         , qs         = qs_p         , &
+                   qg        = qg_p        , ni         = ni_p         , nr         = nr_p         , &
+-                  pii       = pi_p        , p          = pres_p       , dz         = dz_p         , &
++                  pii       = pi_p        , p          = pres_p       , dz         = dz_p         , rho_dry    = rho_p        , &
+                   w         = w_p         , dt_in      = dt_microp    , itimestep  = itimestep    , &
+                   rainnc    = rainnc_p    , rainncv    = rainncv_p    , snownc     = snownc_p     , &
+                   snowncv   = snowncv_p   , graupelnc  = graupelnc_p  , graupelncv = graupelncv_p , &
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index 7036f267..65a2e3aa 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -1000,7 +1000,8 @@
+ !+---+-----------------------------------------------------------------+
+       SUBROUTINE mp_gt_driver(qv, qc, qr, qi, qs, qg, ni, nr, nc,     &
+                               nwfa, nifa, nwfa2d, nifa2d,             &
+-                              th, pii, p, w, dz, dt_in, itimestep,    &
++                              th, pii, p, w, dz, rho_dry,             &
++                              dt_in, itimestep,                       &
+                               RAINNC, RAINNCV,                        &
+                               SNOWNC, SNOWNCV,                        &
+                               GRAUPELNC, GRAUPELNCV, SR,              &
+@@ -1031,6 +1032,7 @@
+       INTEGER, INTENT(IN):: has_reqc, has_reqi, has_reqs
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN):: &
+                           pii, p, w, dz
++      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: rho_dry
+       REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT):: &
+                           RAINNC, RAINNCV, SR
+       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(INOUT)::      &
+@@ -1155,6 +1157,9 @@
+             p1d(k) = p(i,k,j)
+             w1d(k) = w(i,k,j)
+             dz1d(k) = dz(i,k,j)
++            ! with the host's dry density, Thompson's rho*dz is exactly the host's dry-air mass
++            if (present(rho_dry)) dz1d(k) = dz(i,k,j)*rho_dry(i,k,j) &
++                 *R*t1d(k)*(MAX(1.E-10,qv(i,k,j))+0.622)/(0.622*p1d(k))
+             qv1d(k) = qv(i,k,j)
+             qc1d(k) = qc(i,k,j)
+             qi1d(k) = qi(i,k,j)
+-- 
+2.55.0
+

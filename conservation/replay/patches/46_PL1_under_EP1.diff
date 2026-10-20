@@ -1,0 +1,308 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -332,6 +332,7 @@
+     real (kind=kind_phys), pointer :: rca    (:)   => null()  !< canopy resistance
+     real (kind=kind_phys), pointer :: tprcp  (:)   => null()  !< sfc_fld%tprcp - total precipitation
+     real (kind=kind_phys), pointer :: srflag (:)   => null()  !< sfc_fld%srflag - snow/rain flag for precipitation
++    real (kind=kind_phys), pointer :: tprcp_t1 (:) => null()  !< lowest-layer T of the step tprcp fell in (pl1)
+     real (kind=kind_phys), pointer :: slc    (:,:) => null()  !< liquid soil moisture
+     real (kind=kind_phys), pointer :: smc    (:,:) => null()  !< total soil moisture
+     real (kind=kind_phys), pointer :: stc    (:,:) => null()  !< soil temperature
+@@ -2708,6 +2709,7 @@
+     allocate (Sfcprop%f10m   (IM))
+     allocate (Sfcprop%tprcp  (IM))
+     allocate (Sfcprop%srflag (IM))
++    allocate (Sfcprop%tprcp_t1 (IM))
+     allocate (Sfcprop%slc    (IM,Model%lsoil))
+     allocate (Sfcprop%smc    (IM,Model%lsoil))
+     allocate (Sfcprop%stc    (IM,Model%lsoil))
+@@ -2733,6 +2735,7 @@
+     Sfcprop%f10m   = clear_val
+     Sfcprop%tprcp  = clear_val
+     Sfcprop%srflag = clear_val
++    Sfcprop%tprcp_t1 = clear_val
+     Sfcprop%slc    = clear_val
+     Sfcprop%smc    = clear_val
+     Sfcprop%stc    = clear_val
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -1417,6 +1417,13 @@
+   dimensions = (horizontal_dimension)
+   type = real
+   kind = kind_phys
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
++  units = K
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [srflag]
+   standard_name = precipitation_type
+   long_name = snow/rain flag for precipitation
+--- a/UFSATM/ccpp/driver/GFS_restart.F90
++++ b/UFSATM/ccpp/driver/GFS_restart.F90
+@@ -150,6 +150,9 @@
+     if (Model%rrfs_sd) then
+        num2d = num2d + 6
+     endif
++    if (Model%sfc_precip_enthalpy) then
++       num2d = num2d + 1
++    endif
+ 
+     ! Number of required 3D restart variables.
+     num3d = Model%ntot3d
+@@ -477,6 +480,13 @@
+       Restart(idx)%axes = 2
+       Restart(idx)%data%var2 => Coupling%rrfs_hwp_ave(:)
+     endif
++    ! pl1: T1 of the step whose precipitation tprcp holds
++    if (Model%sfc_precip_enthalpy) then
++      idx = idx + 1
++      Restart(idx)%name = 'sfc_precip_t1'
++      Restart(idx)%axes = 2
++      Restart(idx)%data%var2 => Sfcprop%tprcp_t1(:)
++    endif
+ 
+     !--- phy_f3d variables
+     do num = 1,Model%ntot3d
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+@@ -28,7 +28,8 @@
+         graupelprv, draincprv, drainncprv, diceprv, dsnowprv, dgraupelprv, dtp, num_diag_buckets,                         &
+         dtend, dtidx, index_of_temperature, index_of_process_mp,ldiag3d, qdiag3d,dqdt_qmicro, lssav, num_dfi_radar,       &
+         fh_dfi_radar,index_of_process_dfi_radar, ix_dfi_radar, dfi_radar_tten, radar_tten_limits, fhour, prevsq,      &
+-        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp, sfc_precip_enthalpy, con_cliq, tgrs)
++        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp, sfc_precip_enthalpy, con_cliq, tgrs, &
++        tprcp_t1)
+ !
+       use machine, only: kind_phys
+       use calpreciptype_mod, only: calpreciptype
+@@ -58,6 +59,7 @@
+       real(kind=kind_phys),                    intent(in)    :: con_cliq
+       real(kind=kind_phys), dimension(:,:), optional, intent(in) :: tgrs
+       real(kind=kind_phys)                                   :: lfph
++      real(kind=kind_phys), dimension(:), optional, intent(inout) :: tprcp_t1
+       real(kind=kind_phys), dimension(:),      intent(in)    :: rain1, xlat, xlon, tsfc
+       real(kind=kind_phys), dimension(:),      intent(inout) :: ice, snow, graupel, rainc
+       real(kind=kind_phys), dimension(:),      intent(in), optional :: rain0, ice0, snow0, graupel0
+@@ -530,6 +532,15 @@
+           enddo
+         endif
+       endif
++
++      ! pl1: the surfaces book tprcp next step at the T1 it left the atmosphere at
++      if (present(sfc_precip_enthalpy) .and. present(tprcp_t1) .and. present(tgrs)) then
++        if (sfc_precip_enthalpy) then
++          do i = 1, im
++            tprcp_t1(i) = tgrs(i,1)
++          enddo
++        endif
++      endif
+ 
+       if_save_fields: if (lssav) then
+ !        if (Model%me == 0) print *,'in phys drive, kdt=',Model%kdt, &
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+@@ -1092,3 +1092,12 @@
+   kind = kind_phys
+   intent = in
+   optional = True
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
++  units = K
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = inout
++  optional = True
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -144,7 +144,7 @@
+                    qsnbot    ,ponding ,ponding1 ,ponding2 ,t2m,q2e ,z0h_total , & ! out :
+ #ifdef CCPP
+                    emissi    ,fpice   ,ch2b     , esnow   , albsnd , albsni   , &
+-                   errmsg    ,errflg, fpice_host, sw_target, lwnet_ref, hevap, hprec_out, hlw_out) 
++                   errmsg    ,errflg, fpice_host, sw_target, lwnet_ref, hevap, hprec_out, hlw_out, tprec) 
+ #else
+                    emissi    ,fpice   ,ch2b     , esnow.  , albsnd , albsni) 
+ #endif
+@@ -246,6 +246,8 @@
+   real (kind=kind_phys), optional                 , intent(out)   :: hevap      !< ev1 (w/m2)
+   real (kind=kind_phys), optional                 , intent(out)   :: hprec_out  !< ep1 heat to the top layer (j/m2)
+   real (kind=kind_phys), optional                 , intent(out)   :: hlw_out    !< lw2 heat kept (j/m2)
++  real (kind=kind_phys), optional                 , intent(in)    :: tprec      !< precipitation temperature (k), pl1
++  real (kind=kind_phys)                                           :: tprc
+   real (kind=kind_phys)                                           :: hsng, hprg, dqp, dqlw, hcg
+   real (kind=kind_phys)                           , intent(out)   :: ch2b
+   real (kind=kind_phys)                           , intent(out)   :: esnow
+@@ -373,8 +375,10 @@
+      ! ep1: precipitation lands with its frame-F enthalpy (no PAH on glaciers)
+      dqp = 0.
+      if (opt_ep_gla) then
+-        dqp = (prcp*(1.-fpice)*cl_f_gla*(sfctmp - tfrz) &
+-            + prcp*fpice*(ci_f_gla*(sfctmp - t0_f_gla) - cl_f_gla*(tfrz - t0_f_gla)))*dt - hprg
++        tprc = sfctmp
++        if (present(tprec)) tprc = tprec
++        dqp = (prcp*(1.-fpice)*cl_f_gla*(tprc - tfrz) &
++            + prcp*fpice*(ci_f_gla*(tprc - t0_f_gla) - cl_f_gla*(tfrz - t0_f_gla)))*dt - hprg
+         if (isnow < 0) then
+            hcg = snow_hcap_glacier(snice(isnow+1), snliq(isnow+1), dzsnso(isnow+1))
+         else
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -523,7 +523,7 @@
+                    pahg    , pahb    , pah     , esnow   , canhs   , laisun  , &
+                    laisha  , rb      , qsfcveg , qsfcbare                      &
+ #ifdef CCPP
+-                   ,errmsg, errflg, fpcv_host, sw_target, hevap, lwnet_ref, hprec_out, hlw_out)
++                   ,errmsg, errflg, fpcv_host, sw_target, hevap, lwnet_ref, hprec_out, hlw_out, tprec)
+ #else
+                    )
+ #endif
+@@ -696,6 +696,8 @@
+   real (kind=kind_phys), optional, intent(in)  :: lwnet_ref !< radiation-time land net upward LW (w/m2), lw2
+   real (kind=kind_phys), optional, intent(out) :: hprec_out !< ep1 heat given to the top layer (j/m2)
+   real (kind=kind_phys), optional, intent(out) :: hlw_out   !< lw2 heat kept by the top layer (j/m2)
++  real (kind=kind_phys), optional, intent(in)  :: tprec     !< precipitation temperature (k), pl1
++  real (kind=kind_phys)              :: tprc
+ #endif
+ 
+ ! local
+@@ -987,7 +989,9 @@
+      ! ep1: precipitation lands with its frame-F enthalpy; PAH and the stored water's content supplied hprec
+      dqp = 0.
+      if (opt_ep) then
+-        dqp = (rain*cl_f*(sfctmp - tfrz) + snow*(ci_f*(sfctmp - t0_f) - cl_f*(tfrz - t0_f)) - pah)*dt - hprec
++        tprc = sfctmp
++        if (present(tprec)) tprc = tprec
++        dqp = (rain*cl_f*(tprc - tfrz) + snow*(ci_f*(tprc - t0_f) - cl_f*(tfrz - t0_f)) - pah)*dt - hprec
+         stc(isnow+1) = stc(isnow+1) + dqp/top_hcap(parameters, nsnow, isnow, snice, snliq, dzsnso, sh2o, sice)
+      endif
+      if (present(hprec_out)) hprec_out = dqp
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -456,7 +456,8 @@
+       lsswr, landfrac, adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd,               &
+       albdvis_rad, albdnir_rad, albivis_rad, albinir_rad, adjsfculw_land,       &
+       hflx_evap_enth, con_cliq, con_cvap, con_t0c, noahmp_fwet_opt,              &
+-      sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air, ulw_lnd_rad, sfcdlw_rad &
++      sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air, ulw_lnd_rad, sfcdlw_rad, &
++      tprcp_t1                                               &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -551,6 +552,9 @@
+   real(kind=kind_phys), dimension(:), optional, intent(in)    :: sfcdlw_rad
+   logical :: epd, lwr, aird
+   real(kind=kind_phys) :: lwref
++  real(kind=kind_phys), dimension(:), optional, intent(in) :: tprcp_t1
++  logical :: ptc
++  real(kind=kind_phys) :: tpr
+   logical :: kir_d, adv_d
+   integer :: opt_cnh_d
+   logical :: pph, swr, lwc, eve
+@@ -1018,6 +1022,8 @@
+   aird = .false.
+   if (present(noahmp_pore_air)) aird = noahmp_pore_air
+   call noahmp_options_energy2(epd, aird, 1972.0_kind_phys)   ! FV3's c_ice (frame F)
++  ptc = .false.
++  if (present(sfc_precip_enthalpy)) ptc = sfc_precip_enthalpy .and. present(tprcp_t1)
+   opt_ep_gla = epd
+   opt_ev_gla = eve
+   cl_f_gla = con_cliq
+@@ -1210,6 +1216,10 @@
+         endif
+       endif
+       hev = 0.
++      tpr = temperature_forcing   ! pl1: precipitation temperature
++      if (ptc) then
++        if (tprcp_t1(i) > 0.) tpr = tprcp_t1(i)
++      endif
+       lwref = -1.e20
+       if (lwr) then
+         if (ulw_lnd_rad(i) >= 0.) lwref = ulw_lnd_rad(i) - sfcdlw_rad(i)
+@@ -1258,7 +1268,7 @@
+ #ifdef CCPP
+           albedo_direct        ,albedo_diffuse,       errmsg               ,errflg ,  &
+           fpice_host=merge(srflag(i), -1.0_kind_phys, pph), sw_target=swt,              &
+-          lwnet_ref=lwref, hevap=hev)
++          lwnet_ref=lwref, hevap=hev, tprec=tpr)
+ #else
+           albedo_direct        ,albedo_diffuse)
+ #endif
+@@ -1392,7 +1402,7 @@
+ #ifdef CCPP
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   ,                        &
+           errmsg                ,errflg                ,                        &
+-          fpcv_host=fpcvh, sw_target=swt, hevap=hev, lwnet_ref=lwref)
++          fpcv_host=fpcvh, sw_target=swt, hevap=hev, lwnet_ref=lwref, tprec=tpr)
+ #else
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   )
+ #endif
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+@@ -1855,3 +1855,12 @@
+   type = integer
+   intent = in
+   optional = True
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
++  units = K
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -44,7 +44,8 @@
+      &       snwdph, qss_i, qss_w, snowmt, gflux, cmm, chh,             &
+      &       evapi, evapw, hflxi, hflxw, islmsk,                        &
+      &       errmsg, errflg, iter, lw_sfc_consistent, adjsfcdlw,
+-     &       adjsfculw_ice, sfc_precip_enthalpy, con_hfus, con_cliq
++     &       adjsfculw_ice, sfc_precip_enthalpy, con_hfus, con_cliq,
++     &       tprcp_t1
+      &     )
+ 
+ ! ===================================================================== !
+@@ -166,6 +167,8 @@
+       logical, optional, intent(in) :: sfc_precip_enthalpy
+       real (kind=kind_phys), intent(in) :: con_hfus, con_cliq
+       real (kind=kind_phys) :: snowm(im), dqp, e1, e1x, b1x, tc1
++      real (kind=kind_phys), optional, intent(in) :: tprcp_t1(:)
++      real (kind=kind_phys) :: tprc
+       real (kind=kind_phys), parameter :: di_e = 917.0_kind_phys,
+      &  ci_e = 2054.0_kind_phys, li_e = 3.34e5_kind_phys,
+      &  tfi_e = -0.054_kind_phys, tfi0_e = tfi_e - 0.0001_kind_phys
+@@ -416,7 +419,12 @@
+       if (sfc_precip_enthalpy) then
+       do i = 1, im
+         if (flag(i) .and. snowm(i) > zero .and. hice(i) > zero) then
+-          dqp = snowm(i)*(1972.0_kind_phys*(t1(i) - t0c) - con_hfus
++          tprc = t1(i)
++          if (present(sfc_precip_enthalpy) .and. present(tprcp_t1)) then
++            if (sfc_precip_enthalpy .and. tprcp_t1(i) > zero)
++     &        tprc = tprcp_t1(i)
++          endif
++          dqp = snowm(i)*(1972.0_kind_phys*(tprc - t0c) - con_hfus
+      &        - con_cliq*tfi_e + li_e)
+           tc1 = min(stsice(i,1) - t0c, tfi0_e)
+           e1  = ci_e*(tc1 - tfi_e) - li_e*(one - tfi_e/tc1)
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+@@ -497,3 +497,12 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
++  units = K
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True

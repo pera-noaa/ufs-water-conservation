@@ -1,0 +1,77 @@
+From d3a704fdbb9e1bed605d0c189ea44270d8139210 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 15:52:13 -0600
+Subject: [PATCH 1/2] Thompson: count all sedimentation out of the lowest layer
+ as precipitation
+
+The sedimentation flux out of the lowest layer (sed_r, sed_i, sed_s, sed_g
+at kts) always leaves the column, but it was added to the surface
+precipitation only when the water left in that layer exceeded R1*rr_min.
+Below the threshold the water was deleted: a one-signed loss.
+
+Count every such flux as precipitation.
+
+Measured with a double-precision meter that closes the physics' column
+water against its own surface fluxes every step (C96 control_p8_ugwpv1,
+6 h, all other water-conservation fixes applied): the physics lost
+1.46e-7 kg/m2 (2e-7 of precipitation); with the fix 1.6e-8 (2e-8), and the
+largest single-column residual fell from 1.3e-4 to 1.7e-8 kg/m2.
+---
+ physics/MP/Thompson/module_mp_thompson.F90 | 20 ++++++++------------
+ 1 file changed, 8 insertions(+), 12 deletions(-)
+
+diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
+index cf615785..c50adb73 100644
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -4029,9 +4029,8 @@ module module_mp_thompson
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (rr(kts).gt.R1*rr_min) then
+-                  pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+-               endif 
++               ! all of the flux out of the lowest layer reaches the surface
++               pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+             enddo
+          else !if(.not. sedi_semi)
+             niter = 1
+@@ -4140,9 +4139,8 @@ module module_mp_thompson
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (ri(kts).gt.R1*rr_min) then
+-               pptice = pptice + sed_i(kts)*DT*onstep(2)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptice = pptice + sed_i(kts)*DT*onstep(2)
+          enddo
+       endif
+ 
+@@ -4170,9 +4168,8 @@ module module_mp_thompson
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (rs(kts).gt.R1*rr_min) then
+-               pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+          enddo
+       endif
+ 
+@@ -4201,9 +4198,8 @@ module module_mp_thompson
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (rg(kts).gt.R1*rr_min) then
+-                  pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+-               endif
++               ! all of the flux out of the lowest layer reaches the surface
++               pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+             enddo
+          else ! if(.not. sedi_semi) then 
+             niter = 1
+-- 
+2.55.0
+

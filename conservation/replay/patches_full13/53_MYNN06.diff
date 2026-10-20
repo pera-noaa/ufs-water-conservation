@@ -1,0 +1,205 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1092,6 +1092,7 @@
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_mix_sl     !< MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
+     logical              :: mynn_sfc_heat   !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
+     logical              :: gf_closure      !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl           !< deformed CFL factor
+@@ -3807,6 +3808,7 @@
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_mix_sl = .false. !< MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
+     logical              :: mynn_sfc_heat = .false. !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
+     logical              :: gf_closure = .false. !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl          = 8                  !< deformed CFL factor
+@@ -4365,7 +4367,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, mynn_sfc_heat, gf_closure,                   &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, mynn_mix_sl, mynn_sfc_heat, gf_closure,                   &
+                                thompson_sed_actual,                                                                         &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+@@ -5125,6 +5127,7 @@
+     Model%thompson_sed_actual = thompson_sed_actual
+     Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
++    Model%mynn_mix_sl = mynn_mix_sl
+     Model%mynn_sfc_heat = mynn_sfc_heat
+     Model%gf_closure = gf_closure
+     Model%decfl            = decfl
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -5280,6 +5280,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[mynn_mix_sl]
++  standard_name = flag_for_mynn_static_energy_mixing
++  long_name = MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
++  units = flag
++  dimensions = ()
++  type = logical
+ [samf_kirchhoff]
+   standard_name = flag_for_samf_kirchhoff_latent_heat
+   long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+@@ -372,7 +372,7 @@
+        &sh3d,sm3d,                      &
+        &nchem,kdvel,ndvel,              & !Smoke/Chem variables
+        &chem3d,vdep,smoke_dbg,          &
+-       &sfc_heat_cons,                  &
++       &sfc_heat_cons, mix_sl,          &
+        &frp,emis_ant_no,                & ! JLS/RAR to adjust exchange coeffs
+        &mix_chem,enh_mix,rrfs_sd,       & ! end smoke/chem variables
+        &tsq,qsq,cov,                    &
+@@ -439,6 +439,7 @@
+ 
+     logical, intent(in) :: mix_chem,enh_mix,rrfs_sd,smoke_dbg
+     logical, intent(in) :: sfc_heat_cons  ! apply the host's sensible heat flux as a theta flux (cp, 1/exner)
++    logical, intent(in) :: mix_sl         ! mix liquid-water static energy instead of theta-l
+ 
+     integer, intent(in) ::                                   &
+                          & IDS,IDE,JDS,JDE,KDS,KDE           &
+@@ -1279,7 +1280,7 @@
+                &bl_mynn_mixqt,                           &
+                &bl_mynn_edmf,                            &
+                &bl_mynn_edmf_mom,                        &
+-               &bl_mynn_mixscalars                       )
++               &bl_mynn_mixscalars, mix_sl               )
+ 
+ 
+        if ( mix_chem ) then
+@@ -4062,7 +4063,7 @@
+        &bl_mynn_mixqt,                        &
+        &bl_mynn_edmf,                         &
+        &bl_mynn_edmf_mom,                     &
+-       &bl_mynn_mixscalars                    )
++       &bl_mynn_mixscalars, mix_sl            )
+ 
+ !-------------------------------------------------------------------
+     integer, intent(in) :: kts,kte,i
+@@ -4072,6 +4073,7 @@
+ # define kte HARDCODE_VERTICAL
+ #endif
+ 
++    logical, intent(in) :: mix_sl
+     integer, intent(in) :: bl_mynn_cloudmix,bl_mynn_mixqt,                &
+                            bl_mynn_edmf,bl_mynn_edmf_mom,                 &
+                            bl_mynn_mixscalars
+@@ -4115,6 +4117,7 @@
+           &qni2,qnc2,qnwfa2,qnifa2,qnbca2,ozone2
+     real(kind_phys), dimension(kts:kte) :: zfac,plumeKh,rhoinv
+     real(kind_phys), dimension(kts:kte) :: a,b,c,d,x
++    real(kind_phys), dimension(kts:kte+1) :: sl_s, sl_z, sl_zi, sl_aw, sl_daw
+     real(kind_phys), dimension(kts:kte+1) :: rhoz,                        & !rho on model interface
+           &khdz,kmdz
+     real(kind_phys):: rhs,gfluxm,gfluxp,dztop,maxdfh,mindfh,maxcf,maxKh,zw
+@@ -4340,6 +4343,30 @@
+           &       sub_thl(k)*delt + det_thl(k)*delt
+     ENDDO
+ 
++    IF (mix_sl) THEN
++       ! mix s_l/cp = exner*thl + g*z/cp (flux form): conserves sum(rho*dz*cp*T_l) exactly; same matrix,
++       ! plume fluxes of thl converted at the interfaces, sources taken as temperature tendencies
++       sl_zi(kts) = 0.
++       DO k=kts,kte
++          sl_zi(k+1) = sl_zi(k) + dz(k)
++          sl_z(k) = sl_zi(k) + 0.5*dz(k)
++          sl_s(k) = exner(k)*thl(k) + grav*sl_z(k)/cp
++       ENDDO
++       sl_aw(kts) = 0.
++       sl_daw(kts) = 0.
++       sl_aw(kte+1) = 0.
++       sl_daw(kte+1) = 0.
++       DO k=kts+1,kte
++          sl_aw(k)  = 0.5*(exner(k-1)+exner(k))*s_awthl(k)  + grav*sl_zi(k)/cp*s_aw(k)
++          sl_daw(k) = 0.5*(exner(k-1)+exner(k))*sd_awthl(k) + grav*sl_zi(k)/cp*sd_aw(k)
++       ENDDO
++       DO k=kts,kte
++          d(k)=sl_s(k) + exner(k)*(tcd(k) + diss_heat(k) + sub_thl(k) + det_thl(k))*delt &
++             & + dtz(k)*rhoinv(k)*((sl_aw(k)-sl_aw(k+1)) + (sl_daw(k)-sl_daw(k+1)))
++       ENDDO
++       d(kts)=d(kts) + dtz(kts)*rhosfc*flt*exner(kts)*rhoinv(kts)
++    ENDIF
++
+ !! no flux at the top
+ !    a(kte)=-1.
+ !    b(kte)=1.
+@@ -4358,6 +4385,12 @@
+     b(kte)=1.
+     c(kte)=0.
+     d(kte)=thl(kte)
++    IF (mix_sl) THEN   ! conservative top row: no flux through the model top
++       a(kte)=  -dtz(kte)*khdz(kte)*rhoinv(kte) + 0.5*dtz(kte)*rhoinv(kte)*(s_aw(kte)+sd_aw(kte))
++       b(kte)=1.+dtz(kte)*khdz(kte)*rhoinv(kte) + 0.5*dtz(kte)*rhoinv(kte)*(s_aw(kte)+sd_aw(kte))
++       d(kte)=sl_s(kte) + exner(kte)*(tcd(kte) + diss_heat(kte) + sub_thl(kte) + det_thl(kte))*delt &
++          & + dtz(kte)*rhoinv(kte)*(sl_aw(kte) + sl_daw(kte))
++    ENDIF
+ 
+ !    CALL tridiag(kte,a,b,c,d)
+     CALL tridiag2(kte,a,b,c,d,x)
+@@ -4365,7 +4398,11 @@
+ 
+     DO k=kts,kte
+        !thl(k)=d(k-kts+1)
+-       thl(k)=x(k)
++       IF (mix_sl) THEN
++          thl(k)=(x(k) - grav*sl_z(k)/cp)/exner(k)
++       ELSE
++          thl(k)=x(k)
++       ENDIF
+     ENDDO
+ 
+ IF (bl_mynn_mixqt > 0) THEN
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
+@@ -159,7 +159,7 @@
+      &  imp_physics_tempo, &
+      &  imfdeepcnv_samf,                                   &
+      &  chem3d, frp, mix_chem, rrfs_sd, enh_mix,           &
+-     &  nchem, ndvel, vdep, smoke_dbg, mynn_sfc_heat,      &
++     &  nchem, ndvel, vdep, smoke_dbg, mynn_sfc_heat, mynn_mix_sl, &
+      &  imp_physics_nssl, nssl_ccn_on,                     &
+      &  ltaerosol, mraerosol, spp_wts_pbl, spp_pbl,        &
+      &  lprnt, huge, errmsg, errflg                        )
+@@ -184,7 +184,7 @@
+      !smoke/chem
+      integer, intent(in) :: nchem, ndvel
+      integer, parameter  :: kdvel=1
+-     logical, intent(in) :: smoke_dbg, mynn_sfc_heat
++     logical, intent(in) :: smoke_dbg, mynn_sfc_heat, mynn_mix_sl
+ 
+ ! NAMELIST OPTIONS (INPUT):
+      logical, intent(in) ::                                 &
+@@ -763,7 +763,7 @@
+ !chem/smoke
+      &             nchem=nchem,kdvel=kdvel,ndvel=ndvel,                &
+      &             Chem3d=chem3d,Vdep=vdep,smoke_dbg=smoke_dbg,        &
+-     &             sfc_heat_cons=mynn_sfc_heat,                        &
++     &             sfc_heat_cons=mynn_sfc_heat, mix_sl=mynn_mix_sl,    &
+      &             FRP=frp,EMIS_ANT_NO=emis_ant_no,                    &
+      &             mix_chem=mix_chem,enh_mix=enh_mix,                  &
+      &             rrfs_sd=rrfs_sd,                                    &
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.meta
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.meta
+@@ -1542,6 +1542,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[mynn_mix_sl]
++  standard_name = flag_for_mynn_static_energy_mixing
++  long_name = flag for MYNN mixing of liquid-water static energy instead of theta-l
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [ltaerosol]
+   standard_name = flag_for_aerosol_physics
+   long_name = flag for aerosol physics

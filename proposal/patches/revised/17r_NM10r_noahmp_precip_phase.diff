@@ -1,0 +1,126 @@
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 13:10:48.000000000 -0500
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 13:10:50.000000000 -0500
+@@ -453,7 +453,7 @@
+                    pahg    , pahb    , pah     , esnow   , canhs   , laisun  , &
+                    laisha  , rb      , qsfcveg , qsfcbare                      &
+ #ifdef CCPP
+-                   ,errmsg, errflg)
++                   ,errmsg, errflg, fpcv_host)
+ #else
+                    )
+ #endif
+@@ -613,11 +613,13 @@
+   real (kind=kind_phys), intent(out) :: tgv
+   real (kind=kind_phys), intent(out) :: tgb
+   real (kind=kind_phys)              :: q1
++  real (kind=kind_phys)              :: fpcvh
+   real (kind=kind_phys), intent(out) :: emissi
+ !jref:end
+ #ifdef CCPP
+   character(len=*), intent(inout)    :: errmsg
+   integer,          intent(inout)    :: errflg
++  real (kind=kind_phys), optional, intent(in)  :: fpcv_host !< host frozen fraction of convective precipitation
+ #endif
+ 
+ ! local
+@@ -751,11 +753,14 @@
+ ! --------------------------------------------------------------------------------------------------
+ ! re-process atmospheric forcing
+ 
++   fpcvh = -1.
++   if (present(fpcv_host)) fpcvh = fpcv_host
++
+    call atm (parameters,ep_2, epsm1, sfcprs  ,sfctmp   ,q2      ,    &
+              prcpconv, prcpnonc,prcpshcv,prcpsnow,prcpgrpl,prcphail, &
+              soldn   ,cosz     ,thair   ,qair    ,                   & 
+              eair    ,rhoair   ,qprecc  ,qprecl  ,solad   ,solai   , &
+-             swdown  ,bdfall   ,rain    ,snow    ,fp      ,fpice   , prcp )     
++             swdown  ,bdfall   ,rain    ,snow    ,fp      ,fpice   , prcp, fpcvh )
+ 
+ ! snow/soil layer thickness (m)
+ 
+@@ -968,7 +973,7 @@
+                   prcpconv,prcpnonc ,prcpshcv,prcpsnow,prcpgrpl,prcphail , &
+                   soldn   ,cosz     ,thair   ,qair    ,                    & 
+                   eair    ,rhoair   ,qprecc  ,qprecl  ,solad   , solai   , &
+-                  swdown  ,bdfall   ,rain    ,snow    ,fp      , fpice   ,prcp )     
++                  swdown  ,bdfall   ,rain    ,snow    ,fp      , fpice   ,prcp, fpcvh )
+ ! --------------------------------------------------------------------------------------------------
+ ! re-process atmospheric forcing
+ ! ----------------------------------------------------------------------
+@@ -990,6 +995,7 @@
+   real (kind=kind_phys)                          , intent(in)  :: prcphail !< hail entering land model [mm/s]              ! mb/an : v3.7
+   real (kind=kind_phys)                          , intent(in)  :: soldn    !< downward shortwave radiation (w/m2)
+   real (kind=kind_phys)                          , intent(in)  :: cosz     !< cosine solar zenith angle [0-1]
++  real (kind=kind_phys)                          , intent(in)  :: fpcvh    !< host frozen fraction of convective precipitation (< 0: sfctmp rule)
+ 
+ ! outputs
+ 
+@@ -1013,6 +1019,8 @@
+ 
+   real (kind=kind_phys)                                        :: pair   !atm bottom level pressure (pa)
+   real (kind=kind_phys)                                        :: prcp_frozen   !total frozen precipitation [mm/s] ! mb/an : v3.7
++  real (kind=kind_phys)                                        :: fpcv          !frozen fraction of convective precipitation
++  real (kind=kind_phys)                                        :: bdfall0       !snow density before the mix [kg/m3]
+   real (kind=kind_phys), parameter                             :: rho_grpl = 500.0  ! graupel bulk density [kg/m3] ! mb/an : v3.7
+   real (kind=kind_phys), parameter                             :: rho_hail = 917.0  ! hail bulk density [kg/m3]    ! mb/an : v3.7
+ ! --------------------------------------------------------------------------------------------------
+@@ -1092,6 +1100,7 @@
+ 
+      bdfall = min(120.,67.92+51.25*exp((sfctmp-tfrz)/2.59))       !mb/an: change to min  
+      if(opt_snf == 4 .or. opt_snf == 5) then
++        bdfall0 = bdfall
+         prcp_frozen = prcpsnow + prcpgrpl + prcphail
+         if(prcpnonc > 0. .and. prcp_frozen > 0.) then
+           fpice = min(1.0,prcp_frozen/prcpnonc)
+@@ -1103,6 +1112,16 @@
+           fpice = 0.0
+         endif
+ 	
++        ! the microphysics fraction is for grid-scale precipitation; convective precipitation takes the host's
++        ! decision (srflag), or is snow below freezing when the host gives none
++        if(prcpconv + prcpshcv > 0.) then
++          fpcv = 0.0
++          if(sfctmp < tfrz) fpcv = 1.0
++          if(fpcvh >= 0.) fpcv = fpcvh
++          if(opt_snf == 4 .and. fpcv > 0. .and. fpice > 0.) bdfall = (bdfall*fpice*prcpnonc + &
++                 bdfall0*(prcpconv + prcpshcv)) / (fpice*prcpnonc + prcpconv + prcpshcv)
++          fpice = fpice + (fpcv - fpice)*(prcpconv + prcpshcv)/prcp
++        end if
+      endif
+ 
+      rain   = prcp * (1.-fpice)
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:10:48.000000000 -0500
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:10:50.000000000 -0500
+@@ -939,6 +939,7 @@
+ !
+       
+   type(noahmp_parameters) :: parameters
++  real(kind=kind_phys) :: fpcvh
+ 
+ !
+ !  --- end declaration
+@@ -1235,6 +1236,13 @@
+ 
+         ice_flag = 0 
+ 
++        ! the host's convective decision (GFS_MP_generic_post: csnow = rainc when tsfc < 273.15), from srflag
++        fpcvh = -1.
++        if (precip_convective > 0.) then
++          fpcvh = 0.
++          if (srflag(i)*precipitation_forcing - (precip_snow + precip_graupel + precip_hail) &
++              > 0.5*precip_convective) fpcvh = 1.
++        endif
+         call noahmp_sflx (parameters                                          , &
+           i_location            ,j_location            ,latitude              , &
+           year_length           ,julian_day            ,cosine_zenith         , &
+@@ -1298,7 +1306,8 @@
+           lai_sunlit            ,lai_shaded            ,leaf_air_resistance   , &
+ #ifdef CCPP
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   ,                        &
+-          errmsg                ,errflg                )
++          errmsg                ,errflg                ,                        &
++          fpcv_host=fpcvh)
+ #else
+           spec_humid_sfc_veg    ,spec_humid_sfc_bare   )
+ #endif

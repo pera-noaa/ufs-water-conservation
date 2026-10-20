@@ -1,0 +1,26 @@
+ESR 1802
+== round 4
+SOIL  R3' +6.781957e-02; EP heat +3.806978e-02, LW2 kept +5.023345e-02, AIR1 kept +2.516826e-03
+      R_final4 = R3' - E19 + d65 + d66 - EP - LW2 - AIR1 = +2.558213e-05
+      EP: target +5.053269e-01 = PAH -1.206172e-02 + stored +4.793188e-01 + applied +3.806978e-02 (diff +0.000e+00)
+GLAC  R +8.902423e-03; reset content change (glacier flow, booked) +1.435418e-02; EP +1.268872e-03; LW2 +1.904309e-04
+      R_final = R - reset - EP - LW2 = -6.911061e-03
+      EP: target -5.534981e-03 = stored -6.803853e-03 + applied +1.268872e-03 (diff +1.952e-18)
+EV    applied +1.297033e-01 = soil +1.296554e-01 + glacier +4.787252e-05 (diff -6.010e-17)
+LW2   cells kept by land +5.042388e-02 vs soil+glacier kept +5.042388e-02 (diff -2.141e-17)
+      LW applied to lowest layer -1.264971e-02; booked - rad - land kept - applied +4.948e-14
+ICE   EP heat -6.556166e-03; post-ice3lay dH -6.556166e-03 (diff -4.929e-13)
+        R_E (energy column, Kirchhoff)             +2.816733e-08
+        R_S -(canhs+erreng)                        -2.622916e-17
+AQUIFER groundwater dHs +1.015031e+01 - exchange +1.021453e+01 - subsurface -2.278007e-05 - watmin -6.324474e-03 = -5.787199e-02; pore air (gw) -2.448795e-03; diff -5.542e-02
+PH    host-frozen hfus*m +7.279822e-02 applied +7.101807e-02 diff -1.780e-03
+      land frozen received soil +4.235827e-01 (host srflag +4.235827e-01) diff +1.481e-13
+      glacier received +5.504765e-02 host +5.504765e-02 diff +0.000e+00
+SW    land-only cells fsa +1.977752e+01 atm +1.978367e+01 diff -6.149e-03; soil fsa +3.940622e+01 A +3.938763e+01
+ICE   ice3lay residual -1.135e-13; snow-ice dH -6.707e-14
+ICE   EP heat -6.556166e-03; post-ice3lay dH -6.556166e-03 (diff -4.929e-13)
+ ... + hsng (sublimated content leaves) = -3.0785514111911216e-15
+3->4 surface loop..sfc_diag_post         +1.1705 r=dE-F +1.170535e-01 | dE
+7->8 SAMF deep                           -1.1958 r=dE-F -1.195826e-01 | dE
+8->9 SAMF shallow                        -2.8970 r=dE-F -2.896982e-02 | dE
+10->11 Thompson+MP_post                  +1.3024 r=dE-F +8.540113e-02 | dE

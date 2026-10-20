@@ -1,0 +1,54 @@
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_sg.F90	2026-10-17 14:01:59
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_sg.F90	2026-10-17 14:01:59
+@@ -137,13 +137,13 @@
+       real, intent(in):: grav_var(isd:ied,jsd:jed,km)
+       real, intent(inout):: t_dt(is:ie,js:je,km)
+ !---------------------------Local variables-----------------------------
+-      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
++      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den, te1
+       real q0(is:ie,km,nq), qcon(is:ie,km)
+       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
+ #ifdef MULTI_GASES
+       real :: rkx, rdx, rzx, c_air
+ #endif
+-      real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
++      real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol, cvx
+       real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
+       real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
+       integer i, j, k, kk, n, m, iq, km1, im, kbot, l
+@@ -212,7 +212,7 @@
+ #ifdef MULTI_GASES
+ !$OMP                                  rkx,rdx,rzx,c_air,                                    &
+ #endif
+-!$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
++!$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1,te1,cvx)
+   do 1000 j=js,je
+ 
+     do iq=1, nq
+@@ -354,6 +354,7 @@
+                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
+              hd(i,k) = cpm(i)*t0(i,k) + tmp
+              te(i,k) = cvm(i)*t0(i,k) + tmp
++            te1(i,k) = te(i,k)
+               gzh(i) = gzh(i) - grav_var(i,j,k)*delz(i,j,k)
+           enddo
+        enddo
+@@ -678,6 +679,18 @@
+             enddo
+          enddo
+       enddo
++      if ( .not. hydrostatic .and. nwat == 6 ) then
++! T from the relaxed total energy, so the filter conserves cvm*T + gz + KE
++         do k=1,kbot
++            do i=is,ie
++               q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
++               q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
++               cvx = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
++               t0(i,k) = (te1(i,k) + (te(i,k) - te1(i,k))*fra - gz(i,k)     &
++                       - 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)) / cvx
++            enddo
++         enddo
++      endif
+    endif
+ 
+    do k=1,kbot

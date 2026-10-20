@@ -1,0 +1,96 @@
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 19:50:30.000000000 -0500
+@@ -76,7 +76,7 @@
+ !!  \section samfdeep_detailed GFS samfdeepcnv Detailed Algorithm
+       subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &    tmf,qmicro,itc,ntc,cliq,cp,cvap,                              
+-     &    eps,epsm1,fv,grav,hvap,rd,rv,                                 
++     &    eps,epsm1,fv,grav,hvap,hfus,rd,rv,                            
+      &    t0c,delt,ntk,ntr,delp, ten_t, ten_u, ten_v, ten_q,            
+      &    prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,      
+      &    hwrf_samfdeep,progsigma,progomega,cldwrk,rn,kbot,ktop,kcnv,   
+@@ -94,6 +94,7 @@
+       use funcphys , only : fpvs
+ 
+       implicit none
++      real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+       integer, intent(in)  :: islimsk(:)
+@@ -3762,6 +3763,9 @@
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1  ! ice
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1) ! water
++!               freezing of the ice part releases hfus (h is liquid-referenced)
++                new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
++     &                      / real(cp, kind=conv_wp) * tem * tem1
+               else
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem
+               endif
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 19:50:30.000000000 -0500
+@@ -171,6 +171,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [rd]
+   standard_name = gas_constant_of_dry_air
+   long_name = ideal gas constant for dry air
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 19:50:30.000000000 -0500
+@@ -52,7 +52,7 @@
+ !!  -# For the "feedback control", calculate updated values of the state variables by multiplying the cloud base mass flux and the tendencies calculated per unit cloud base mass flux from the static control.
+ !!  \section det_samfshalcnv GFS samfshalcnv Detailed Algorithm
+       subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+-     &     eps,epsm1,fv,grav,hvap,rd,rv,                                &
++     &     eps,epsm1,fv,grav,hvap,hfus,rd,rv,                           &
+      &     t0c,delt,ntk,ntr,delp,first_time_step,restart,               & 
+      &     tmf,qmicro,progsigma,progomega,                              &
+      &     prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,     &
+@@ -66,6 +66,7 @@
+       use funcphys , only : fpvs
+ 
+       implicit none
++      real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+       integer, intent(in)  :: islimsk(:)
+@@ -2685,6 +2686,9 @@
+               if (new_qtr(i,k,2) > -999.0_conv_wp) then
+                 ! Ice
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1
++!               freezing of the ice part releases hfus (h is liquid-referenced)
++                new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
++     &                      / real(cp, kind=conv_wp) * tem * tem1
+                 ! Water
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1)
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 19:50:30.000000000 -0500
+@@ -171,6 +171,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [rd]
+   standard_name = gas_constant_of_dry_air
+   long_name = ideal gas constant for dry air

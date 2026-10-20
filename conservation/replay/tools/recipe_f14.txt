@@ -1,0 +1,62 @@
+# full14 series: rows 01-15 as before
+01_FX1 P . 1 $SRC/energy/patches/01_fv3-fv_mapz_consv_te_fixer_weight.diff
+02_SG1 P . 1 $SRC/energy/patches/02_fv3-fv_sg_relax_total_energy.diff
+03_CP1 P . 1 $SRC/energy/patches/03_fv3-atmosphere_state_update_heating_mass.diff
+04_R1 P . 1 $SRC/energy/patches/04_ccpp-dcyc2t3_radiative_heating_current_mass.diff
+05_FV2 P UFSATM/fv3/atmos_cubed_sphere 1 $A/01_FV2_fv3_statein_consistent_layer_mass.diff
+06_D1_dspheat_ke P . 1 $A/02_enpbl_04_ccpp-satmedmfvdifq_dspheat_ke.diff
+07_D3A P . 1 $A/03_encnv_D3A.diff
+08_D7 P . 1 $SRC/energy/patches/05_fv3-cpl_ke_heating_option.diff
+09_D3B P . 1 $A/04_encnv_02_D3B.diff
+10_D4 P . 1 $A/05_encnv_03_D4.diff
+11_D4n P . 1 $A/06_encnv_04_D4N.diff
+12_NM12 P UFSATM/ccpp/physics 1 $A/07_NM12_noahmp_combine_melt_out.diff
+13_C1 P . 1 $A/08_encpl_04_cpl_water_energy.diff
+14_K1 P . 1 $A/09_encpl_05_thompson_kirchhoff.diff
+15_S1_export P . 1 $A/10r_encpl_06_rebased_on_encnv.diff
+# row 16 (energy 06 TH8) retired: merged into row 43
+17_S1K P . 1 $SRC/energy/patches/07_ccpp-samf_kirchhoff_ice_and_initial_T.diff
+18_TFH P . 1 $SRC/energy/patches/08_ccpp-thompson_frame_F_heating.diff
+19_PBK P . 1 $SRC/energy/patches/09_ccpp-satmedmfvdifq_filler_kirchhoff.diff
+20_C8 P . 1 $SRC/energy/patches/10_fv3-cpl_water_energy_bit8_water_KE.diff
+21_D7S P . 1 $SRC/energy/patches/11_fv3-cpl_ke_smooth.diff
+22_PBF P . 1 $SRC/energy/patches/12_ccpp-fv3-pbl_condensate_flux_export.diff
+23_F3_01a P . 1 $A/12_latent_01a_F3_samf_scavenging_booking.diff
+24_F3_01b P . 1 $A/13_latent_01b_F3_samf_wet_deposition_export_on_all_full.diff
+25_SAMF32 P . 1 $A/14_latent_02_SAMF32_cmake_filter_dependencies.diff
+26_TOPT P . 1 $A/15_latent_03_TOPT_process_split_sum_applied_once.diff
+27_T1_02b P UFSATM/ccpp/physics 1 $A/16_trdyn_02b_T1_samf_tracer_substep.diff
+28_DRY_03b PR UFSATM/ccpp/physics 1 $A/17_trdyn_03b_DRY_chem_tracers_dry_mixing_ratio_transport.diff $P -I $TL/rebase_trdyn.py TREE
+29_INLQ_04 P . 1 $A/18c_trdyn_04_INLQ_inline_q_damping_mass_single_valued.diff
+30_DYN_v6 PR . 1 $A/18d_trdyn_01_DYN_dry_tracer_adv_remap_ic_v6.diff $P -I $TL/rebase_trdyn.py TREE
+31_SI1 P . 2 $S2/04_sfc_SI1.diff
+32_SI2 P . 2 $S2/05_sfc_SI2.diff
+33_NP1 P . 2 $S2/06_sfc_NP1.diff
+34_QR1 P . 2 $S2/08_sfc_QR1.diff
+35_CMC P . 2 $S2/09_sfc_CMC.diff
+36_FL1 P . 2 $S2/10_sfc_FL1.diff
+37_sfc_options_r3 P . 2 $S2/11_sfc_options.diff
+38_SL2 PR . 2 $A/24_ensfc2_13_sfc_SL2.diff $P -I $TL/rebase_r11.py TREE 13
+39_CS1 P . 2 $A/25_ensfc2_14_sfc_CS1.diff
+40_CB1 P . 2 $A/26_ensfc2_15_sfc_CB1.diff
+41_sfc_options_r4_16b P . 2 $SRC/preclag/patches/16b_sfc_options_r4_meta_fixed.diff
+42_E2 PR . 1 $A/28_canopy_01_E2_noahmp_fwet_opt.diff $P -I $TL/rebase_r11.py TREE E2
+# row 43: TH8+TH9 unconditional (cut on fx), replaces energy 06 / canopy 02 / canopy 03
+43_TH8-TH9_unconditional P . 1 $SRC/full14/13_TH8-TH9_unconditional_on_fx.diff
+44_E1 P . 1 $A/30_canopy_04_E1_nst_spray_implicit.diff
+45_dyn_te_exact_v2 P . 1 $A/31_fv3tally_01_fv3-dyn_te_exact_v2.diff
+# row 46: PL1 folded into EP1 = PL1 + the full14 delta
+46_PL1_under_EP1 M 0 .:1:$A/41_preclag_01_PL1_sfc_precip_t1_carry.diff .:1:$SRC/full14/delta_PL1_folded_into_EP1.diff
+47_MYNN01 P . 1 $A/32_suites_01_E3_mynn_surface_flux_density_dew_and_filler_mass.diff
+48_MYNN01b P . 1 $A/33_suites_01b_E3_mynn_moisture_check_latent_heat_double_count.diff
+49_GFDL02 P . 1 $A/34_suites_02_E4_gfdlmp_v3_mass_basis.diff
+50_GF03 PR . 1 $A/35_suites_03_E5_gf_water_closure.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+51_MYNN04 PR . 1 $A/36_suites_04_E3c_mynn_surface_heat_flux_theta.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+52_PBL05 P . 1 $A/37_suites_05_PBL_satmedmfvdifq_surface_flux_layer_mass.diff
+53_MYNN06 PR . 1 $A/38_suites_06_E3d_mynn_static_energy_mixing.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+54_GFDL07 P . 1 $A/39_suites_07_E4c_gfdlmp_v3_rain_sedimentation_heat_capacity.diff
+55_SAMF08 P . 1 $A/40_suites_08_SAMF_deep_ca_trigger_early_return_decomposition.diff
+56_NOFMA S $P -I $TL/nofma.py TREE
+# row 57: NM10r (Noah-MP soil takes the host's convective phase unconditionally)
+57_NM10r P . 1 $SRC/full14/delta_NM10r.diff
+CMP $E/full14/ufs-weather-model

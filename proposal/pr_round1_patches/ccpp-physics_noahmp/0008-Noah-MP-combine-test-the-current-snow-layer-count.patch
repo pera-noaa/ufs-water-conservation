@@ -1,0 +1,52 @@
+From 118c29bf02853724bac7ed0cf5a638e4418b5f63 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:51 -0500
+Subject: [PATCH 08/12] Noah-MP combine: test the current snow layer count
+
+When a pack of two or more layers melts out in one step, combine merges the
+bottom layer into an inactive slot: the test uses the entry count
+isnow_old < -1 instead of isnow < -1 (NCAR/noahmp#47; the glacier module
+carries "mb/km: change to isnow"). Both modules. Noah-MP v5 tests the
+current count.
+
+Measured: per firing, water -0.10 to +0.16 mm and
+energy -1.1 to -8.5 MJ/m2 -> water <= 2.2e-12 mm. Fires 5e-6 per call of
+melt-out-prone packs at 720 s, 1.7e-2 at 3600 s; C96 24 h bitwise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 | 2 +-
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index 491a3b68..260ad46c 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -2936,7 +2936,7 @@ end if   ! opt_gla == 1
+                 snice(j+1) = snice(j+1) + snice(j)
+                 dzsnso(j+1) = dzsnso(j+1) + dzsnso(j)
+              else
+-               if (isnow_old < -1) then
++               if (isnow < -1) then
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                 dzsnso(j-1) = dzsnso(j-1) + dzsnso(j)
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 3d03313e..7eaa43d8 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7675,7 +7675,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                 snice(j+1) = snice(j+1) + snice(j)
+                 dzsnso(j+1) = dzsnso(j+1) + dzsnso(j)
+              else
+-               if (isnow_old < -1) then    ! mb/km: change to isnow
++               if (isnow < -1) then
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                 dzsnso(j-1) = dzsnso(j-1) + dzsnso(j)
+-- 
+2.31.1
+

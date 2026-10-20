@@ -1,0 +1,14 @@
+# A.4 trdyn
+27_T1_02b P UFSATM/ccpp/physics 1 $A/16_trdyn_02b_T1_samf_tracer_substep.diff
+28_DRY_03b PR UFSATM/ccpp/physics 1 $A/17_trdyn_03b_DRY_chem_tracers_dry_mixing_ratio_transport.diff $P -I $TL/rebase_trdyn.py TREE
+29_INLQ_04 P . 1 $A/18c_trdyn_04_INLQ_inline_q_damping_mass_single_valued.diff
+30_DYN_v6 PR . 1 $A/18d_trdyn_01_DYN_dry_tracer_adv_remap_ic_v6.diff $P -I $TL/rebase_trdyn.py TREE
+# A.4 ensfc2 rounds 1-3
+31_SI1 P . 2 $S2/04_sfc_SI1.diff
+32_SI2 P . 2 $S2/05_sfc_SI2.diff
+33_NP1 P . 2 $S2/06_sfc_NP1.diff
+34_QR1 P . 2 $S2/08_sfc_QR1.diff
+35_CMC P . 2 $S2/09_sfc_CMC.diff
+36_FL1 P . 2 $S2/10_sfc_FL1.diff
+37_sfc_options_r3 P . 2 $S2/11_sfc_options.diff
+CMP $E/full10/ufs-weather-model

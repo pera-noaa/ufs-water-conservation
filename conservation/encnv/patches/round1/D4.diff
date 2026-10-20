@@ -1,0 +1,21 @@
+diff -ru a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90 b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90
+--- a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 19:50:30.000000000 -0500
+@@ -732,6 +732,17 @@
+     endif
+ 
+ !
++! GSL drag (ls, bl, ss, tofd) dissipative heating: KE lost by the drag, -d(KE)/cp
++!
++    if ( do_gsl_drag_ls_bl.or.do_gsl_drag_ss.or.do_gsl_drag_tofd) then
++      do k=1,levs
++        do i=1,im
++          Pdtdt(i,k) = Pdtdt(i,k) - ( Pdudt(i,k)*(ugrs(i,k) + 0.5*dtp*Pdudt(i,k))       &
++                                    + Pdvdt(i,k)*(vgrs(i,k) + 0.5*dtp*Pdvdt(i,k)) )/con_cp
++        enddo
++      enddo
++    endif
++!
+ ! get total sso-OGW + NGW
+ !
+      if (do_ugwp_v1) then

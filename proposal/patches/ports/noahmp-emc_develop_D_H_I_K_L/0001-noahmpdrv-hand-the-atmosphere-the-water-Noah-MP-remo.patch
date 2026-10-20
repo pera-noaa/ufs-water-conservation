@@ -1,0 +1,66 @@
+From d079df0b9ce1f705da2c568e6721327e87ae0d63 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 16:38:55 -0600
+Subject: [PATCH 1/8] noahmpdrv: hand the atmosphere the water Noah-MP removed,
+ not latent heat / con_hvap
+
+The CCPP driver gave the atmosphere evap = latent heat / density /
+con_hvap (2.5e6 J/kg), but Noah-MP removes the water with its own latent
+heats (hvap = 2.5104e6; hsub = 2.844e6 whenever ground or canopy is frozen).
+The atmosphere received 0.4 % more water than unfrozen land lost and 14 %
+more over frozen surfaces.
+
+Pass the water flux Noah-MP computes, (ecan + etran + edir)/density, as
+NCAR's own Noah-MP drivers (WRF, HRLDAS, MPAS, LIS) already do. Over glacier,
+set canopy evaporation and transpiration to 0 instead of `undefined`
+(9.99e20), since they now enter the flux; ccpp-physics ufs/dev already sets
+them to 0. The NUOPC driver converts evap to W/m2 for history and back
+before coupling with the same factor, so the coupled flux needs no change;
+its history field evap (labelled latent heat) is now this water flux times
+density and con_hvap, which differs from Noah-MP's own latent heat over
+frozen surfaces. Noah-MP's latent heat itself is unchanged.
+
+Port of ufs-community/ccpp-physics fix D, measured in UFS (C96
+control_p8_ugwpv1, in-model meters): the atmosphere received +0.07 to
++0.10 % of global precipitation more water than the land lost; with the fix
+the two agree to machine precision.
+
+Measured with the rest of this series in the land component
+(datm_cdeps_lnd_gswp3, 24 h, a water meter in noahmpdrv_run): Noah-MP's
+water-check residual summed over land points was -1.50 mm (-5.2e-4 of the
+precipitation, one-signed) before the series and -2.3e-9 mm (-8e-13) after;
+the metered original reproduces the regression baseline.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ drivers/ccpp/noahmpdrv.F90 | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/ccpp/noahmpdrv.F90 b/drivers/ccpp/noahmpdrv.F90
+index eaf9eb6..3fc6571 100644
+--- a/drivers/ccpp/noahmpdrv.F90
++++ b/drivers/ccpp/noahmpdrv.F90
+@@ -1225,8 +1225,8 @@ end subroutine noahmpdrv_timestep_init
+         soil_carbon_fast       = undefined
+         leaf_area_index        = undefined
+         stem_area_index        = undefined
+-        evaporation_canopy     = undefined
+-        transpiration          = undefined
++        evaporation_canopy     = 0.0
++        transpiration          = 0.0
+         aquifer_water          = undefined
+         precip_adv_heat_total  = undefined
+         soil_moisture_wtd      = 0.0
+@@ -1565,7 +1565,8 @@ end subroutine noahmpdrv_timestep_init
+ !  --- change units for output
+ !
+       hflx(i) = hflx(i) / density / con_cp
+-      evap(i) = evap(i) / density / con_hvap
++      ! the water Noah-MP removed (its own hvap/hsub), not latent heat / con_hvap
++      evap(i) = (ecan(i) + etran(i) + edir(i)) / density
+ 
+ !
+ !  --- calculate potential evaporation using noah code
+-- 
+2.55.0
+

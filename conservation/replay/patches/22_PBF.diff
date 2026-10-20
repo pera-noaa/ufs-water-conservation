@@ -1,0 +1,206 @@
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 02:17:38.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 02:17:46.000000000 -0500
+@@ -206,6 +206,8 @@
+     real (kind=kind_phys), pointer :: pflx_sc(:,:) => null()
+     real (kind=kind_phys), pointer :: pflx_mpl(:,:) => null()
+     real (kind=kind_phys), pointer :: pflx_mpi(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_pbll(:,:) => null()  !< PBL liquid condensate through layer bottom (kg m-2)
++    real (kind=kind_phys), pointer :: pflx_pbli(:,:) => null()  !< PBL frozen condensate through layer bottom (kg m-2)
+ 
+     contains
+       procedure :: create  => stateout_create  !<   allocate array data
+@@ -2459,6 +2461,10 @@
+     Stateout%pflx_mpl = clear_val
+     allocate (Stateout%pflx_mpi (IM,Model%levs+1))
+     Stateout%pflx_mpi = clear_val
++    allocate (Stateout%pflx_pbll (IM,Model%levs+1))
++    Stateout%pflx_pbll = clear_val
++    allocate (Stateout%pflx_pbli (IM,Model%levs+1))
++    Stateout%pflx_pbli = clear_val
+ 
+  end subroutine stateout_create
+ 
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 02:17:38.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 02:17:46.000000000 -0500
+@@ -781,6 +781,20 @@
+   dimensions = (horizontal_dimension,vertical_interface_dimension)
+   type = real
+   kind = kind_phys
++[pflx_pbll]
++  standard_name = liquid_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL liquid condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_pbli]
++  standard_name = frozen_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL frozen condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
+ 
+ ########################################################################
+ [ccpp-table-properties]
+diff -ruN a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-18 02:17:39.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-18 02:17:46.000000000 -0500
+@@ -98,6 +98,7 @@
+      &     dspheat,dusfc,dvsfc,dtsfc,dqsfc,hpbl,dkt,dku,tkeh,           &
+      &     kinver,xkzm_m,xkzm_h,xkzm_s,dspfac,bl_upfr,bl_dnfr,          &
+      &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,pbl_kirchhoff,   &
++     &     ntsw,ntgl,pflx_pbll,pflx_pbli,                               &
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+@@ -169,6 +170,10 @@
+ !  flag for dissipative heating = resolved KE loss of the momentum solve
+       logical, intent(in)  :: dspheat_ke
+       logical, intent(in)  :: pbl_kirchhoff
++      integer, intent(in)  :: ntsw, ntgl
++      real(kind=kind_phys), intent(inout) :: pflx_pbll(:,:)
++      real(kind=kind_phys), intent(inout) :: pflx_pbli(:,:)
++      real(kind=kind_phys) :: pblfil(im,km), ql0, qi0
+       real(kind=kind_phys), intent(out) :: ten_t(:,:),                  &
+      &                                     ten_u(:,:), ten_v(:,:)
+ !  flag for TTE-EDMF scheme
+@@ -2681,6 +2686,7 @@
+ !  borrowing them from positive values within the mass-flux
+ !  transport layers
+ !
++      pblfil = 0.
+ ! For the negative liquid water, first borrow water from vapor
+ !   and then borrow it from the other layers if there is still
+ !   negative water
+@@ -2708,12 +2714,14 @@
+                   f1(i,k) = f1(i,k) - elocp * f2(i,k+is)
+                   if (pbl_kirchhoff) f1(i,k) = f1(i,k)
+      &   - (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k+is)
++                  pblfil(i,k) = pblfil(i,k) - f2(i,k+is)
+                   f2(i,k+is) = 0.
+                 elseif (f2(i,k) > 0.0) then
+                   f2(i,k+is) = tem
+                   f1(i,k) = f1(i,k) + elocp * f2(i,k)
+                   if (pbl_kirchhoff) f1(i,k) = f1(i,k)
+      &   + (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k)
++                  pblfil(i,k) = pblfil(i,k) + f2(i,k)
+                   f2(i,k) = 0.
+                 endif
+               endif
+@@ -2749,12 +2757,14 @@
+                   f1(i,k) = f1(i,k) - elocp * f2(i,k+is)
+                   if (pbl_kirchhoff) f1(i,k) = f1(i,k)
+      &   - (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k+is)
++                  pblfil(i,k) = pblfil(i,k) - f2(i,k+is)
+                   f2(i,k+is) = 0.
+                 elseif (f2(i,k) > 0.0) then
+                   f2(i,k+is) = tem
+                   f1(i,k) = f1(i,k) + elocp * f2(i,k)
+                   if (pbl_kirchhoff) f1(i,k) = f1(i,k)
+      &   + (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k)
++                  pblfil(i,k) = pblfil(i,k) + f2(i,k)
+                   f2(i,k) = 0.
+                 endif
+               endif
+@@ -2873,6 +2883,26 @@
+         enddo
+       endif
+ c
++!  condensate transport through layer bottoms (kg m-2, down positive),
++!  filler phase change excluded; tracers 5, 6 are snow, graupel (q1=qgrs)
++      if (pbl_kirchhoff) then
++        do i = 1,im
++          pflx_pbll(i,km+1) = 0.
++          pflx_pbli(i,km+1) = 0.
++        enddo
++        do k = km,1,-1
++          do i = 1,im
++            ql0 = f2(i,k+(ntcw-1)*km)-q1(i,k,ntcw)-pblfil(i,k)
++            if (ntrw > 0) ql0 = ql0+f2(i,k+(ntrw-1)*km)-q1(i,k,ntrw)
++            qi0 = 0.
++            if (ntiw > 0) qi0 = f2(i,k+(ntiw-1)*km)-q1(i,k,ntiw)
++            if (ntsw > 0) qi0 = qi0+f2(i,k+(ntsw-1)*km)-q1(i,k,ntsw)
++            if (ntgl > 0) qi0 = qi0+f2(i,k+(ntgl-1)*km)-q1(i,k,ntgl)
++            pflx_pbll(i,k) = pflx_pbll(i,k+1) - ql0*del(i,k)*gravi
++            pflx_pbli(i,k) = pflx_pbli(i,k+1) - qi0*del(i,k)*gravi
++          enddo
++        enddo
++      endif
+ !> - Recover the tendencies of heat and moisture
+ c
+       do  k = 1,km
+diff -ruN a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-18 02:17:39.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-18 02:17:46.000000000 -0500
+@@ -499,6 +499,36 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[pflx_pbll]
++  standard_name = liquid_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL liquid condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[pflx_pbli]
++  standard_name = frozen_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL frozen condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [sa3dtke]
+   standard_name = do_scale_aware_3d_tke
+   long_name = flag for scale-aware 3d tke scheme
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90 b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-18 02:17:41.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-18 02:17:46.000000000 -0500
+@@ -2774,7 +2774,7 @@
+    real(kind=kind_phys), parameter :: c_liq = 4.1855e+3, c_ice = 1972., t_frz = 273.15  ! = fv_mapz c_liq, c_ice
+    real(kind=kind_phys) :: dpn(npz), dm(npz), dmv(npz), tk(npz), phib(npz+1), ftop(npz+1)
+    real(kind=kind_phys) :: qpe(npz), qfw(npz), qse(npz), qp, cb, e
+-   real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr, ked(npz)
++   real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr, ked(npz), fbl(npz+1), fbi(npz+1)
+    integer :: ix, i, j, im, k, k1, n, nwat
+    n = mygrid
+    nwat = Atm(n)%flagstruct%nwat
+@@ -2820,10 +2820,18 @@
+          if (flip_vc) k = npz+1-k1
+          fpl(k1+1) = grav*(IPD_Stateout%pflx_dc(im,k) + IPD_Stateout%pflx_sc(im,k) + IPD_Stateout%pflx_mpl(im,k))
+          fpi(k1+1) = grav*IPD_Stateout%pflx_mpi(im,k)
++         fbl(k1+1) = grav*IPD_Stateout%pflx_pbll(im,k)
++         fbi(k1+1) = grav*IPD_Stateout%pflx_pbli(im,k)
+       enddo
+       do k1 = 1, npz-1
+          qse(k1+1) = qse(k1+1) - (fpl(k1+1)*c_liq + fpi(k1+1)*c_ice)*(tk(k1+1) - tk(k1))
+-         fr = ftop(k1+1) - fpl(k1+1) - fpi(k1+1)
++         ! PBL condensate transport: c_l/c_i exchange in the receiving layer
++         if (fbl(k1+1) + fbi(k1+1) >= 0.) then
++            qse(k1+1) = qse(k1+1) - (fbl(k1+1)*c_liq + fbi(k1+1)*c_ice)*(tk(k1+1) - tk(k1))
++         else
++            qse(k1) = qse(k1) - (fbl(k1+1)*c_liq + fbi(k1+1)*c_ice)*(tk(k1+1) - tk(k1))
++         endif
++         fr = ftop(k1+1) - fpl(k1+1) - fpi(k1+1) - fbl(k1+1) - fbi(k1+1)
+          if (fr >= 0.) then
+             qse(k1+1) = qse(k1+1) - fr*cp_vapor*(tk(k1+1) - tk(k1))
+          else

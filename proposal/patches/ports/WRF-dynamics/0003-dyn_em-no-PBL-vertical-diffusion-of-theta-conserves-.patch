@@ -1,0 +1,60 @@
+From 93b465653f1ce0faa2b7400685afe1be20d59f84 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:13:52 -0600
+Subject: [PATCH 3/3] dyn_em: no-PBL vertical diffusion of theta conserves
+ mu*theta
+
+What was wrong: vertical_diffusion_3dmp, used for theta with diff_opt=1 and
+bl_pbl_physics=0, has the defect fixed for moisture in the previous commit:
+vflux(0)=vflux(1) gives a ground heat flux equal to the first interior flux,
+and rho/mu of the cell sits outside the flux difference.
+
+Fix: the same change: mass flux at w levels, zero flux through the ground,
+tendency g*rdnw*(vflux(k)-vflux(k-1)). Conserved: sum over each column of
+(c1h*mu+c2h)*dnw*theta/g.
+
+Measured in em_quarter_ss, diff_opt=1 km_opt=4 no PBL (on top of the moisture
+fix): water closure outside the microphysics -5.4e-6 -> -8.2e-6 of P
+(unchanged in kind); the storm changes through the cold pool: precipitation
+2.78 -> 2.19 kg/m2, max w 30.0 -> 24.3 m/s, theta' rms 2.09 -> 1.60 K, mean
+theta change over 2 h +1.42 -> +0.89 K. diff_opt=2, kvdif=0 and
+bl_pbl_physics=1 runs are bit-identical with and without this commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ dyn_em/module_big_step_utilities_em.F | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/dyn_em/module_big_step_utilities_em.F b/dyn_em/module_big_step_utilities_em.F
+index aa7422de..b0b228e2 100644
+--- a/dyn_em/module_big_step_utilities_em.F
++++ b/dyn_em/module_big_step_utilities_em.F
+@@ -3357,11 +3357,14 @@ j_loop_s : DO j = j_start, j_end
+          vflux(i,k)=kvdif*rdn(k+1)/(0.5*(alt(i,k,j)+alt(i,k+1,j)))   &
+                     *(   field(i,k+1,j)  -field(i,k,j)               &
+                       -base_3d(i,k+1,j)+base_3d(i,k,j) )
++         ! mass flux: times g*rho/mu at the w level, so the tendency below telescopes
++         vflux(i,k)=vflux(i,k)*g*0.5*(1./((c1(k  )*MUT(i,j)+c2(k  ))*alt(i,k  ,j))    &
++                                     +1./((c1(k+1)*MUT(i,j)+c2(k+1))*alt(i,k+1,j)))
+        ENDDO
+      ENDDO
+ 
+      DO i = i_start, i_end
+-       vflux(i,0)=vflux(i,1)
++       vflux(i,0)=0.   ! no flux through the ground
+      ENDDO
+ 
+      DO i = i_start, i_end
+@@ -3370,8 +3373,7 @@ j_loop_s : DO j = j_start, j_end
+ 
+      DO k=kts,ktf
+        DO i = i_start, i_end
+-         tendency(i,k,j)=tendency(i,k,j)+g*g/(c1(k)*MUT(i,j)+c2(k))/alt(i,k,j)  &
+-                *rdnw(k)*(vflux(i,k)-vflux(i,k-1))
++         tendency(i,k,j)=tendency(i,k,j)+g*rdnw(k)*(vflux(i,k)-vflux(i,k-1))
+        ENDDO
+      ENDDO
+ 
+-- 
+2.55.0
+

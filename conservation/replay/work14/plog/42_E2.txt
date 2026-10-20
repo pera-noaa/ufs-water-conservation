@@ -1,0 +1,25 @@
+patching file NOAHMP-interface/noahmp/src/module_sf_noahmplsm.F90
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1162 (offset 1 line).
+Hunk #2 succeeded at 3869 (offset 6 lines).
+Hunk #3 FAILED at 4359.
+Hunk #4 FAILED at 5279.
+Hunk #5 FAILED at 7324.
+3 out of 5 hunks FAILED -- saving rejects to file UFSATM/ccpp/data/GFS_typedefs.F90.rej
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 5780 (offset 25 lines).
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+Hunk #1 FAILED at 19.
+Hunk #2 succeeded at 460 (offset 24 lines).
+Hunk #3 succeeded at 1503 (offset 45 lines).
+Hunk #4 succeeded at 7630 (offset 58 lines).
+1 out of 4 hunks FAILED -- saving rejects to file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90.rej
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+Hunk #1 FAILED at 455.
+Hunk #2 succeeded at 539 (offset 2 lines).
+Hunk #3 FAILED at 999.
+2 out of 3 hunks FAILED -- saving rejects to file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90.rej
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+Hunk #1 FAILED at 1805.
+1 out of 1 hunk FAILED -- saving rejects to file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta.rej
+stage E2 re-anchored: GFS_typedefs.F90, GFS_typedefs.F90, GFS_typedefs.F90, noahmpdrv.F90, noahmpdrv.F90, noahmpdrv.meta, module_sf_noahmplsm.F90 | rejects left: none

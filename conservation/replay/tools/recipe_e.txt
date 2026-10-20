@@ -1,0 +1,2 @@
+56_NOFMA S /work2/noaa/co2/miniconda3/envs/tm5/bin/python -I /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/tools/energy_tools/nofma.py TREE
+CMP /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/full13/ufs-weather-model

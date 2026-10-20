@@ -1,0 +1,56 @@
+01_FX1.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/01_fv3-fv_mapz_consv_te_fixer_weight.diff
+02_SG1.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/02_fv3-fv_sg_relax_total_energy.diff
+03_CP1.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/03_fv3-atmosphere_state_update_heating_mass.diff
+04_R1.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/04_ccpp-dcyc2t3_radiative_heating_current_mass.diff
+05_FV2.diff	UFSATM/fv3/atmos_cubed_sphere	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/01_FV2_fv3_statein_consistent_layer_mass.diff
+06_D1_dspheat_ke.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/02_enpbl_04_ccpp-satmedmfvdifq_dspheat_ke.diff
+07_D3A.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/03_encnv_D3A.diff
+08_D7.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/05_fv3-cpl_ke_heating_option.diff
+09_D3B.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/04_encnv_02_D3B.diff
+10_D4.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/05_encnv_03_D4.diff
+11_D4n.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/06_encnv_04_D4N.diff
+12_NM12.diff	UFSATM/ccpp/physics	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/07_NM12_noahmp_combine_melt_out.diff
+13_C1.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/08_encpl_04_cpl_water_energy.diff
+14_K1.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/09_encpl_05_thompson_kirchhoff.diff
+15_S1_export.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/10r_encpl_06_rebased_on_encnv.diff
+16_TH8.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/23_energy_06_TH8_thompson_count_all_sedimented_precip.diff
+17_S1K.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/07_ccpp-samf_kirchhoff_ice_and_initial_T.diff
+18_TFH.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/08_ccpp-thompson_frame_F_heating.diff
+19_PBK.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/09_ccpp-satmedmfvdifq_filler_kirchhoff.diff
+20_C8.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/10_fv3-cpl_water_energy_bit8_water_KE.diff
+21_D7S.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/11_fv3-cpl_ke_smooth.diff
+22_PBF.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/energy/patches/12_ccpp-fv3-pbl_condensate_flux_export.diff
+23_F3_01a.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/12_latent_01a_F3_samf_scavenging_booking.diff
+24_F3_01b.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/13_latent_01b_F3_samf_wet_deposition_export_on_all_full.diff
+25_SAMF32.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/14_latent_02_SAMF32_cmake_filter_dependencies.diff
+26_TOPT.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/15_latent_03_TOPT_process_split_sum_applied_once.diff
+27_T1_02b.diff	UFSATM/ccpp/physics	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/16_trdyn_02b_T1_samf_tracer_substep.diff
+28_DRY_03b.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/17_trdyn_03b_DRY_chem_tracers_dry_mixing_ratio_transport.diff
+29_INLQ_04.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/18c_trdyn_04_INLQ_inline_q_damping_mass_single_valued.diff
+30_DYN_v6.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/18d_trdyn_01_DYN_dry_tracer_adv_remap_ic_v6.diff
+31_SI1.diff	.	2	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/04_sfc_SI1.diff
+32_SI2.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/05_sfc_SI2.diff
+33_NP1.diff	.	2	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/06_sfc_NP1.diff
+34_QR1.diff	.	2	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/08_sfc_QR1.diff
+35_CMC.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/09_sfc_CMC.diff
+36_FL1.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/10_sfc_FL1.diff
+37_sfc_options_r3.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../ensfc2/patches/11_sfc_options.diff
+38_SL2.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/24_ensfc2_13_sfc_SL2.diff
+39_CS1.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/25_ensfc2_14_sfc_CS1.diff
+40_CB1.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/26_ensfc2_15_sfc_CB1.diff
+41_sfc_options_r4_16b.diff	.	2	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/preclag/patches/16b_sfc_options_r4_meta_fixed.diff
+42_E2.diff	.	1	rebased(+/- vs source: DIFFERENT in 1 file(s))	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/28_canopy_01_E2_noahmp_fwet_opt.diff
+43_TH9.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/29_canopy_03_TH9_thompson_sed_actual.diff
+44_E1.diff	.	1	verbatim(offset)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/30_canopy_04_E1_nst_spray_implicit.diff
+45_dyn_te_exact_v2.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/31_fv3tally_01_fv3-dyn_te_exact_v2.diff
+46_PL1.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/41_preclag_01_PL1_sfc_precip_t1_carry.diff
+47_MYNN01.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/32_suites_01_E3_mynn_surface_flux_density_dew_and_filler_mass.diff
+48_MYNN01b.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/33_suites_01b_E3_mynn_moisture_check_latent_heat_double_count.diff
+49_GFDL02.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/34_suites_02_E4_gfdlmp_v3_mass_basis.diff
+50_GF03.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/35_suites_03_E5_gf_water_closure.diff
+51_MYNN04.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/36_suites_04_E3c_mynn_surface_heat_flux_theta.diff
+52_PBL05.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/37_suites_05_PBL_satmedmfvdifq_surface_flux_layer_mass.diff
+53_MYNN06.diff	.	1	rebased(+/- vs source: SAME)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/38_suites_06_E3d_mynn_static_energy_mixing.diff
+54_GFDL07.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/39_suites_07_E4c_gfdlmp_v3_rain_sedimentation_heat_capacity.diff
+55_SAMF08.diff	.	1	verbatim(clean)	/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/40_suites_08_SAMF_deep_ca_trigger_early_return_decomposition.diff
+56_NOFMA.diff	.	1	script(script)	56_NOFMA S /work2/noaa/co2/miniconda3/envs/tm5/bin/python -I /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/tools/energy_tools/nofma.py TREE

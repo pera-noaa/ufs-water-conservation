@@ -1,0 +1,43 @@
+04:00 submit: sbatch -J e2_opt5n --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/opt5n/ufs-weather-model build64.sbatch
+Submitted batch job 10155475
+04:00 submit: sbatch -J e2_mopt10 --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/mopt10/ufs-weather-model build64.sbatch
+Submitted batch job 10155492
+04:07 submit: cp -p opt5n/ufs-weather-model/tests/fv3_e2_opt5n.exe mopt10/ufs-weather-model/tests/fv3_e2_mopt10.exe exe/ && tools/mkrun3.sh e5MA /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true.  lw_sfc_return = .true. 
+Submitted batch job 10155530
+04:07 submit: tools/mkrun3.sh e5O0 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe
+ layout = 3,8 
+Submitted batch job 10155531
+04:11 submit: tools/mkrun3.sh e5MB /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true. 
+Submitted batch job 10155542
+04:11 submit: tools/mkrun3.sh e5OA /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true.  lw_sfc_return = .true. 
+Submitted batch job 10155543
+04:15 submit: tools/mkrun3.sh e5OA1 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true. 
+Submitted batch job 10155576
+04:15 submit: tools/mkrun3.sh e5OAL /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true." 4,6
+ layout = 4,6  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true.  lw_sfc_return = .true. 
+Submitted batch job 10155581
+04:20 submit: tools/mkrestart3.sh e5OAR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+S=10155619 R=10155620
+04:23 submit: tools/mkrun3.sh e5OEP /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "sfc_precip_enthalpy = .true."
+ layout = 3,8 
+Submitted batch job 10155627
+04:25 submit: tools/mkrun3.sh e5OLW2 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "lw_sfc_consistent = .true.;lw_sfc_return = .true."
+ layout = 3,8  lw_sfc_consistent = .true.  lw_sfc_return = .true. 
+Submitted batch job 10155645
+04:27 submit: tools/mkrun3.sh e5OLW1 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "lw_sfc_consistent = .true."
+ layout = 3,8  lw_sfc_consistent = .true. 
+Submitted batch job 10155672
+04:29 submit: tools/mkrun3.sh e5OAIR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_pore_air = .true."
+ layout = 3,8  noahmp_pore_air = .true. 
+Submitted batch job 10155681
+04:31 submit: tools/mkrun3.sh e5OEV /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "sfc_evap_enthalpy = .true."
+ layout = 3,8  sfc_evap_enthalpy = .true. 
+Submitted batch job 10155689
+04:32 submit: tools/mkrun3.sh e5OPH /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "precip_phase_host = .true."
+ layout = 3,8  precip_phase_host = .true. 
+Submitted batch job 10155691
+QUEUE DONE

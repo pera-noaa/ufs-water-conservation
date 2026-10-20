@@ -1,0 +1,4 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+patching file UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+patching file UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta

@@ -1,0 +1,79 @@
+From 97e7bfa8deea81d312e5a3927c022155e75f97c4 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 20:21:17 -0600
+Subject: [PATCH 4/4] tempo_run: optional rho_dry, so TEMPO's layer mass is the
+ host's dry-air mass
+
+tempo_main takes a layer's air mass as rho*dz1d, with rho its own dry
+density 0.622 p/(rdry T (max(qv,min_qv)+0.622)) and dz1d the host's layer
+depth. A host whose dry-air mass per layer is not exactly that product
+(WRF: rho*dz8w, rho = 1/alt from the dynamics) sees sedimentation move
+water by the wrong amount: water is conserved in TEMPO's mass, not the
+host's.
+
+tempo_run gets an optional rho_dry (the host's dry-air density). When it is
+present, dz1d = dz*rho_dry/rho_tempo, with rho_tempo computed exactly as
+tempo_main computes rho at entry (same rdry, roverrv, min_qv, t1d, p1d),
+so tempo_main's rho*dz1d is the host's dry-air mass. Hosts that do not
+pass it are unchanged. Same pattern as Thompson's mp_gt_driver rho_dry
+(WRF M4).
+
+Measured (on top of the round-2 water-closure series):
+- Standalone, gfortran real*8, TEMPO's 59-level test column, 30 steps of
+  60 s, host density rho_t*(1+0.003 sin k): host-mass residual
+  -6.2e-6 of precipitation without rho_dry, -4.8e-16 with it. With
+  rho_dry equal to TEMPO's own density the final state is identical to
+  the call without rho_dry to all printed digits.
+- WRF release-v4.8.1 em_quarter_ss (supercell, doubly periodic, no
+  surface fluxes, 2 h, mp_physics=88), per-call meter in WRF's dry mass:
+  -1.385e-4 of precipitation without rho_dry, +8.4e-7 with it (TEMPO's
+  own-density residual moves from +8.2e-7 to +1.401e-4, as expected).
+  Domain W+P residual at 2 h: -7.22e-4 -> -5.81e-4 of precipitation.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_mp_tempo_driver.F90 | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/module_mp_tempo_driver.F90 b/src/module_mp_tempo_driver.F90
+index bf16cb2..b9993ff 100644
+--- a/src/module_mp_tempo_driver.F90
++++ b/src/module_mp_tempo_driver.F90
+@@ -185,7 +185,7 @@ module module_mp_tempo_driver
+ !! \htmlinclude tempo_run.html
+ !!
+   subroutine tempo_run(tempo_cfgs, dt, itimestep, &
+-    t, th, pii, p, w, dz, &
++    t, th, pii, p, w, dz, rho_dry, &
+     qv, qc, qr, qi, qs, qg, ni, nr, &
+     nc, nwfa, nifa, ng, qb, &
+     qc_bl, qcfrac_bl, &
+@@ -196,6 +196,7 @@ module module_mp_tempo_driver
+     ims, ime, jms, jme, kms, kme, &
+     its, ite, jts, jte, kts, kte, tempo_diags)
+ 
++    use module_mp_tempo_params, only : rdry, roverrv, min_qv
+     type(ty_tempo_cfgs), intent(in) :: tempo_cfgs
+     real(wp), intent(in) :: dt !! timestep \([s]]\)
+     integer, intent(in) :: itimestep !! integer timestep = integration time / dt
+@@ -210,6 +211,7 @@ module module_mp_tempo_driver
+     real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(in) :: w !! vertical velocity \([m\; s^{-1}]\)
+     real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(in) :: dz !! vertical grid spacing \([m]\)
+     real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(in), optional :: pii !! exner function
++    real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(in), optional :: rho_dry !! host dry-air density \([kg\; m^{-3}]\)
+ 
+     real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(inout) :: qv !! 3D water vapor mixing ratio \([kg\; kg^{-1}]\)
+     real(wp), dimension(ims:ime, kms:kme, jms:jme), intent(inout) :: qc !! 3D cloud water mass mixing ratio \([kg\; kg^{-1}]\)
+@@ -402,6 +404,9 @@ module module_mp_tempo_driver
+           p1d(k) = p(i,k,j)
+           w1d(k) = w(i,k,j)
+           dz1d(k) = dz(i,k,j)
++          ! with the host's dry density, tempo_main's rho*dz is exactly the host's dry-air mass
++          if (present(rho_dry)) dz1d(k) = dz(i,k,j)*rho_dry(i,k,j)*rdry*t1d(k) &
++            *(max(min_qv, qv(i,k,j)) + roverrv)/(roverrv*p1d(k))
+           qv1d(k) = qv(i,k,j)
+           qc1d(k) = qc(i,k,j)
+           qi1d(k) = qi(i,k,j)
+-- 
+2.55.0
+

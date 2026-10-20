@@ -1,0 +1,10 @@
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+Hunk #1 succeeded at 7158 (offset 4 lines).
+Hunk #2 succeeded at 7184 (offset 4 lines).
+Hunk #3 succeeded at 7208 (offset 4 lines).
+Hunk #4 succeeded at 7300 (offset 4 lines).
+Hunk #5 succeeded at 7334 (offset 4 lines).
+Hunk #6 succeeded at 7353 (offset 4 lines).
+Hunk #7 succeeded at 7380 (offset 4 lines).
+Hunk #8 succeeded at 7395 (offset 4 lines).
+Hunk #9 succeeded at 7439 (offset 4 lines).

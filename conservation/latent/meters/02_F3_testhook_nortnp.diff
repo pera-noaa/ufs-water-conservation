@@ -1,0 +1,62 @@
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:52:45
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:52:45
+@@ -103,6 +103,8 @@
+       real(kind=kind_phys), intent(in) :: psp(:), delp(:,:),            
+      &   prslp(:,:),  garea(:), hpbl(:), dot(:,:), phil(:,:) 
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      logical f3nortnp
++      character(len=8) f3env
+       logical, intent(in)  :: first_time_step,restart,hwrf_samfdeep,    
+      &     progsigma,progomega,do_mynnedmf,sigmab_coldstart
+       real(kind=kind_phys), intent(in) :: nthresh,betadcu,betamcu,
+@@ -361,6 +363,8 @@
+       else
+         do_aerosols = (itc > 0) .and. (ntc > 0) .and. (ntr > 0)
+         if (do_aerosols) do_aerosols = (ntr >= itc + ntc - 3)
++        call get_environment_variable('F3_NORTNP', f3env)
++        f3nortnp = (f3env == '1')
+       endif
+ !
+ c-----------------------------------------------------------------------
+@@ -3486,7 +3490,8 @@
+         do k = 1,km1
+           do i = 1,im
+             if(cnvflg(i) .and. k <= ktcon(i)) then
+-              if(rtnp(i) < 0.0_conv_wp) then
++              if(rtnp(i) < 0.0_conv_wp .and. .not.
++     &         (f3nortnp .and. itc > 0 .and. n >= itc-2)) then
+                 if(tsump(i) > abs(tsumn(i))) then
+                   if(ctr(i,k,n)<0.0_conv_wp) ctr(i,k,n)=0.0_conv_wp
+                   if(ctr(i,k,n)>0.0_conv_wp) ctr(i,k,n)=(1.0_conv_wp+
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:52:45
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:52:45
+@@ -82,6 +82,8 @@
+      &     omegain(:,:)
+ !
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      logical f3nortnp
++      character(len=8) f3env
+       integer, intent(inout)  :: kcnv(:)
+       ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+       real(kind=kind_phys), intent(inout) :: tkeh(:,:)
+@@ -315,6 +317,8 @@
+ !>  ## Determine whether to perform aerosol transport
+         do_aerosols = (itc > 0) .and. (ntc > 0) .and. (ntr > 0)
+         if (do_aerosols) do_aerosols = (ntr >= itc + ntc - 3)
++        call get_environment_variable('F3_NORTNP', f3env)
++        f3nortnp = (f3env == '1')
+       endif
+ !
+ !************************************************************************
+@@ -2425,7 +2429,8 @@
+         do i = 1,im
+           if (cnvflg(i)) then
+             if(k > kb(i) .and. k <= ktcon(i)) then
+-              if(rtnp(i) < 0.0_conv_wp) then
++              if(rtnp(i) < 0.0_conv_wp .and. .not.
++     &         (f3nortnp .and. itc > 0 .and. n >= itc-2)) then
+                 if(tsump(i) > abs(tsumn(i))) then
+                   if(ctr(i,k,n) < 0.0_conv_wp) ctr(i,k,n) = 0.0_conv_wp
+                   if(ctr(i,k,n) > 0.0_conv_wp) then

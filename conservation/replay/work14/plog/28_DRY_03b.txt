@@ -1,0 +1,21 @@
+patching file physics/CONV/SAMF/samfdeepcnv.f
+Hunk #1 succeeded at 3446 (offset 12 lines).
+Hunk #2 succeeded at 3460 (offset 12 lines).
+patching file physics/CONV/SAMF/samfshalcnv.f
+Hunk #1 succeeded at 2383 (offset 13 lines).
+Hunk #2 succeeded at 2397 (offset 13 lines).
+patching file physics/PBL/SATMEDMF/satmedmfvdifq.F
+Hunk #1 succeeded at 102 (offset 1 line).
+Hunk #2 FAILED at 185.
+Hunk #3 succeeded at 434 (offset 9 lines).
+Hunk #4 succeeded at 1249 (offset 9 lines).
+Hunk #5 succeeded at 1260 (offset 9 lines).
+Hunk #6 succeeded at 2184 (offset 9 lines).
+Hunk #7 succeeded at 2223 (offset 9 lines).
+Hunk #8 succeeded at 2487 (offset 9 lines).
+Hunk #9 succeeded at 2571 (offset 9 lines).
+Hunk #10 succeeded at 2605 (offset 9 lines).
+1 out of 10 hunks FAILED -- saving rejects to file physics/PBL/SATMEDMF/satmedmfvdifq.F.rej
+patching file physics/PBL/SATMEDMF/satmedmfvdifq.meta
+Hunk #1 succeeded at 856 (offset 44 lines).
+re-anchored: ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F | rejects left: none

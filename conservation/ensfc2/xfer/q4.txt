@@ -1,0 +1,15 @@
+1|/work2/noaa/co2/miniconda3/envs/tm5/bin/python -I tools/apply_options_swtw.py optn2/ufs-weather-model && /work2/noaa/co2/miniconda3/envs/tm5/bin/python -I tools/apply_options_swtw.py mopt2/ufs-weather-model && /work2/noaa/co2/miniconda3/envs/tm5/bin/python -I tools/instrument_es2_r3c.py mopt2/ufs-weather-model && sbatch -J e2_optn4 --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/optn2/ufs-weather-model build64.sbatch
+1|sbatch -J e2_mopt4 --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/mopt2/ufs-weather-model build64.sbatch
+1|tools/mkrun3.sh e2OC1 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "noahmp_canopy_heat = 1"
+1|tools/mkrun3.sh e2OC2 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "noahmp_canopy_heat = 2"
+1|tools/mkrun3.sh e2OPH /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "precip_phase_host = .true."
+1|tools/mkrun3.sh e2OLW /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "lw_sfc_consistent = .true."
+1|tools/mkrun3.sh e2OEV /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "sfc_evap_enthalpy = .true."
+1|tools/mkrun3.sh e2OAD /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "noahmp_heat_advect = .true."
+1|tools/mkrun3.sh e2OKF /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn3.exe "noahmp_kirchhoff = .true."
+1|cp -p optn2/ufs-weather-model/tests/fv3_e2_optn4.exe mopt2/ufs-weather-model/tests/fv3_e2_mopt4.exe exe/ && tools/mkrun3.sh e2MOA4 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt4.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;lw_sfc_consistent = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true."
+1|tools/mkrun3.sh e2OA4 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn4.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;lw_sfc_consistent = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true."
+1|tools/mkrun3.sh e2OSW4 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn4.exe "noahmp_sw_radshare = .true."
+1|tools/mkrun3.sh e2O0d /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn4.exe
+1|tools/mkrun3.sh e2MOB4 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt4.exe "noahmp_canopy_heat = 2;precip_phase_host = .true.;noahmp_sw_radshare = .true.;lw_sfc_consistent = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true."
+2|tools/mkrestart3.sh e2OAR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_optn4.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;lw_sfc_consistent = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true."

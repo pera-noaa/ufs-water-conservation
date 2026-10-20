@@ -1,0 +1,125 @@
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+@@ -372,6 +372,7 @@
+        &sh3d,sm3d,                      &
+        &nchem,kdvel,ndvel,              & !Smoke/Chem variables
+        &chem3d,vdep,smoke_dbg,          &
++       &sfc_heat_cons,                  &
+        &frp,emis_ant_no,                & ! JLS/RAR to adjust exchange coeffs
+        &mix_chem,enh_mix,rrfs_sd,       & ! end smoke/chem variables
+        &tsq,qsq,cov,                    &
+@@ -437,6 +438,7 @@
+                            FLAG_OZONE,FLAG_QS
+ 
+     logical, intent(in) :: mix_chem,enh_mix,rrfs_sd,smoke_dbg
++    logical, intent(in) :: sfc_heat_cons  ! apply the host's sensible heat flux as a theta flux (cp, 1/exner)
+ 
+     integer, intent(in) ::                                   &
+                          & IDS,IDE,JDS,JDE,KDS,KDE           &
+@@ -1072,7 +1074,11 @@
+ 
+        ! TURBULENT FLUX FOR TKE BOUNDARY CONDITIONS
+        flq =flqv+flqc                   !! LATENT
+-       flt =hfx(i)/(rho1(kts)*cpm )-xlvcp*flqc/ex1(kts)  !! Temperature flux
++       if (sfc_heat_cons) then
++          flt =hfx(i)/(rho1(kts)*cp*ex1(kts))-xlvcp*flqc/ex1(kts)  !! theta flux of the host's sensible heat
++       else
++          flt =hfx(i)/(rho1(kts)*cpm )-xlvcp*flqc/ex1(kts)  !! Temperature flux
++       endif
+        fltv=flt + flqv*p608*th_sfc      !! Virtual temperature flux
+ 
+        ! Update 1/L using updated sfc heat flux and friction velocity
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
+@@ -159,7 +159,7 @@
+      &  imp_physics_tempo, &
+      &  imfdeepcnv_samf,                                   &
+      &  chem3d, frp, mix_chem, rrfs_sd, enh_mix,           &
+-     &  nchem, ndvel, vdep, smoke_dbg,                     &
++     &  nchem, ndvel, vdep, smoke_dbg, mynn_sfc_heat,      &
+      &  imp_physics_nssl, nssl_ccn_on,                     &
+      &  ltaerosol, mraerosol, spp_wts_pbl, spp_pbl,        &
+      &  lprnt, huge, errmsg, errflg                        )
+@@ -184,7 +184,7 @@
+      !smoke/chem
+      integer, intent(in) :: nchem, ndvel
+      integer, parameter  :: kdvel=1
+-     logical, intent(in) :: smoke_dbg
++     logical, intent(in) :: smoke_dbg, mynn_sfc_heat
+ 
+ ! NAMELIST OPTIONS (INPUT):
+      logical, intent(in) ::                                 &
+@@ -759,6 +759,7 @@
+ !chem/smoke
+      &             nchem=nchem,kdvel=kdvel,ndvel=ndvel,                &
+      &             Chem3d=chem3d,Vdep=vdep,smoke_dbg=smoke_dbg,        &
++     &             sfc_heat_cons=mynn_sfc_heat,                        &
+      &             FRP=frp,EMIS_ANT_NO=emis_ant_no,                    &
+      &             mix_chem=mix_chem,enh_mix=enh_mix,                  &
+      &             rrfs_sd=rrfs_sd,                                    &
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.meta
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.meta
+@@ -1535,6 +1535,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[mynn_sfc_heat]
++  standard_name = flag_for_mynn_surface_heat_flux_host_consistent
++  long_name = flag for MYNN sensible heat flux applied as a theta flux with the host cp
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [ltaerosol]
+   standard_name = flag_for_aerosol_physics
+   long_name = flag for aerosol physics
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1089,6 +1089,7 @@
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_sfc_heat   !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
+     logical              :: gf_closure      !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+@@ -3792,6 +3793,7 @@
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_sfc_heat = .false. !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
+     logical              :: gf_closure = .false. !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+@@ -4343,7 +4345,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, gf_closure,                   &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, mynn_sfc_heat, gf_closure,                   &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5099,6 +5101,7 @@
+     Model%thompson_kirchhoff = thompson_kirchhoff
+     Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
++    Model%mynn_sfc_heat = mynn_sfc_heat
+     Model%gf_closure = gf_closure
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -5257,6 +5257,12 @@
+ [gf_closure]
+   standard_name = flag_for_grell_freitas_water_closure
+   long_name = GF water closure: increments on GF's own basis, raincv from the applied tendencies
++  units = flag
++  dimensions = ()
++  type = logical
++[mynn_sfc_heat]
++  standard_name = flag_for_mynn_surface_heat_flux_host_consistent
++  long_name = MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
+   units = flag
+   dimensions = ()
+   type = logical

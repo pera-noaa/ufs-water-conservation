@@ -1,0 +1,135 @@
+--- a/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3.F90
++++ b/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3.F90
+@@ -31,7 +31,7 @@
+ 
+    subroutine gfdl_cloud_microphys_v3_init (me, master, nlunit, input_nml_file, logunit, &
+                             fn_nml, imp_physics, imp_physics_gfdl, do_shoc,  &
+-                            hydrostatic, errmsg, errflg)
++                            hydrostatic, gfdl_mp_host_cp, errmsg, errflg)
+ 
+        implicit none
+ 
+@@ -45,6 +45,7 @@
+        integer,          intent( in) :: imp_physics_gfdl
+        logical,          intent( in) :: do_shoc
+        logical,          intent( in) :: hydrostatic
++       logical,          intent( in) :: gfdl_mp_host_cp
+        character(len=*), intent(out) :: errmsg
+        integer,          intent(out) :: errflg
+ 
+@@ -66,7 +67,7 @@
+            return
+        endif
+ 
+-       call gfdl_cloud_microphys_v3_mod_init(me, master, nlunit, input_nml_file, logunit, fn_nml, hydrostatic, errmsg, errflg)
++       call gfdl_cloud_microphys_v3_mod_init(me, master, nlunit, input_nml_file, logunit, fn_nml, hydrostatic .or. gfdl_mp_host_cp, errmsg, errflg)
+ 
+        is_initialized = .true.
+ 
+@@ -120,7 +121,7 @@
+       gq0, gq0_ntcw, gq0_ntrw, gq0_ntiw, gq0_ntsw, gq0_ntgl, gq0_ntclamt, aerfld,  &
+       gt0, gu0, gv0, vvl, prsl, phii, del,                                         &
+       rain0, ice0, snow0, graupel0, prcp0, sr, oro,                                &
+-      dtp, hydrostatic, lradar, refl_10cm,                                         &
++      dtp, hydrostatic, gfdl_mp_host_cp, lradar, refl_10cm,                        &
+       reset, effr_in, rew, rei, rer, res, reg,                                     &
+       cplchm, pfi_lsan, pfl_lsan, con_one, con_p001, con_secinday, ten_t, ten_u,   &
+       ten_v, ten_qv, ten_ql, ten_qr, ten_qi, ten_qs, ten_qg, ten_cldfrc, ten_q,    &
+@@ -155,7 +156,7 @@
+       real(kind_phys),      intent(out  ), dimension(:,:,:)  :: ten_q
+ 
+       real(kind_phys),      intent(in) :: dtp ! physics time step
+-      logical, intent (in) :: hydrostatic, fast_mp_consv
++      logical, intent (in) :: hydrostatic, fast_mp_consv, gfdl_mp_host_cp
+ 
+       logical, intent (in) :: lradar
+       real(kind=kind_phys), intent(inout), dimension(:,:) :: refl_10cm
+@@ -261,7 +262,7 @@
+ 
+       call gfdl_cloud_microphys_v3_mod_driver( qv1, ql1, qr1, qi1, qs1, qg1, qa1, qnl, qni, pt, w,&
+                 uin, vin, dz, delp, gsize, dtp, hs, water0, rain0,                        &
+-                ice0, snow0, graupel0, hydrostatic, iis, iie, kks, kke, q_con, cappa,     &
++                ice0, snow0, graupel0, hydrostatic .or. gfdl_mp_host_cp, iis, iie, kks, kke, q_con, cappa, &
+                 fast_mp_consv, adj_vmr, te, dte, prefluxw, prefluxr, prefluxi, prefluxs,  &
+                 prefluxg, last_step, do_inline_mp )
+       tem   = dtp*con_p001/con_secinday
+--- a/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3.meta
++++ b/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3.meta
+@@ -77,6 +77,13 @@
+ [hydrostatic]
+   standard_name = flag_for_hydrostatic_solver
+   long_name = flag indicating hydrostatic solver
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[gfdl_mp_host_cp]
++  standard_name = flag_for_gfdl_mp_v3_host_constant_pressure
++  long_name = flag for GFDL MP v3 constant-pressure thermodynamics in the CCPP host
+   units = flag
+   dimensions = ()
+   type = logical
+@@ -401,6 +408,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[gfdl_mp_host_cp]
++  standard_name = flag_for_gfdl_mp_v3_host_constant_pressure
++  long_name = flag for GFDL MP v3 constant-pressure thermodynamics in the CCPP host
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [lradar]
+   standard_name = flag_for_radar_reflectivity
+   long_name = flag for radar reflectivity
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1089,6 +1089,7 @@
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: gfdl_mp_host_cp !< GFDL MP v3 in CCPP: heat capacities and latent heats at constant pressure, as the host applies them
+     logical              :: gf_closure      !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+@@ -3792,6 +3793,7 @@
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: gfdl_mp_host_cp = .false. !< GFDL MP v3 in CCPP: heat capacities and latent heats at constant pressure, as the host applies them
+     logical              :: gf_closure = .false. !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+@@ -4343,7 +4345,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, gf_closure,                   &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, gfdl_mp_host_cp, gf_closure,                   &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5099,6 +5101,7 @@
+     Model%thompson_kirchhoff = thompson_kirchhoff
+     Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
++    Model%gfdl_mp_host_cp = gfdl_mp_host_cp
+     Model%gf_closure = gf_closure
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -5257,6 +5257,12 @@
+ [gf_closure]
+   standard_name = flag_for_grell_freitas_water_closure
+   long_name = GF water closure: increments on GF's own basis, raincv from the applied tendencies
++  units = flag
++  dimensions = ()
++  type = logical
++[gfdl_mp_host_cp]
++  standard_name = flag_for_gfdl_mp_v3_host_constant_pressure
++  long_name = GFDL MP v3 in CCPP: heat capacities and latent heats at constant pressure, as the host applies them
+   units = flag
+   dimensions = ()
+   type = logical

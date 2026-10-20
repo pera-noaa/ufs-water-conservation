@@ -1,0 +1,593 @@
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90 b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:08:40
+@@ -202,6 +202,7 @@
+ use fv_fill_mod,        only: fill_gfs
+ use dyn_core_mod,       only: del2_cubed
+ use fv_dynamics_mod,    only: fv_dynamics
++use fv_tracer2d_mod,    only: dry_tracer_mask
+ use fv_nesting_mod,     only: twoway_nesting
+ use boundary_mod,       only: fill_nested_grid
+ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+@@ -290,6 +291,10 @@
+ 
+   logical :: first_diag = .true.
+ 
++!---dry_tracer_ic: dry ratio of the chemistry tracers as read and remapped by the cold-start IC
++  real, allocatable :: dry_ic_c(:,:,:,:)
++  integer, allocatable :: dry_ic_idx(:)
++
+ contains
+ 
+ 
+@@ -462,6 +467,7 @@
+    ! *DH 20210326
+ 
+    call fv_restart(Atm(mygrid)%domain, Atm, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
++   if ( Atm(mygrid)%flagstruct%dry_tracer_ic .and. cold_start ) call dry_tracer_ic_save()
+ 
+    fv_time = Time
+ 
+@@ -586,6 +592,7 @@
+    else
+       call mpp_error(NOTE,'No adiabatic initialization correction in use')
+    endif
++   if ( allocated(dry_ic_c) ) call dry_tracer_ic_set()
+ 
+ #ifdef DEBUG
+    call fv_diag(Atm(mygrid:mygrid), zvir, Time, -1)
+@@ -1803,6 +1810,47 @@
+ !>@brief The subroutine 'adiabatic_init' is an optional step during initialization
+ !! to pre-condition a solution via backward-forward steps with capability for various
+ !! nudgings.
++!>@brief dry_tracer_ic_save: keep the chemistry tracers of the cold-start IC as dry mixing ratios (dry_tracer_ic).
++ subroutine dry_tracer_ic_save()
++   logical :: msk(ncnst)
++   integer :: iq, n
++   call dry_tracer_mask(.true., nq, Atm(mygrid)%flagstruct%nwat, msk(1:nq))
++   n = count(msk(1:nq))
++   allocate ( dry_ic_idx(n), dry_ic_c(isc:iec,jsc:jec,npz,n) )
++   n = 0
++   do iq=1,nq
++      if ( msk(iq) ) then
++         n = n + 1
++         dry_ic_idx(n) = iq
++         dry_ic_c(:,:,:,n) = Atm(mygrid)%q(isc:iec,jsc:jec,1:npz,iq)
++      endif
++   enddo
++   if ( is_master() ) write(*,*) 'dry_tracer_ic: ', n, ' chemistry tracers read as dry mixing ratios'
++ end subroutine dry_tracer_ic_save
++
++!>@brief dry_tracer_ic_set: after adiabatic_init, q = (IC dry ratio)*(1 - sum of the model's water species).
++ subroutine dry_tracer_ic_set()
++   integer :: i, j, k, m, n, iq, nwat
++   real :: sw
++   nwat = Atm(mygrid)%flagstruct%nwat
++   do n=1,size(dry_ic_idx)
++      iq = dry_ic_idx(n)
++      do k=1,npz
++         do j=jsc,jec
++            do i=isc,iec
++               sw = 0.
++               do m=1,nwat
++                  sw = sw + Atm(mygrid)%q(i,j,k,m)
++               enddo
++               Atm(mygrid)%q(i,j,k,iq) = dry_ic_c(i,j,k,n)*(1.-sw)
++            enddo
++         enddo
++      enddo
++      call mpp_update_domains(Atm(mygrid)%q(:,:,:,iq), Atm(mygrid)%domain)
++   enddo
++   deallocate ( dry_ic_c, dry_ic_idx )
++ end subroutine dry_tracer_ic_set
++
+  subroutine adiabatic_init(zvir,nudge_dz,time)
+    type(time_type),intent(in) :: time
+    real, allocatable, dimension(:,:,:):: u0, v0, t0, dz0, dp0
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-17 20:08:01
+@@ -779,6 +779,11 @@
+                                    !< This may improve efficiency for very large numbers of tracers.
+                                    !< The default value is .false.; currently not implemented.
+ 
++   logical :: dry_tracer_adv = .false. !< Advect and remap "tracer_usage","chemistry" tracers as dry mixing ratios,
++                                       !< with the dry-air flux = total mass flux minus the limited water fluxes
++                                       !< (z_tracer only). Water and dynamics are unchanged. Default .false.
++   logical :: dry_tracer_ic = .false.  !< Cold start: "chemistry" tracers in the initial condition file are dry mixing
++                                       !< ratios; converted with the model's water after adiabatic_init. Default .false.
+    logical :: old_divg_damp = .false. !< parameter to revert damping parameters back to values
+                                       !< defined in a previous revision
+                                       !< old_values:
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-17 20:08:01
+@@ -360,6 +360,8 @@
+      logical , pointer :: mountain
+      logical , pointer :: remap_t
+      logical , pointer :: z_tracer
++     logical , pointer :: dry_tracer_adv
++     logical , pointer :: dry_tracer_ic
+ 
+      logical , pointer :: old_divg_damp
+      logical , pointer :: fv_land
+@@ -952,6 +954,8 @@
+        mountain                      => Atm%flagstruct%mountain
+        remap_t                       => Atm%flagstruct%remap_t
+        z_tracer                      => Atm%flagstruct%z_tracer
++       dry_tracer_adv                => Atm%flagstruct%dry_tracer_adv
++       dry_tracer_ic                 => Atm%flagstruct%dry_tracer_ic
+        old_divg_damp                 => Atm%flagstruct%old_divg_damp
+        fv_land                       => Atm%flagstruct%fv_land
+        nudge                         => Atm%flagstruct%nudge
+@@ -1102,7 +1106,7 @@
+             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
+             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
+-            range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
++            range_warn, dwind_2d, inline_q, z_tracer, dry_tracer_adv, dry_tracer_ic, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, rf_cutoff_w, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+             sa3dtke_dyco, &
+             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-17 20:07:49
+@@ -135,7 +135,7 @@
+ #endif
+    use dyn_core_mod,        only: dyn_core, del2_cubed, init_ijk_mem
+    use fv_mapz_mod,         only: compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp
+-   use fv_tracer2d_mod,     only: tracer_2d, tracer_2d_1L, tracer_2d_nested
++   use fv_tracer2d_mod,     only: tracer_2d, tracer_2d_1L, tracer_2d_nested, dry_tracer_mask
+    use fv_grid_utils_mod,   only: cubed_to_latlon, c2l_ord2, g_sum
+    use fv_fill_mod,         only: fill2D
+    use fv_mp_mod,           only: is_master
+@@ -299,6 +299,7 @@
+       real:: akap, ph1, ph2, mdt, gam, amdt, u0
+       real:: recip_k_split,reg_bc_update_time
+       integer:: kord_tracer(ncnst)
++      logical:: dry_tr(ncnst)
+       integer :: i,j,k, n, iq, n_map, nq, nr, nwat, k_split
+       integer :: sphum, liq_wat = -999, ice_wat = -999      ! GFDL physics
+       integer :: rainwat = -999, snowwat = -999, graupel = -999, hailwat = -999, cld_amt = -999
+@@ -341,6 +342,13 @@
+       nq = nq_tot - flagstruct%dnats
+       nr = nq_tot - flagstruct%dnrts
+ 
++      dry_tr(:) = .false.
++      call dry_tracer_mask(flagstruct%dry_tracer_adv, nq_tot, nwat, dry_tr(1:nq_tot))
++      if ( flagstruct%dry_tracer_adv ) then
++         if ( gridstruct%bounded_domain .or. .not. flagstruct%z_tracer .or. flagstruct%inline_q ) &
++              call mpp_error(FATAL, 'dry_tracer_adv requires z_tracer=.true., inline_q=.false. and a global domain')
++      endif
++
+ !      call init_ijk_mem(isd,ied, jsd,jed, npz+1, grav_var_h, grav)
+ !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,grav_var_h)
+       do j=jsd,jed
+@@ -748,7 +756,7 @@
+          if ( flagstruct%z_tracer ) then
+             call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
+-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
++                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac, nwat, dry_tr(1:nq))
+          else
+             call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
+@@ -812,7 +820,7 @@
+                      hybrid_z,     &
+                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
+                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+-                     flagstruct%moist_phys, grav_var)
++                     flagstruct%moist_phys, grav_var, dry_tr(1:nr))
+      
+                                                   call timing_off('Remapping')
+ 
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 20:07:17
+@@ -144,7 +144,7 @@
+                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
+                       hydrostatic, phys_hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
+                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
+-                      moist_phys, grav_var)
++                      moist_phys, grav_var, dry_tr)
+   logical, intent(in):: last_step
+   logical, intent(in):: fv_debug
+   real,    intent(in):: mdt                   !< remap time step
+@@ -160,6 +160,7 @@
+   integer, intent(in):: kord_mt                !< Mapping order for the vector winds
+   integer, intent(in):: kord_wz                !< Mapping order/option for w
+   integer, intent(in):: kord_tr(nq)            !< Mapping order for tracers
++  logical, intent(in):: dry_tr(nq)             !< tracers remapped as dry mixing ratio (dry_tracer_adv)
+   integer, intent(in):: kord_tm                !< Mapping order for thermodynamics
+   integer, intent(in):: c2l_ord
+   real, intent(in):: consv                  !< factor for TE conservation
+@@ -234,7 +235,11 @@
+   integer:: kdelz
+   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kp, k_next
+   integer :: ierr
++  integer :: ndry
+ 
++       ndry = 0
++       if ( nwat > 0 ) ndry = count(dry_tr)
++
+        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
+         rg = rdgas
+        rcp = 1./ cp
+@@ -269,7 +274,7 @@
+ #ifdef MULTI_GASES
+ !$OMP                                  num_gas,                                          &
+ #endif
+-!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4)    &
++!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4,ndry,dry_tr)    &
+ !$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
+ !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
+   do 1000 j=js,je+1
+@@ -421,7 +426,10 @@
+ !----------------
+ ! Map constituents
+ !----------------
+-      if( nq > 5 ) then
++      if( ndry > 0 ) then
++           call mapn_tracer_dry(nq, nwat, ndry, km, pe1, pe2, q, dp2, kord_tr, j,     &
++                                is, ie, isd, ied, jsd, jed, fill, dry_tr)
++      elseif( nq > 5 ) then
+            call mapn_tracer(nq, km, pe1, pe2, q, dp2, kord_tr, j,     &
+                             is, ie, isd, ied, jsd, jed, 0., fill)
+       elseif ( nq > 0 ) then
+@@ -1509,6 +1517,129 @@
+   enddo
+ 
+  end subroutine mapn_tracer
++
++
++!>@brief mapn_tracer_dry: remap all tracers as in Lagrangian_to_Eulerian (water results unchanged), then remap the
++!! dry tracers' dry ratio c = q/(1-sum water) over dry-air thickness: old layers dp1*(1-old water), new layers
++!! dp2*(1-remapped water), edges rescaled to the old column dry mass. Returns q = c*D2/dp2, so a uniform c stays
++!! uniform and sum(q*dp) is conserved as by the moist remap.
++ subroutine mapn_tracer_dry(nq, nwat, ndry, km, pe1, pe2, q1, dp2, kord, j,     &
++                            i1, i2, isd, ied, jsd, jed, fill, dry_tr)
++      integer, intent(in):: km, j, nq, nwat, ndry, i1, i2, isd, ied, jsd, jed
++      integer, intent(in):: kord(nq)
++      real, intent(in)::  pe1(i1:i2,km+1)
++      real, intent(in)::  pe2(i1:i2,km+1)
++      real, intent(in)::  dp2(i1:i2,km)
++      logical, intent(in):: fill
++      logical, intent(in):: dry_tr(nq)
++      real, intent(inout):: q1(isd:ied,jsd:jed,km,nq)
++! LOCAL VARIABLES:
++      real:: cd(i1:i2,km,ndry)
++      real:: q2(i1:i2,km), dd2(i1:i2,km)
++      real:: pd1(i1:i2,km+1), pd2(i1:i2,km+1)
++      real:: sw(i1:i2)
++      real:: rat
++      integer:: idx(ndry)
++      integer:: i, k, n, iq
++
++      n = 0
++      do iq=1,nq
++         if ( dry_tr(iq) ) then
++            n = n + 1
++            idx(n) = iq
++         endif
++      enddo
++
++! dry ratio and dry-pressure edges of the Lagrangian layers
++      do i=i1,i2
++         pd1(i,1) = 0.
++      enddo
++      do k=1,km
++         do i=i1,i2
++            sw(i) = 0.
++         enddo
++         do iq=1,nwat
++            do i=i1,i2
++               sw(i) = sw(i) + q1(i,j,k,iq)
++            enddo
++         enddo
++         do n=1,ndry
++            do i=i1,i2
++               cd(i,k,n) = q1(i,j,k,idx(n))/(1.-sw(i))
++            enddo
++         enddo
++         do i=i1,i2
++            pd1(i,k+1) = pd1(i,k) + (pe1(i,k+1)-pe1(i,k))*(1.-sw(i))
++         enddo
++      enddo
++
++! all tracers as without dry_tracer_adv
++      if( nq > 5 ) then
++         call mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
++                          i1, i2, isd, ied, jsd, jed, 0., fill)
++      else
++         do iq=1,nq
++            call map1_q2(km, pe1, q1(isd,jsd,1,iq),     &
++                         km, pe2, q2, dp2,             &
++                         i1, i2, 0, kord(iq), j, isd, ied, jsd, jed, 0.)
++            if (fill) call fillz(i2-i1+1, km, 1, q2, dp2)
++            do k=1,km
++               do i=i1,i2
++                  q1(i,j,k,iq) = q2(i,k)
++               enddo
++            enddo
++         enddo
++      endif
++
++! dry-pressure edges of the Eulerian layers from the remapped water
++      do i=i1,i2
++         pd2(i,1) = 0.
++      enddo
++      do k=1,km
++         do i=i1,i2
++            sw(i) = 0.
++         enddo
++         do iq=1,nwat
++            do i=i1,i2
++               sw(i) = sw(i) + q1(i,j,k,iq)
++            enddo
++         enddo
++         do i=i1,i2
++            pd2(i,k+1) = pd2(i,k) + dp2(i,k)*(1.-sw(i))
++         enddo
++      enddo
++      do i=i1,i2
++         rat = pd1(i,km+1)/pd2(i,km+1)
++         do k=2,km
++            pd2(i,k) = pd2(i,k)*rat
++         enddo
++         pd2(i,km+1) = pd1(i,km+1)
++      enddo
++      do k=1,km
++         do i=i1,i2
++            dd2(i,k) = pd2(i,k+1) - pd2(i,k)
++         enddo
++      enddo
++
++      do n=1,ndry
++         iq = idx(n)
++         do k=1,km
++            do i=i1,i2
++               q1(i,j,k,iq) = cd(i,k,n)
++            enddo
++         enddo
++         call map1_q2(km, pd1, q1(isd,jsd,1,iq),     &
++                      km, pd2, q2, dd2,              &
++                      i1, i2, 0, kord(iq), j, isd, ied, jsd, jed, 0.)
++         if (fill) call fillz(i2-i1+1, km, 1, q2, dd2)
++         do k=1,km
++            do i=i1,i2
++               q1(i,j,k,iq) = q2(i,k)*dd2(i,k)/dp2(i,k)
++            enddo
++         enddo
++      enddo
++
++ end subroutine mapn_tracer_dry
+ 
+ 
+  subroutine map1_q2(km,   pe1,   q1,            &
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_tracer2d.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_tracer2d.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_tracer2d.F90	2026-10-17 20:05:21
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_tracer2d.F90	2026-10-17 20:06:18
+@@ -74,11 +74,13 @@
+    use fv_regional_mod,   only: current_time_in_seconds
+    use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type, fv_grid_bounds_type
+    use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum, mpp_max
++   use field_manager_mod, only: MODEL_ATMOS
++   use tracer_manager_mod, only: query_method
+ 
+ implicit none
+ private
+ 
+-public :: tracer_2d, tracer_2d_nested, tracer_2d_1L
++public :: tracer_2d, tracer_2d_nested, tracer_2d_1L, dry_tracer_mask
+ 
+ real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
+ 
+@@ -90,7 +92,8 @@
+ !! of split tracer timesteps. This potentially accelerates tracer advection when there
+ !! is a large difference in layer-maximum wind speeds (cf. polar night jet).
+ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
+-                        nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac)
++                        nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac, &
++                        nwat, dry_tr)
+ 
+       type(fv_grid_bounds_type), intent(IN) :: bd
+       integer, intent(IN) :: npx
+@@ -102,6 +105,8 @@
+       integer, intent(IN) :: id_divg
+       real   , intent(IN) :: dt, trdm
+       real   , intent(IN) :: lim_fac
++      integer, intent(IN) :: nwat                                       !< water species are tracers 1..nwat
++      logical, intent(IN) :: dry_tr(nq)                                 !< tracers moved as dry mixing ratio (dry_tracer_adv)
+       type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
+       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
+       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
+@@ -114,6 +119,11 @@
+ 
+ ! Local Arrays
+       real :: qn2(bd%isd:bd%ied,bd%jsd:bd%jed,nq)   !< 3D tracers
++! dry_tracer_adv: water fluxes, dry-air fluxes and masses, dry ratio
++      real :: fxw(bd%is:bd%ie+1,bd%js:bd%je,max(nwat,1)), fyw(bd%is:bd%ie,bd%js:bd%je+1,max(nwat,1))
++      real :: fdx(bd%is:bd%ie+1,bd%js:bd%je), fdy(bd%is:bd%ie,bd%js:bd%je+1)
++      real :: sw(bd%isd:bd%ied,bd%jsd:bd%jed), cq(bd%isd:bd%ied,bd%jsd:bd%jed)
++      logical :: ldry
+       real :: dp2(bd%is:bd%ie,bd%js:bd%je)
+       real :: fx(bd%is:bd%ie+1,bd%js:bd%je )
+       real :: fy(bd%is:bd%ie , bd%js:bd%je+1)
+@@ -151,6 +161,8 @@
+       dx     => gridstruct%dx
+       dy     => gridstruct%dy
+ 
++      ldry = nwat > 0 .and. any(dry_tr)
++
+ !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx,dxa,dy, &
+ !$OMP                                  sin_sg,cy,yfx,dya,dx,cmax)
+   do k=1,npz
+@@ -263,10 +275,37 @@
+            enddo
+         enddo
+ 
++        if ( ldry ) then   ! sum of water species before this (sub-)step
++           do j=jsd,jed
++              do i=isd,ied
++                 sw(i,j) = 0.
++              enddo
++           enddo
++           do iq=1,nwat
++              if ( nsplt /= 1 .and. it > 1 ) then
++                 do j=jsd,jed
++                    do i=isd,ied
++                       sw(i,j) = sw(i,j) + qn2(i,j,iq)
++                    enddo
++                 enddo
++              else
++                 do j=jsd,jed
++                    do i=isd,ied
++                       sw(i,j) = sw(i,j) + q(i,j,k,iq)
++                    enddo
++                 enddo
++              endif
++           enddo
++        endif
++
+ !$OMP parallel do default(none) shared(k,nsplt,it,is,ie,js,je,isd,ied,jsd,jed,npx,npy,cx,xfx,hord,trdm, &
+-!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac) &
++!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac, &
++!$OMP                                  ldry,dry_tr,nwat,fxw,fyw) &
+ !$OMP                          private(fx,fy)
+         do iq=1,nq
++        if ( ldry ) then
++           if ( dry_tr(iq) ) cycle
++        endif
+         if ( nsplt /= 1 ) then
+            if ( it==1 ) then
+               do j=jsd,jed
+@@ -278,6 +317,10 @@
+            call fv_tp_2d(qn2(isd,jsd,iq), cx(is,jsd,k), cy(isd,js,k), &
+                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
++           if ( ldry .and. iq <= nwat ) then
++              fxw(:,:,iq) = fx
++              fyw(:,:,iq) = fy
++           endif
+            if ( it < nsplt ) then   ! not last call
+               do j=js,je
+               do i=is,ie
+@@ -295,6 +338,10 @@
+            call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
+                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
++           if ( ldry .and. iq <= nwat ) then
++              fxw(:,:,iq) = fx
++              fyw(:,:,iq) = fy
++           endif
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,iq) = (q(i,j,k,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
+@@ -303,6 +350,83 @@
+         endif
+         enddo   !  tracer-loop
+ 
++        if ( ldry ) then
++! Dry tracers: the dry ratio c = q/(1-sum water) is moved by the dry-air flux, i.e. the total mass flux minus the
++! limited water fluxes just applied, so dp1*(1-sw) + div(dry flux) = dp2*(1-sum new water) and a uniform c stays uniform.
++           do j=js,je
++              do i=is,ie+1
++                 fdx(i,j) = mfx(i,j,k)
++              enddo
++           enddo
++           do j=js,je+1
++              do i=is,ie
++                 fdy(i,j) = mfy(i,j,k)
++              enddo
++           enddo
++           do iq=1,nwat
++              do j=js,je
++                 do i=is,ie+1
++                    fdx(i,j) = fdx(i,j) - fxw(i,j,iq)
++                 enddo
++              enddo
++              do j=js,je+1
++                 do i=is,ie
++                    fdy(i,j) = fdy(i,j) - fyw(i,j,iq)
++                 enddo
++              enddo
++           enddo
++
++!$OMP parallel do default(none) shared(k,nsplt,it,is,ie,js,je,isd,ied,jsd,jed,npx,npy,cx,xfx,hord, &
++!$OMP                                  nq,gridstruct,bd,cy,yfx,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac, &
++!$OMP                                  dry_tr,sw,fdx,fdy) &
++!$OMP                          private(fx,fy,cq)
++           do iq=1,nq
++              if ( .not. dry_tr(iq) ) cycle
++              if ( nsplt /= 1 ) then
++                 if ( it==1 ) then
++                    do j=jsd,jed
++                       do i=isd,ied
++                          qn2(i,j,iq) = q(i,j,k,iq)
++                       enddo
++                    enddo
++                 endif
++                 do j=jsd,jed
++                    do i=isd,ied
++                       cq(i,j) = qn2(i,j,iq)/(1.-sw(i,j))
++                    enddo
++                 enddo
++              else
++                 do j=jsd,jed
++                    do i=isd,ied
++                       cq(i,j) = q(i,j,k,iq)/(1.-sw(i,j))
++                    enddo
++                 enddo
++              endif
++              call fv_tp_2d(cq, cx(is,jsd,k), cy(isd,js,k), &
++                            npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
++                            gridstruct, bd, ra_x, ra_y, lim_fac, mfx=fdx, mfy=fdy)
++              if ( nsplt /= 1 .and. it < nsplt ) then
++                 do j=js,je
++                    do i=is,ie
++                       qn2(i,j,iq) = (qn2(i,j,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
++                    enddo
++                 enddo
++              elseif ( nsplt /= 1 ) then
++                 do j=js,je
++                    do i=is,ie
++                       q(i,j,k,iq) = (qn2(i,j,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
++                    enddo
++                 enddo
++              else
++                 do j=js,je
++                    do i=is,ie
++                       q(i,j,k,iq) = (q(i,j,k,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
++                    enddo
++                 enddo
++              endif
++           enddo   ! dry tracer-loop
++        endif
++
+         if ( it < nsplt ) then   ! not last call
+              do j=js,je
+                 do i=is,ie
+@@ -844,5 +968,23 @@
+    endif
+ 
+  end subroutine tracer_2d_nested
++
++!>@brief dry_tracer_mask: tracers advected and remapped as dry mixing ratios when dry_tracer_adv is set,
++!! i.e. field_table tracers with "tracer_usage","chemistry" (never a water species 1..nwat).
++subroutine dry_tracer_mask(on, nq, nwat, dry_tr)
++   logical, intent(in) :: on
++   integer, intent(in) :: nq, nwat
++   logical, intent(out) :: dry_tr(nq)
++   character(len=32) :: usage
++   character(len=128) :: control
++   integer :: iq
++   dry_tr(:) = .false.
++   if ( .not. on ) return
++   do iq=nwat+1,nq
++      if ( query_method('tracer_usage', MODEL_ATMOS, iq, usage, control) ) then
++         dry_tr(iq) = trim(usage) == 'chemistry'
++      endif
++   enddo
++end subroutine dry_tracer_mask
+ 
+ end module fv_tracer2d_mod

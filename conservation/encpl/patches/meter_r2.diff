@@ -1,0 +1,514 @@
+--- a/UFSATM/fv3/atmos_model.F90	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/fv3/atmos_model.F90	2026-10-17 20:20:26.000000000 -0500
+@@ -60,6 +60,7 @@
+ use atmosphere_mod,     only: atmosphere_restart
+ use atmosphere_mod,     only: atmosphere_end
+ use atmosphere_mod,     only: atmosphere_state_update
++use fv_mapz_mod,       only: ebq_prc
+ use atmosphere_mod,     only: atmosphere_fill_nest_cpl
+ use atmosphere_mod,     only: atmos_phys_driver_statein
+ use atmosphere_mod,     only: atmosphere_control_data
+@@ -953,6 +954,10 @@
+     call set_atmosphere_pelist()
+     call mpp_clock_begin(fv3Clock)
+     call mpp_clock_begin(updClock)
++    if (.not. allocated(ebq_prc)) allocate(ebq_prc(3, size(GFS_intdiag%rain)))
++    ebq_prc(3,:) = GFS_sfcprop%tsfc(:)
++    ebq_prc(1,:) = 1000.d0*GFS_intdiag%rain(:)
++    ebq_prc(2,:) = 1000.d0*(GFS_intdiag%snow(:) + GFS_intdiag%ice(:) + GFS_intdiag%graupel(:))
+     call atmosphere_state_update(Atmos%Time, GFS_control, GFS_statein, GFS_stateout, IAU_Data, Atm_block, flip_vc)
+ #ifdef MOVING_NEST
+     call execute_tracker(Atm, mygrid, Atmos%Time, Atmos%Time_step)
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:20:26.000000000 -0500
+@@ -211,7 +211,7 @@
+ use fv_mp_mod,          only: is_master, tile_fine
+ use fv_sg_mod,          only: fv_subgrid_z
+ use fv_update_phys_mod, only: fv_update_phys
+-use fv_mapz_mod,       only: eb_state, eb_print, ebx
++use fv_mapz_mod,       only: eb_state, eb_print, ebx, ebq, ebq_prc
+ use fv_io_mod,          only: fv_io_register_nudge_restart
+ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
+@@ -1640,7 +1640,7 @@
+      enddo
+ 
+ 
+-     if (Atm(n)%flagstruct%cpl_water_energy > 0) call cpl_water_energy(nb, blen, Atm(n)%flagstruct%cpl_water_energy, &
++     call cpl_water_energy(nb, blen, Atm(n)%flagstruct%cpl_water_energy, &
+                                      flip_vc, rdt, IPD_Control, IPD_Statein, IPD_Stateout, Atm_block)
+ 
+      do k = 1, npz
+@@ -2679,6 +2679,8 @@
+    real(kind=kind_phys), parameter :: c_liq = 4.1855e+3, c_ice = 1972., t_frz = 273.15  ! = fv_mapz c_liq, c_ice
+    real(kind=kind_phys) :: dpn(npz), dm(npz), dmv(npz), tk(npz), phib(npz+1), ftop(npz+1)
+    real(kind=kind_phys) :: qpe(npz), qfw(npz), qse(npz), qp, cb, e
++   real(kind=8) :: x(46), cmp(5), a, dml, dmi, phm, ka, f, dt1, pl, pic, ev, t1, cpe, cfw, csx
++   real(kind=kind_phys), parameter :: cv_vap = 3.*rvgas
+    real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr
+    integer :: ix, i, j, im, k, k1, n, nwat
+    n = mygrid
+@@ -2731,6 +2733,91 @@
+             qse(k1) = qse(k1) - fr*cp_vapor*(tk(k1+1) - tk(k1))
+          endif
+       enddo
++      ! energy meter (diagnostic builds only)
++      x(:) = 0.d0
++      a = Atm(n)%gridstruct%area_64(i,j)
++      cpe = 0.d0
++      cfw = 0.d0
++      do k1 = 1, npz
++         if (flip_vc) then
++            k = npz+1-k1
++            qp = IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1)
++         else
++            k = k1
++            qp = IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k)
++         endif
++         dml = qp*(IPD_Stateout%gq0(im,k,liq_wat) + IPD_Stateout%gq0(im,k,rainwat)) &
++             - Atm(n)%delp(i,j,k1)*(Atm(n)%q(i,j,k1,liq_wat) + Atm(n)%q(i,j,k1,rainwat))
++         dmi = qp*(IPD_Stateout%gq0(im,k,ice_wat) + IPD_Stateout%gq0(im,k,snowwat) + IPD_Stateout%gq0(im,k,graupel)) &
++             - Atm(n)%delp(i,j,k1)*(Atm(n)%q(i,j,k1,ice_wat) + Atm(n)%q(i,j,k1,snowwat) + Atm(n)%q(i,j,k1,graupel))
++         phm = 0.5d0*(phib(k1) + phib(k1+1))
++         ka = 0.5d0*(dble(Atm(n)%ua(i,j,k1))**2 + dble(Atm(n)%va(i,j,k1))**2)
++         x(1) = x(1) + (dmv(k1)*cv_vap + dml*c_liq + dmi*c_ice)*tk(k1)
++         x(2) = x(2) + dm(k1)*phm
++         x(3) = x(3) + dm(k1)*ka
++         x(4) = x(4) + dmv(k1)
++         x(5) = x(5) + dml
++         x(6) = x(6) + dmi
++         x(14) = x(14) - rvgas*dmv(k1)*tk(k1)
++         x(15) = x(15) + dm(k1)*(phm - phib(npz+1))
++         x(16) = x(16) + (dmv(k1)*cp_vapor + dml*c_liq + dmi*c_ice)*(tk(k1) - t_frz)
++         x(18) = x(18) + qpe(k1)
++         x(19) = x(19) + qfw(k1)
++         x(20) = x(20) + qse(k1)
++         x(21) = x(21) + abs(qpe(k1))
++         x(22) = x(22) + abs(qfw(k1))
++         x(23) = x(23) + abs(qse(k1))
++         x(25) = x(25) + cp_air*(IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k))*qp
++      enddo
++      do k1 = 1, npz
++         f = ftop(k1+1)
++         k = k1
++         if (flip_vc) k = npz+1-k1
++         cmp(1) = grav*IPD_Stateout%pflx_dc(im,k)
++         cmp(2) = grav*IPD_Stateout%pflx_sc(im,k)
++         cmp(3) = grav*IPD_Stateout%pflx_mpl(im,k)
++         cmp(4) = grav*IPD_Stateout%pflx_mpi(im,k)
++         cmp(5) = f - cmp(1) - cmp(2) - cmp(3) - cmp(4)
++         if (k1 < npz) then
++            dt1 = tk(k1+1) - tk(k1)
++            x(26) = x(26) + f*c_liq*dt1
++            x(40) = x(40) + (cmp(1) + cmp(2) + cmp(3))*c_liq*dt1
++            x(41) = x(41) + cmp(4)*c_ice*dt1
++            x(42) = x(42) + cmp(5)*cp_vapor*dt1
++            x(27) = x(27) + ((cmp(1) + cmp(2) + cmp(3))*c_liq + cmp(4)*c_ice)*dt1
++            x(28) = x(28) + cmp(5)*cp_vapor*dt1
++            x(17) = x(17) + ((cmp(1) + cmp(2) + cmp(3))*c_liq + cmp(4)*c_ice + cmp(5)*cp_vapor)*dt1
++            phm = 0.5d0*(phib(k1) - phib(k1+2))
++         else
++            phm = 0.5d0*(phib(k1) + phib(k1+1)) - phib(npz+1)
++            x(43) = x(43) + cmp(1) + cmp(2) + cmp(3) + cmp(4)
++         endif
++         if (f >= 0.) then
++            x(29) = x(29) + f*phm
++         else
++            x(30) = x(30) + f*phm
++         endif
++         x(35:39) = x(35:39) + cmp(1:5)*phm
++      enddo
++      pl = (ebq_prc(1,im) - ebq_prc(2,im))*grav
++      pic = ebq_prc(2,im)*grav
++      ev = x(4) + x(5) + x(6) + pl + pic
++      t1 = tk(npz)
++      x(7) = pl
++      x(8) = pic
++      x(9) = ev
++      x(10) = ev*t1
++      x(11) = pl*t1
++      x(12) = pic*t1
++      x(13) = (x(4) + x(5) + x(6))*phib(npz+1)
++      x(16) = x(16) + (-ev*cp_vapor + pl*c_liq + pic*c_ice)*(t1 - t_frz)
++      x(44) = ev*(cp_vapor - c_liq)*(ebq_prc(3,im) - t_frz)
++      x(45) = ev*cp_vapor*(ebq_prc(3,im) - t1)
++      x(46) = ev*(ebq_prc(3,im) - t1)
++      x(31) = abs(x(15))
++      x(32) = abs(x(14))
++      x(33) = abs(x(17))
++      x(34) = 1.d0
+       do k1 = 1, npz
+          e = 0.
+          if (iand(ibits, 1) /= 0) e = e + qpe(k1)
+@@ -2738,7 +2825,11 @@
+          if (iand(ibits, 4) /= 0) e = e + qse(k1)
+          ! fv_update_phys injects cp_air*t_dt*dt*delp_new/grav
+          t_dt(i,j,k1) = t_dt(i,j,k1) + e*rdt/(cp_air*dpn(k1))
++         x(24) = x(24) + e
+       enddo
++!$OMP CRITICAL (ebq_acc)
++      ebq = ebq + x*a
++!$OMP END CRITICAL (ebq_acc)
+    enddo
+  end subroutine cpl_water_energy
+ 
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 20:20:26.000000000 -0500
+@@ -128,6 +128,8 @@
+ 
+   real(kind=4) :: E_Flux = 0.
+   real(kind=8), public, save :: ebs(12, 12) = 0.d0, ebx(8) = 0.d0
++  real(kind=8), public, save :: ebq(46) = 0.d0
++  real(kind=8), public, allocatable, save :: ebq_prc(:,:)
+   private
+ 
+   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
+@@ -3737,6 +3739,7 @@
+    integer :: s
+    call mpp_sum(ebs, size(ebs))
+    call mpp_sum(ebx, size(ebx))
++   call mpp_sum(ebq, size(ebq))
+    if (mpp_pe() == mpp_root_pe()) then
+       if (kstep == 1) write(*, '(a,9es24.16)') 'EBC ', dble(cp_air), dble(rdgas), dble(rvgas), dble(grav), &
+            dble(hlv), dble(hlf), dble(cp_vapor), dble(c_liq), dble(c_ice)
+@@ -3744,9 +3747,11 @@
+          if (ebs(9, s) /= 0.d0) write(*, '(a,i6,i3,12es25.16)') 'EBD ', kstep, s, ebs(:, s)
+       enddo
+       write(*, '(a,i6,8es25.16)') 'EBX ', kstep, ebx
++      write(*, '(a,i6,46es25.16)') 'EBQ ', kstep, ebq
+    endif
+    ebs = 0.d0
+    ebx = 0.d0
++   ebq = 0.d0
+  end subroutine eb_print
+ 
+ end module fv_mapz_mod
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-17 20:20:26.000000000 -0500
+@@ -217,6 +217,7 @@
+    real(wp),            private :: olfus        !set in thompson_init
+ !..Latent heat slopes and moist heat capacity factor; thompson_kirchhoff: those of the host's (FV3) frame
+    logical                      :: thompson_kirchhoff = .false.
++   real(8), public, save :: tkc(6, 7, 8192) = 0.d0   ! energy meter (diagnostic builds only)
+    real(wp), public, save :: tsf(2, 200, 4096) = 0.   ! sedimented mass through layer bottoms (kg m-2): liquid, ice
+    real(wp),            private :: dlv = 2106.0 - 4218.0, dls = 0., dlf = 0., cpq = 0.887
+ 
+@@ -2045,6 +2046,7 @@
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+       real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
++      real(8) :: tka(6,7)
+       real(wp) :: msl0(kts:kte), msi0(kts:kte), fsl, fsi
+       real(wp) :: xcl
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+@@ -2072,6 +2074,7 @@
+ 
+       no_micro = .true.
+       tsf(:,:,ii) = 0.
++      tka = 0.d0
+       dtsave = dt
+       odt = 1./dt
+       odts = 1./dtsave
+@@ -2290,6 +2293,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qc1d(k)
++            call tk_acc(tka, 6, 1, lvap0 + dlv*(t1d(k)-273.15), -qc1d(k), t1d(k), qv(k), rho(k)*dzq(k))
+             t1d(k) = t1d(k) - (lvap0 + dlv*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+@@ -2320,6 +2324,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qi1d(k)
++            call tk_acc(tka, 6, 2, ls_t(t1d(k)), -qi1d(k), t1d(k), qv(k), rho(k)*dzq(k))
+             t1d(k) = t1d(k) - ls_t(t1d(k))*qi1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+@@ -2352,6 +2357,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qr1d(k)
++            call tk_acc(tka, 6, 1, lvap0 + dlv*(t1d(k)-273.15), -qr1d(k), t1d(k), qv(k), rho(k)*dzq(k))
+             t1d(k) = t1d(k) - (lvap0 + dlv*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+@@ -2366,6 +2372,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qs1d(k)
++            call tk_acc(tka, 6, 2, ls_t(t1d(k)), -qs1d(k), t1d(k), qv(k), rho(k)*dzq(k))
+             t1d(k) = t1d(k) - ls_t(t1d(k))*qs1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+@@ -2378,6 +2385,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qg1d(k)
++            call tk_acc(tka, 6, 2, ls_t(t1d(k)), -qg1d(k), t1d(k), qv(k), rho(k)*dzq(k))
+             t1d(k) = t1d(k) - ls_t(t1d(k))*qg1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             rg(k) = R1
+@@ -3386,6 +3394,7 @@
+          else
+             ! rain left at or below R1 goes to vapour with its latent heat, not deleted
+             qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*dtsave)*odts
++            call tk_acc(tka, 6, 1, lvap(k), -(qr1d(k) + qrten(k)*dtsave)*odts*dt, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - lvap(k)*ocp(k)*(qr1d(k) + qrten(k)*dtsave)*odts*(1-IFDRY)
+             qrten(k) = -qr1d(k)*odts
+             nrten(k) = -nr1d(k)*odts
+@@ -3406,6 +3415,8 @@
+ 
+ !>  - Temperature tendency
+          if (temp(k).lt.T_0) then
++            call tk_acc(tka, 3, 2, ls_t(temp(k)), (pri_inu(k) + pri_ide(k) + prs_ide(k) + prs_sde(k) + prg_gde(k) + pri_iha(k))*orho*dt, temp(k), qv(k), rho(k)*dzq(k))
++            call tk_acc(tka, 4, 3, lfus2, (pri_wfz(k) + pri_rfz(k) + prg_rfz(k) + prs_scw(k) + prg_scw(k) + prg_gcw(k) + prg_rcs(k) + prs_rcs(k) + prr_rci(k) + prg_rcg(k))*orho*dt, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) &
+                      + ( ls_t(temp(k))*ocp(k)*(pri_inu(k) + pri_ide(k) &
+                                        + prs_ide(k) + prs_sde(k) &
+@@ -3417,6 +3428,8 @@
+                                        + prr_rci(k) + prg_rcg(k)) &
+                         )*orho * (1-IFDRY)
+          else
++            call tk_acc(tka, 5, 3, lf_t(temp(k)), -(prr_sml(k) + prr_gml(k) + prr_rcg(k) + prr_rcs(k))*orho*dt, temp(k), qv(k), rho(k)*dzq(k))
++            call tk_acc(tka, 3, 2, ls_t(temp(k)), (prs_sde(k) + prg_gde(k))*orho*dt, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) &
+                      + ( lf_t(temp(k))*ocp(k)*(-prr_sml(k) - prr_gml(k) &
+                                        - prr_rcg(k) - prr_rcs(k)) &
+@@ -3696,6 +3709,7 @@
+             ncten(k) = ncten(k) + pnc_wcd(k)
+             if (is_aerosol_aware)                                            &   
+                nwfaten(k) = nwfaten(k) - pnc_wcd(k)
++            call tk_acc(tka, 1, 1, lvap(k), prw_vcd(k)*dt, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) + lvap(k)*ocp(k)*prw_vcd(k)*(1-IFDRY)
+             rc(k) = max(R1, (qc1d(k) + DT*qcten(k))*rho(k))
+             if (rc(k).eq.R1) L_qc(k) = .false.
+@@ -3785,6 +3799,7 @@
+             nrten(k) = nrten(k) - pnr_rev(k)
+             if (is_aerosol_aware)                                            &
+                nwfaten(k) = nwfaten(k) + pnr_rev(k)
++            call tk_acc(tka, 2, 1, lvap(k), -prv_rev(k)*dt, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - lvap(k)*ocp(k)*prv_rev(k)*(1-IFDRY)
+ 
+             rr(k) = max(R1, (qr1d(k) + DT*qrten(k))*rho(k))
+@@ -4287,6 +4302,7 @@
+                ncten(k) = ncten(k) + ni1d(k)*odt
+                qiten(k) = qiten(k) - xri*odt
+                niten(k) = -ni1d(k)*odt
++            call tk_acc(tka, 5, 3, lf_t(temp(k)), -xri, temp(k), qv(k), rho(k)*dzq(k))
+                tten(k) = tten(k) - lf_t(temp(k))*ocp(k)*xri*odt*(1-IFDRY)
+       !diag
+                !txri1(k) = lf_t(temp(k))*ocp(k)*xri*odt*(1-IFDRY)
+@@ -4300,6 +4316,7 @@
+                niten(k) = niten(k) + xnc*odt
+                qcten(k) = qcten(k) - xrc*odt
+                ncten(k) = ncten(k) - xnc*odt
++            call tk_acc(tka, 4, 3, lfus2, xrc, temp(k), qv(k), rho(k)*dzq(k))
+                tten(k) = tten(k) + lfus2*ocp(k)*xrc*odt*(1-IFDRY)
+       !diag
+                !txrc1(k) = lfus2*ocp(k)*xrc*odt*(1-IFDRY)*DT
+@@ -4315,30 +4332,35 @@
+          if (xcl .le. R1) then
+             qcten(k) = qcten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
++            call tk_acc(tka, 6, 1, lvap(k), -xcl, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qi1d(k) + qiten(k)*DT
+          if (xcl .le. R1) then
+             qiten(k) = qiten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
++            call tk_acc(tka, 6, 2, ls_t(temp(k)), -xcl, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qr1d(k) + qrten(k)*DT
+          if (xcl .le. R1) then
+             qrten(k) = qrten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
++            call tk_acc(tka, 6, 1, lvap(k), -xcl, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qs1d(k) + qsten(k)*DT
+          if (xcl .le. R1) then
+             qsten(k) = qsten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
++            call tk_acc(tka, 6, 2, ls_t(temp(k)), -xcl, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qg1d(k) + qgten(k)*DT
+          if (xcl .le. R1) then
+             qgten(k) = qgten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
++            call tk_acc(tka, 6, 2, ls_t(temp(k)), -xcl, temp(k), qv(k), rho(k)*dzq(k))
+             tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+       enddo
+@@ -4423,6 +4445,8 @@
+             xcnd = qc1d(k) + qr1d(k) + qi1d(k) + qs1d(k) + qg1d(k)
+             if (xcnd .gt. 0.) then
+                frc = min(1._wp, (1.E-10 - qv1d(k))/xcnd)
++            call tk_acc(tka, 6, 1, lvap(k), -frc*(qc1d(k)+qr1d(k)), t1d(k), qv(k), rho(k)*dzq(k))
++            call tk_acc(tka, 6, 2, ls_t(t1d(k)), -frc*(qi1d(k)+qs1d(k)+qg1d(k)), t1d(k), qv(k), rho(k)*dzq(k))
+                t1d(k) = t1d(k) - frc*ocp(k)*(1-IFDRY)                           &
+                       * (lvap(k)*(qc1d(k)+qr1d(k)) + ls_t(t1d(k))*(qi1d(k)+qs1d(k)+qg1d(k)))
+                qv1d(k) = qv1d(k) + frc*xcnd
+@@ -4542,6 +4566,7 @@
+          enddo
+       endif calculate_extended_diagnostics
+    
++      tkc(:,:,ii) = tkc(:,:,ii) + tka
+    end subroutine mp_thompson
+ !>@}
+ 
+@@ -6700,6 +6725,27 @@
+ 
+ !+---+-----------------------------------------------------------------+
+ !+---+-----------------------------------------------------------------+
++   subroutine tk_acc(acc, ip, lt, lapp, dr, t, rv, md)
++      !< energy meter (diagnostic builds only); lt 1 vapour-liquid 2 vapour-ice 3 liquid-ice
++      real(8), intent(inout) :: acc(6,7)
++      integer, intent(in) :: ip, lt
++      real(wp), intent(in) :: lapp, dr, t, rv, md
++      real(8) :: h, lf, g
++      h = dble(lapp)*dble(dr)*dble(md)*(1.d0 + dble(rv))/(1.d0 + dble(cpq)*dble(rv))
++      if (lt == 1) lf = dble(lvap0) + (1846.d0 - 4185.5d0)*(dble(t) - 273.15d0)
++      if (lt == 2) lf = dble(lvap0) + dble(lfus) + (1846.d0 - 1972.d0)*(dble(t) - 273.15d0)
++      if (lt == 3) lf = dble(lfus) + (4185.5d0 - 1972.d0)*(dble(t) - 273.15d0)
++      g = h - lf*dble(dr)*dble(md)
++      acc(1,ip) = acc(1,ip) + h
++      acc(2,ip) = acc(2,ip) + g
++      acc(3,ip) = acc(3,ip) + abs(g)
++      if (t >= 220. .and. t <= 250.) then
++         acc(4,ip) = acc(4,ip) + h
++         acc(5,ip) = acc(5,ip) + g
++      endif
++      acc(6,ip) = acc(6,ip) + dble(dr)*dble(md)
++   end subroutine tk_acc
++
+    elemental real(wp) function ls_t(t)
+       !< latent heat of sublimation applied to T (lsub unless thompson_kirchhoff)
+       real(wp), intent(in) :: t
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:20:26.000000000 -0500
+@@ -10,6 +10,7 @@
+       use progsigma, only : progsigma_calc
+       use progomega, only : progomega_calc
+       use mo_conv_kind, only : conv_wp
++      real(kind=8), public, save :: skc_d(2, 4096) = 0.d0
+ 
+       contains
+ 
+@@ -3951,13 +3952,18 @@
+         do i = 1, im
+           if (cnvflg(i) .and. rn(i) > 0.0_kind_phys) then
+             pflx(i,k) = 1000.0_kind_phys * pfk(i,k)
+-            if (samf_kirchhoff .and. k <= km) then
++            if (k <= km) then
+               ck = 1000.0_kind_phys * (pfk(i,k) - pfk(i,k+1))
+      &           * grav / delp(i,k)
+               if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
+      &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
+-              new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
+-     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++              if (samf_kirchhoff) new_t1(i,k) = new_t1(i,k)
++     &           + real((cvap - cliq) * (t1(i,k) - t0c) * ck / cp,
++     &           kind=conv_wp)
++              skc_d(1,i) = skc_d(1,i) - dble((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck * delp(i,k) / grav)
++              skc_d(2,i) = skc_d(2,i) + abs(dble((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck * delp(i,k) / grav))
+             endif
+           endif
+         enddo
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:20:26.000000000 -0500
+@@ -8,6 +8,7 @@
+       use progsigma, only : progsigma_calc
+       use progomega, only : progomega_calc
+       use mo_conv_kind, only : conv_wp
++      real(kind=8), public, save :: skc_s(2, 4096) = 0.d0
+       contains
+ 
+       subroutine samfshalcnv_init(imfshalcnv, imfshalcnv_samf,          &
+@@ -2776,13 +2777,18 @@
+         do i = 1, im
+           if (cnvflg(i)) then
+             pflx(i,k) = 1000.0_kind_phys * pfk(i,k)
+-            if (samf_kirchhoff .and. k <= km1) then
++            if (k <= km1) then
+               ck = 1000.0_kind_phys * (pfk(i,k) - pfk(i,k+1))
+      &           * grav / delp(i,k)
+               if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
+      &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
+-              new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
+-     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++              if (samf_kirchhoff) new_t1(i,k) = new_t1(i,k)
++     &           + real((cvap - cliq) * (t1(i,k) - t0c) * ck / cp,
++     &           kind=conv_wp)
++              skc_s(1,i) = skc_s(1,i) - dble((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck * delp(i,k) / grav)
++              skc_s(2,i) = skc_s(2,i) + abs(dble((cvap - cliq)
++     &           * (t1(i,k) - t0c) * ck * delp(i,k) / grav))
+             endif
+           endif
+         enddo
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 20:20:26.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 20:27:38.000000000 -0500
+@@ -4,7 +4,12 @@
+   use machine, only: kind_phys
+   use energy_meter_common
+   use mpi_f08
++  use module_mp_thompson, only: tkc
++  use samfdeepcnv, only: skc_d
++  use samfshalcnv, only: skc_s
+   implicit none
++  real(kind=8), save :: tkm(6, 7) = 0.d0
++  real(kind=8), save :: skm(4) = 0.d0
+ contains
+ !> \section arg_table_em_p12_run Argument Table
+ !! \htmlinclude em_p12_run.html
+@@ -46,7 +51,7 @@
+     ! segment s = probe s -> s+1; fluxes per segment (J m-2, kg m-2), residual r = dE - F
+     real(kind=8) :: d(7), e0, e1, f, w, frad, fpbl, fmp, wpbl, wmp, wcv, a
+     integer :: s, jj, ierr
+-    real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12)
++    real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12), tbuf(42), trbuf(42)
+     if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
+        buf(1:10*emnp) = reshape(emg, (/10*emnp/))
+        buf(10*emnp+1:) = emx
+@@ -61,12 +66,35 @@
+        endif
+        emg = 0.d0
+        emx = 0.d0
++       tbuf = reshape(tkm, (/42/))
++       if (mpirank == mpiroot) then
++          call MPI_Reduce(MPI_IN_PLACE, tbuf, 42, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          do s = 1, 7
++             write(*,'(a,i6,i3,6es25.16)') 'EMK ', emkdt(12), s, tbuf(6*(s-1)+1:6*s)
++          enddo
++       else
++          call MPI_Reduce(tbuf, trbuf, 42, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       endif
++       tkm = 0.d0
++       if (mpirank == mpiroot) then
++          call MPI_Reduce(MPI_IN_PLACE, skm, 4, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          write(*,'(a,i6,4es25.16)') 'EMC ', emkdt(12), skm
++       else
++          call MPI_Reduce(skm, tbuf(1:4), 4, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       endif
++       skm = 0.d0
+     endif
+     call em_probe(12, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                   ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
+     do i = 1, im
+        jj = j0 + i
+        a = garea(i)
++       tkm = tkm + tkc(:,:,i)*a
++       tkc(:,:,i) = 0.d0
++       skm(1:2) = skm(1:2) + skc_d(:,i)*a
++       skm(3:4) = skm(3:4) + skc_s(:,i)*a
++       skc_d(:,i) = 0.d0
++       skc_s(:,i) = 0.d0
+        frad = emf(1, jj)
+        fpbl = emf(8, jj) + emf(9, jj)
+        fmp = con_hfus*emf(11, jj)

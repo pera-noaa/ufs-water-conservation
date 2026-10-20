@@ -1,0 +1,52 @@
+From 3c2897a61c91c0404117b9900c4eef588f4143bd Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Thu, 15 Oct 2026 00:35:31 -0600
+Subject: [PATCH] TEMPO: count all sedimentation out of the lowest layer as
+ precipitation
+
+The sedimentation flux out of the lowest layer always leaves the column, but
+was counted as surface precipitation only above low_limit_mass_for_precip.
+Count all of it.
+
+Held: port of ufs-community/ccpp-physics M2, kept out of the series. In UFS,
+counting all of it also booked Thompson's transported R1 placeholder and
+genuine sub-threshold traces, which reach Noah-MP's canopy. TEMPO's
+flux-form sedimentation has started from each layer's actual content since
+the port commit, so Thompson's placeholder fix has no counterpart here; the
+semi-Lagrangian floor is still paid from vapour.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_mp_tempo_main.F90 | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/src/module_mp_tempo_main.F90 b/src/module_mp_tempo_main.F90
+index 8c1275c..1fcceb0 100644
+--- a/src/module_mp_tempo_main.F90
++++ b/src/module_mp_tempo_main.F90
+@@ -1711,8 +1711,6 @@ module module_mp_tempo_main
+   subroutine sedimentation(xr, vt, dz1d, rho, xten, limit, steps, ktop_sedi, precip, dt)
+     !! computes sedimentation fluxes, adds fluxes to tendencies, and updates hydrometeor
+     !! mass (and number and volume)
+-    use module_mp_tempo_params, only : low_limit_mass_for_precip
+-
+     real(wp), intent(in) :: dt
+     integer, intent(in) :: steps
+     integer, intent(in), optional :: ktop_sedi
+@@ -1747,11 +1745,8 @@ module module_mp_tempo_main
+       xr(k) = max(limit, xr(k) + (sed_r(k+1)-sed_r(k))*odz*dt*(1._wp/real(steps, kind=wp)))
+     enddo
+ 
+-    if (present(precip)) then 
+-      if (xr(1) > low_limit_mass_for_precip) then
+-        precip = precip + sed_r(1)*dt*(1._wp/real(steps, kind=wp))
+-      endif 
+-    endif 
++    ! all of the flux out of the lowest layer reaches the surface
++    if (present(precip)) precip = precip + sed_r(1)*dt*(1._wp/real(steps, kind=wp))
+   end subroutine sedimentation
+ 
+   subroutine vapour_floor(rho, dz1d, qv1d, qvten, tten, qvneg, tneg, l_act, dt, odt, created)
+-- 
+2.55.0
+

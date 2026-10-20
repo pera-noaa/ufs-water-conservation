@@ -1,0 +1,35 @@
+# mpbl0/out: 120 PBL steps in 119 EMT lines (1..119), area 5.100965e+14
+ 1 P_shear (incl. EDMF momentum terms)              +2.793598e+00
+ 2   of which surface-layer term (k=1)              +1.508905e-01
+ 3 P_buoy                                           -5.987508e-02
+ 4   P_buoy > 0 part                                +6.668739e-01
+ 5 TKE floor at entry (max(q,tkmin))                +1.163012e-10
+ 6 eps, mean over the 20 substeps                   +3.721497e+00
+ 7 eps removed by the clip                          +4.656438e-03
+ 8 TKE floor in substeps (tkmnz)                    +8.623800e-01
+ 9 eps of the last substep (heated)                 +3.677416e+00
+10 dTKE/dt local (P - eps + floors)                 -1.253933e-01
+11 dTKE/dt transport (diffusion + MF + borrowing)   +6.991668e-19
+14 -dKE/dt momentum solve (total)                   +2.247923e+00
+15   surface stress work, implicit (u_new)          +1.123941e+00
+16   surface stress work, explicit (u_old)          +1.213465e+00
+17   sum of local -dKE < 0 (cooling in the KE form) -6.223930e-01
+18 heat solve: sum cp dT m - dtsfc (closure)        +2.666054e+00
+19 dissipative heating actually applied             +3.677416e+00
+   TKE content in / out (J m-2, step means)      9.979388e+02 / 9.076556e+02
+   TKE content in (step 3) -> out (step 120) (J m-2) 5.789333e+02 -> 9.631391e+02  = +4.522e-03 W m-2
+   excess eps_last - (-dKE)                      +1.429493e+00
+   identity check local: P - eps_mean + floor_sub - dTKE_local = -3.220e-15
+   PBL segment (EMS s=4): r = +1.427264e+00 W m-2, sum|r| = 2.661735e+00, max|r_step| = 1.770e+00  (119 steps)
+
+# heating by category (W m-2 of global area): old land-day +0.5365, old sea-day +1.4602, new land-day +0.1432, new sea-day +1.0354, old land-night +0.3854, old sea-night +1.2953, new land-night +0.0974, new sea-night +0.9720
+# band(k)   old_all    new_all   new-old | old/new land-day  land-night  sea-day  sea-night
+  1-  1  +0.2790  +0.0517  -0.2273 | +0.0229/+0.0020  +0.0129/+0.0027  +0.1301/+0.0227  +0.1131/+0.0244
+  2-  3  +0.2872  +0.1686  -0.1186 | +0.0315/+0.0081  +0.0136/+0.0091  +0.1343/+0.0741  +0.1078/+0.0773
+  4-  6  +0.2040  +0.2759  +0.0719 | +0.0285/+0.0148  +0.0116/+0.0150  +0.0940/+0.1218  +0.0698/+0.1243
+  7- 10  +0.2676  +0.3868  +0.1192 | +0.0558/+0.0172  +0.0461/+0.0133  +0.0934/+0.1794  +0.0722/+0.1768
+ 11- 15  +0.5675  +0.4501  -0.1174 | +0.1278/+0.0191  +0.1201/+0.0114  +0.1613/+0.2158  +0.1582/+0.2038
+ 16- 20  +0.7274  +0.3031  -0.4244 | +0.1092/+0.0159  +0.0833/+0.0066  +0.2789/+0.1486  +0.2560/+0.1320
+ 21- 30  +0.7423  +0.2370  -0.5052 | +0.1104/+0.0256  +0.0597/+0.0145  +0.3065/+0.1103  +0.2656/+0.0866
+ 31- 45  +0.3486  +0.1649  -0.1837 | +0.0346/+0.0274  +0.0194/+0.0115  +0.1538/+0.0706  +0.1408/+0.0553
+ 46-128  +0.2539  +0.2099  -0.0440 | +0.0156/+0.0131  +0.0186/+0.0132  +0.1078/+0.0920  +0.1118/+0.0915

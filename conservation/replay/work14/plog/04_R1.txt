@@ -1,0 +1,4 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.meta

@@ -1,0 +1,311 @@
+--- a/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:02:08
++++ b/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:02:37
+@@ -3434,6 +3434,7 @@
+ !
+ ! tracers: transport in nsub sub-steps so that the donor-cell Courant
+ ! number of the compensating flux stays <= trcmax (explicit TVD update)
++! chemistry tracers as dry mixing ratios (dry mass as the host keeps)
+ !
+       if (.not.hwrf_samfdeep) then
+         do n = 1, ntr
+@@ -3447,7 +3448,7 @@
+           enddo
+           do n = 1, ntc
+             trfsc(n+itc-3) = real(fscav(n), kind=conv_wp)
+-            trdry(n+itc-3) = .false.
++            trdry(n+itc-3) = .true.
+           enddo
+           if (ntk > 2) then
+             trfsc(ntk-2) = 0.0_conv_wp
+--- a/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:02:08
++++ b/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:02:37
+@@ -2370,6 +2370,7 @@
+ !
+ ! tracers: transport in nsub sub-steps so that the donor-cell Courant
+ ! number of the compensating flux stays <= trcmax (explicit TVD update)
++! chemistry tracers as dry mixing ratios (dry mass as the host keeps)
+ !
+       if (.not.hwrf_samfshal) then
+         do n = 1, ntr
+@@ -2383,7 +2384,7 @@
+           enddo
+           do n = 1, ntc
+             trfsc(n+itc-3) = escav * real(fscav(n), kind=conv_wp)
+-            trdry(n+itc-3) = .false.
++            trdry(n+itc-3) = .true.
+           enddo
+           if (ntk > 2) then
+             trfsc(ntk-2) = 0.0_conv_wp
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-17 23:02:08
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-17 23:02:37
+@@ -101,7 +101,7 @@
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+-     &     ten_t, ten_u, ten_v,                                         &
++     &     ten_t, ten_u, ten_v, trans_aero, ntchm,                      &
+      &     errmsg,errflg)
+ 
+ !
+@@ -185,6 +185,13 @@
+       real(kind=kind_phys) spd1_m
+ !***
+       integer i,is,k,n,ndt,km1,kmpbl,kmscu,ntrac1,idtend
++      logical, intent(in) :: trans_aero
++      integer, intent(in) :: ntchm
++      logical trdry(ntrac)
++      integer ndry, nd, is0
++      real(kind=kind_phys) q1c(im,km,ntrac), trwl(im,km),
++     &   tral(im,km), trad(im,km), trau(im,km), trf3(im,km*ntrac),
++     &   trwf, trdd, trdu
+       integer kps,kbx,kmx
+       integer lcld(im),kcld(im),krad(im),mrad(im)
+       integer kx1(im), kb1(im), kpblx(im)
+@@ -425,6 +432,35 @@
+ !
+       ntrac1 = ntrac - 1
+       km1 = km - 1
++!
++! chemistry tracers (the ntchm before TKE) as dry mixing ratios
++! c = q/(1-qv), qv = q1(:,:,1) = physics-step initial vapour
++!
++      do n = 1, ntrac
++        trdry(n) = .false.
++      enddo
++      if (trans_aero .and. ntchm > 0) then
++        do n = max(2, ntke-ntchm), ntke-1
++          trdry(n) = .true.
++        enddo
++      endif
++      ndry = 0
++      do n = 1, ntrac
++        if (trdry(n)) ndry = ndry + 1
++      enddo
++      do k = 1, km
++        do i = 1, im
++          trwl(i,k) = 1. - q1(i,k,1)
++        enddo
++      enddo
++      do n = 1, ntrac
++        do k = 1, km
++          do i = 1, im
++            q1c(i,k,n) = q1(i,k,n)
++            if (trdry(n)) q1c(i,k,n) = q1(i,k,n) / trwl(i,k)
++          enddo
++        enddo
++      enddo
+       kmpbl = km / 2
+       kmscu = km / 2
+ !>  - Compute physical height of the layer centers and interfaces from
+@@ -1211,10 +1247,10 @@
+       do k = 1, km
+         do i = 1, im
+           if(pcnvflg(i)) then
+-            qcko(i,k,n) = q1(i,k,n)
++            qcko(i,k,n) = q1c(i,k,n)
+           endif
+           if(scuflg(i)) then
+-            qcdo(i,k,n) = q1(i,k,n)
++            qcdo(i,k,n) = q1c(i,k,n)
+           endif
+         enddo
+       enddo
+@@ -1222,13 +1258,13 @@
+ !>  - Call mfpbltq(), which is an EDMF parameterization (Siebesma et al.(2007) \cite Siebesma_2007)
+ !!    to take into account nonlocal transport by large eddies. For details of the mfpbltq subroutine, step into its documentation ::mfpbltq
+       call mfpbltq(im,im,km,kmpbl,ntcw,ntrac1,dt2,
+-     &    pcnvflg,zl,zm,q1,t1,u1,v1,plyr,pix,thlx,thvx,
++     &    pcnvflg,zl,zm,q1c,t1,u1,v1,plyr,pix,thlx,thvx,
+      &    gdx,hpbl,kpbl,vpert,buou,wush,tkemean,vez0fun,xmf,
+      &    tcko,qcko,ucko,vcko,xlamue,bl_upfr)
+ !>  - Call mfscuq(), which is a new mass-flux parameterization for
+ !!    stratocumulus-top-induced turbulence mixing. For details of the mfscuq subroutine, step into its documentation ::mfscuq
+       call mfscuq(im,im,km,kmscu,ntcw,ntrac1,dt2,
+-     &    scuflg,zl,zm,q1,t1,u1,v1,plyr,pix,
++     &    scuflg,zl,zm,q1c,t1,u1,v1,plyr,pix,
+      &    thlx,thvx,thlvx,gdx,thetae,
+      &    krad,mrad,radmin,buod,wush,tkemean,vez0fun,xmfd,
+      &    tcdo,qcdo,ucdo,vcdo,xlamde,bl_dnfr)
+@@ -2146,21 +2182,21 @@
+       do n=1,ntrac1
+         do k=1,kps
+           do i=1,im
+-            qh(i,k,n) = 0.5 * (q1(i,k,n)+q1(i,k+1,n))
++            qh(i,k,n) = 0.5 * (q1c(i,k,n)+q1c(i,k+1,n))
+           enddo
+         enddo
+         do k=1,kps
+           do i=1,im
+-            q_diff(i,k,n) = q1(i,k,n) - q1(i,k+1,n)
++            q_diff(i,k,n) = q1c(i,k,n) - q1c(i,k+1,n)
+           enddo
+         enddo
+         do i=1,im
+-          if(q1(i,1,n) >= 0.) then
+-            q_diff(i,0,n) = max(0.,2.*q1(i,1,n)-q1(i,2,n))-
+-     &                          q1(i,1,n)
++          if(q1c(i,1,n) >= 0.) then
++            q_diff(i,0,n) = max(0.,2.*q1c(i,1,n)-q1c(i,2,n))-
++     &                          q1c(i,1,n)
+           else
+-            q_diff(i,0,n) = min(0.,2.*q1(i,1,n)-q1(i,2,n))-
+-     &                          q1(i,1,n)
++            q_diff(i,0,n) = min(0.,2.*q1c(i,1,n)-q1c(i,2,n))-
++     &                          q1c(i,1,n)
+           endif
+         enddo
+       enddo
+@@ -2185,15 +2221,15 @@
+                 if(abs(q_diff(i,k,n)) > 1.e-22)
+      &                 rrkp = q_diff(i,k+1,n) / q_diff(i,k,n)
+                 phkp = (rrkp+abs(rrkp)) / (1.+abs(rrkp))
+-                q_half(i,k,n) = q1(i,k+1,n) +
+-     &                     phkp*(qh(i,k,n)-q1(i,k+1,n))
++                q_half(i,k,n) = q1c(i,k+1,n) +
++     &                     phkp*(qh(i,k,n)-q1c(i,k+1,n))
+               elseif (tem < 0.) then
+                 rrkp = 0.
+                 if(abs(q_diff(i,k,n)) > 1.e-22)
+      &                 rrkp = q_diff(i,k-1,n) / q_diff(i,k,n)
+                 phkp = (rrkp+abs(rrkp)) / (1.+abs(rrkp))
+-                q_half(i,k,n) = q1(i,k,n) +
+-     &                    phkp*(qh(i,k,n)-q1(i,k,n))
++                q_half(i,k,n) = q1c(i,k,n) +
++     &                    phkp*(qh(i,k,n)-q1c(i,k,n))
+               endif
+             endif
+           enddo
+@@ -2449,7 +2485,7 @@
+         do n = 2, ntrac1
+           is = (n-1) * km
+           do i = 1, im
+-            f2(i,1+is) = q1(i,1,n)
++            f2(i,1+is) = q1c(i,1,n)
+           enddo
+         enddo
+       endif
+@@ -2533,9 +2569,9 @@
+                 ptem2 = dtodsu * ptem
+                 ptem  = qcko(i,k,n) + qcko(i,k+1,n)
+                 f2(i,k+is) = f2(i,k+is) - ptem * ptem1
+-                f2(i,k+1+is)= q1(i,k+1,n) + ptem * ptem2
++                f2(i,k+1+is)= q1c(i,k+1,n) + ptem * ptem2
+               else
+-                f2(i,k+1+is) = q1(i,k+1,n)
++                f2(i,k+1+is) = q1c(i,k+1,n)
+               endif
+ !
+               if(scuflg(i)) then
+@@ -2567,6 +2603,89 @@
+ c
+       call tridin(im,km,ntrac1,al,ad,au,f1,f2,au,f1,f2)
+ !
++! dry tracers: same transport for c with dry layer masses del*(1-qv)
++! and interface fluxes scaled by the interface dry fraction
++!
++      if (ndry > 0) then
++        do i = 1, im
++          trad(i,1) = 1.
++        enddo
++        do k = 1, km1
++          do i = 1, im
++            trwf = 0.5 * (trwl(i,k) + trwl(i,k+1))
++            trdd = dt2 / (del(i,k) * trwl(i,k))
++            trdu = dt2 / (del(i,k+1) * trwl(i,k+1))
++            dsig = prsl(i,k)-prsl(i,k+1)
++            rdz = rdzt(i,k)
++            tem1 = dsig * dkt(i,k) * rdz
++            dsdz2 = tem1 * rdz * trwf
++            trau(i,k) = -trdd*dsdz2
++            tral(i,k) = -trdu*dsdz2
++            trad(i,k) = trad(i,k)-trau(i,k)
++            trad(i,k+1)= 1.-tral(i,k)
++          enddo
++        enddo
++        nd = 0
++        do n = 2, ntrac1
++          if (.not. trdry(n)) cycle
++          nd = nd + 1
++          is = (nd-1) * km
++          do i = 1, im
++            trf3(i,1+is) = q1c(i,1,n)
++          enddo
++          do k = 1, km1
++            do i = 1, im
++              trwf = 0.5 * (trwl(i,k) + trwl(i,k+1))
++              trdd = dt2 / (del(i,k) * trwl(i,k))
++              trdu = dt2 / (del(i,k+1) * trwl(i,k+1))
++              dsig  = prsl(i,k)-prsl(i,k+1)
++              tem2  = dsig * rdzt(i,k) * trwf
++              if(pcnvflg(i) .and. k < kpbl(i)) then
++                ptem  = 0.5 * tem2 * xmf(i,k)
++                ptem1 = trdd * ptem
++                ptem2 = trdu * ptem
++                ptem  = qcko(i,k,n) + qcko(i,k+1,n)
++                trf3(i,k+is) = trf3(i,k+is) - ptem * ptem1
++                trf3(i,k+1+is)= q1c(i,k+1,n) + ptem * ptem2
++              else
++                trf3(i,k+1+is) = q1c(i,k+1,n)
++              endif
++              if(scuflg(i)) then
++                if(k >= mrad(i) .and. k < krad(i)) then
++                  ptem  = 0.5 * tem2 * xmfd(i,k)
++                  ptem1 = trdd * ptem
++                  ptem2 = trdu * ptem
++                  ptem  = qcdo(i,k,n) + qcdo(i,k+1,n)
++                  trf3(i,k+is)  = trf3(i,k+is) + ptem * ptem1
++                  trf3(i,k+1+is)= trf3(i,k+1+is) - ptem * ptem2
++                endif
++              endif
++              kmx = max(kpbl(i), krad(i))
++              if((pcnvflg(i) .or. scuflg(i)) .and. (k < kmx)) then
++                ptem  = tem2 * (xmf(i,k) - xmfd(i,k))
++                ptem1 = trdd * ptem
++                ptem2 = trdu * ptem
++                trf3(i,k+is)   = trf3(i,k+is) + q_half(i,k,n) * ptem1
++                trf3(i,k+1+is) = trf3(i,k+1+is) - q_half(i,k,n) * ptem2
++              endif
++            enddo
++          enddo
++        enddo
++        call tridit(im,km,ndry,tral,trad,trau,trf3,trau,trf3)
++        nd = 0
++        do n = 2, ntrac1
++          if (.not. trdry(n)) cycle
++          nd = nd + 1
++          is = (nd-1) * km
++          is0 = (n-1) * km
++          do k = 1, km
++            do i = 1, im
++              f2(i,k+is0) = trf3(i,k+is) * trwl(i,k)
++            enddo
++          enddo
++        enddo
++      endif
++!
+ ! Negative moisture is set to zero after borrowing it from
+ !   positive values within the mass-flux transport layers
+ !
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-17 23:02:08
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-17 23:02:37
+@@ -812,6 +812,20 @@
+   type = real
+   kind = kind_phys
+   intent = out
++[trans_aero]
++  standard_name = flag_for_aerosol_convective_transport_and_PBL_diffusion
++  long_name = flag for aerosol convective transport and PBL diffusion
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[ntchm]
++  standard_name = number_of_chemical_tracers
++  long_name = number of chemical tracers
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

@@ -1,0 +1,111 @@
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -2275,6 +2275,9 @@
+                endif
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qc1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+             rc(k) = R1
+@@ -2302,6 +2305,9 @@
+                ni(k) = cig(1)*oig2*ri(k)/am_i*lami**bm_i
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qi1d(k)
++            t1d(k) = t1d(k) - lsub*qi1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+             ri(k) = R1
+@@ -2331,6 +2337,9 @@
+                nr(k) = crg(2)*org3*rr(k)*lamr**bm_r / am_r
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qr1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+             rr(k) = R1
+@@ -2342,6 +2351,9 @@
+             rs(k) = qs1d(k)*rho(k)
+             L_qs(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qs1d(k)
++            t1d(k) = t1d(k) - lsub*qs1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+             L_qs(k) = .false.
+@@ -2351,6 +2363,9 @@
+             rg(k) = qg1d(k)*rho(k)
+             L_qg(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qg1d(k)
++            t1d(k) = t1d(k) - lsub*qg1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             rg(k) = R1
+             L_qg(k) = .false.
+@@ -2407,6 +2422,10 @@
+ !! condense cloud water, just exit quickly!
+ !+---+-----------------------------------------------------------------+
+ 
++!..Entry exchanges can leave vapour below the floor; such a column goes through the end-of-step refill.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) no_micro = .false.
++      enddo
+       if (no_micro) return
+ 
+ !+---+-----------------------------------------------------------------+
+@@ -3352,6 +3371,9 @@
+                nrten(k) = (xnr-nr1d(k)*rho(k))*odts*orho
+             endif
+          else
++            ! rain left at or below R1 goes to vapour with its latent heat, not deleted
++            qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*dtsave)*odts
++            tten(k) = tten(k) - lvap(k)*ocp(k)*(qr1d(k) + qrten(k)*dtsave)*odts*(1-IFDRY)
+             qrten(k) = -qr1d(k)*odts
+             nrten(k) = -nr1d(k)*odts
+          endif
+@@ -4016,11 +4038,16 @@
+             dtcfl = dt
+             niter = int(nstep/max(decfl,1)) + 1
+             dtcfl = dt/niter
++            ! floored layers carry their actual rain, so the R1 floor is not sedimented as mass
++            do k = kts, kte
++               if (rr(k) .le. R1) rr(k) = (qr1d(k) + qrten(k)*DT)*rho(k)
++            enddo
+             do n = 1, niter
+                rr_tmp(:) = rr(:)
+                nr_tmp(:) = nr(:)
+                call semi_lagrange_sedim(kte,dzq,vtrk,rr,rainsfc,pfll,dtcfl,R1)
+                call semi_lagrange_sedim(kte,dzq,vtnrk,nr,vtr,pdummy,dtcfl,R2)
++               nr(:) = max(nr(:), R2)
+                do k = kts, kte
+                   orhodt = 1./(rho(k)*dt)
+                   qrten(k) = qrten(k) + (rr(k) - rr_tmp(k)) * orhodt
+@@ -4183,6 +4210,10 @@
+             dtcfl = dt
+             niter = int(nstep/max(decfl,1)) + 1
+             dtcfl = dt/niter
++            ! floored layers carry their actual graupel, so the R1 floor is not sedimented as mass
++            do k = kts, kte
++               if (rg(k) .le. R1) rg(k) = (qg1d(k) + qgten(k)*DT)*rho(k)
++            enddo
+ 
+             do n = 1, niter
+                rg_tmp(:) = rg(:)
+@@ -6554,7 +6585,8 @@
+       enddo
+ !
+ ! replace the new values
+-      rql(:) = max(qn(:),R1)
++      ! mass not transported (inputs <= R1) stays in place; no floor, so the column change is -precip
++      rql(:) = qn(:) + (rql(:) - qq(:))
+ 
+    END SUBROUTINE semi_lagrange_sedim
+ 

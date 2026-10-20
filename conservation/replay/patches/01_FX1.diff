@@ -1,0 +1,25 @@
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 14:01:59
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 14:01:59
+@@ -776,6 +776,22 @@
+                zsum1(i,j) = zsum1(i,j) + pkz(i,j,k)*delp(i,j,k)
+             enddo
+          enddo
++#if defined(MOIST_CAPPA) && defined(USE_COND) && !defined(MULTI_GASES)
++         if ( .not. hydrostatic ) then
++! weight as the correction is applied: pt+dtmp*pkz is divided by (1+r_vir*qv)*(1-qc) and heats cvm
++            do i=is,ie
++               zsum1(i,j) = 0.
++            enddo
++            do k=1,km
++               call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
++                             ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
++               do i=is,ie
++                  zsum1(i,j) = zsum1(i,j) + cvm(i)*pkz(i,j,k)*delp(i,j,k)   &
++                             / (cv_air*(1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
++               enddo
++            enddo
++         endif
++#endif
+          if ( hydrostatic ) then
+             do i=is,ie
+                zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)

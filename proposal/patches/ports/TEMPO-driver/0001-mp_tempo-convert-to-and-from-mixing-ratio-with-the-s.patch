@@ -1,0 +1,114 @@
+From e3ce65fea10d3f719a8faad44bbc9e106ae33f7c Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 18:02:09 -0600
+Subject: [PATCH 1/2] mp_tempo: convert to and from mixing ratio with the same
+ humidity
+
+The TEMPO driver converts the host's specific humidity and hydrometeors to
+mixing ratios with /(1-q_v) on entry, but back with /(1+r_v,new) on return.
+The host rebuilds its layer mass from the old q_v, so the round trip does
+not conserve water: the same defect as in mp_thompson (ufs-community/
+ccpp-physics fix B). Use the input humidity in both directions: species
+times (1-spechum) on return, spechum = qv*(1-spechum).
+
+Measured in UFS (C96 control_p8_ugwpv1_tempo, 24 h, water_budget_by_scheme.py,
+microphysics residual R_mp as a fraction of grid-scale precipitation, after
+spin-up): unmodified develop -0.00 / +0.04 / +0.03 %; with this change
++0.33 / +0.34 / +0.30 %. The change is right; it uncovers the TEMPO scheme's
+own residual (the semi-Lagrangian sedimentation test and the C/M defects),
+which the driver error had cancelled. Fixes for those are proposed to
+NCAR/TEMPO as a separate patch series, not merged there; the TEMPO that
+ccpp-physics pins (2856696) does not have them. With the first version of
+that series and the other water fixes applied in a UFS build, R_mp is at
+the script's floor (-0.04 to -0.07 %, the same as fully fixed Thompson) and
+the whole model's residual is 0.00 %.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ physics/MP/TEMPO/mp_tempo.F90 | 53 ++++++++++++++++++-----------------
+ 1 file changed, 27 insertions(+), 26 deletions(-)
+
+diff --git a/physics/MP/TEMPO/mp_tempo.F90 b/physics/MP/TEMPO/mp_tempo.F90
+index f57e3ced..e493c314 100644
+--- a/physics/MP/TEMPO/mp_tempo.F90
++++ b/physics/MP/TEMPO/mp_tempo.F90
+@@ -434,24 +434,25 @@ module mp_tempo
+          !> - Convert specific humidity to water vapor mixing ratio.
+          !> - Also, hydrometeor variables are mass or number mixing ratio
+          !> - either kg of species per kg of dry air, or per kg of (dry + vapor).
+-         qv = new_spechum/(1.0_kind_phys-new_spechum)
++         ! convert with the input (host-basis) humidity in both directions, so the host's mass rebuild is exact
++         qv = new_spechum/(1.0_kind_phys-spechum)
+ 
+          if (convert_dry_rho) then
+-           new_qc = new_qc/(1.0_kind_phys-new_spechum)
+-           new_qr = new_qr/(1.0_kind_phys-new_spechum)
+-           new_qi = new_qi/(1.0_kind_phys-new_spechum)
+-           new_qs = new_qs/(1.0_kind_phys-new_spechum)
+-           new_qg = new_qg/(1.0_kind_phys-new_spechum)
+-           new_ni = new_ni/(1.0_kind_phys-new_spechum)
+-           new_nr = new_nr/(1.0_kind_phys-new_spechum)
++           new_qc = new_qc/(1.0_kind_phys-spechum)
++           new_qr = new_qr/(1.0_kind_phys-spechum)
++           new_qi = new_qi/(1.0_kind_phys-spechum)
++           new_qs = new_qs/(1.0_kind_phys-spechum)
++           new_qg = new_qg/(1.0_kind_phys-spechum)
++           new_ni = new_ni/(1.0_kind_phys-spechum)
++           new_nr = new_nr/(1.0_kind_phys-spechum)
+            if (is_hail_aware) then
+-              new_ng = new_ng/(1.0_kind_phys-new_spechum)
+-              new_volg = new_volg/(1.0_kind_phys-new_spechum)
++              new_ng = new_ng/(1.0_kind_phys-spechum)
++              new_volg = new_volg/(1.0_kind_phys-spechum)
+            endif
+            if (is_aerosol_aware) then
+-              new_nc = new_nc/(1.0_kind_phys-new_spechum)
+-              new_nwfa = new_nwfa/(1.0_kind_phys-new_spechum)
+-              new_nifa = new_nifa/(1.0_kind_phys-new_spechum)
++              new_nc = new_nc/(1.0_kind_phys-spechum)
++              new_nwfa = new_nwfa/(1.0_kind_phys-spechum)
++              new_nifa = new_nifa/(1.0_kind_phys-spechum)
+            end if
+          end if
+ 
+@@ -529,24 +530,24 @@ module mp_tempo
+          if (errflg/=0) return
+ 
+          !> - Convert water vapor mixing ratio back to specific humidity
+-         new_spechum = qv/(1.0_kind_phys+qv)
++         new_spechum = qv*(1.0_kind_phys-spechum)
+ 
+          if (convert_dry_rho) then
+-           new_qc = new_qc/(1.0_kind_phys+qv)
+-           new_qr = new_qr/(1.0_kind_phys+qv)
+-           new_qi = new_qi/(1.0_kind_phys+qv)
+-           new_qs = new_qs/(1.0_kind_phys+qv)
+-           new_qg = new_qg/(1.0_kind_phys+qv)
+-           new_ni = new_ni/(1.0_kind_phys+qv)
+-           new_nr = new_nr/(1.0_kind_phys+qv)
++           new_qc = new_qc*(1.0_kind_phys-spechum)
++           new_qr = new_qr*(1.0_kind_phys-spechum)
++           new_qi = new_qi*(1.0_kind_phys-spechum)
++           new_qs = new_qs*(1.0_kind_phys-spechum)
++           new_qg = new_qg*(1.0_kind_phys-spechum)
++           new_ni = new_ni*(1.0_kind_phys-spechum)
++           new_nr = new_nr*(1.0_kind_phys-spechum)
+            if (is_hail_aware) then
+-              new_ng = new_ng/(1.0_kind_phys+qv)
+-              new_volg = new_volg/(1.0_kind_phys+qv)
++              new_ng = new_ng*(1.0_kind_phys-spechum)
++              new_volg = new_volg*(1.0_kind_phys-spechum)
+            endif
+            if (is_aerosol_aware) then
+-              new_nc = new_nc/(1.0_kind_phys+qv)
+-              new_nwfa = new_nwfa/(1.0_kind_phys+qv)
+-              new_nifa = new_nifa/(1.0_kind_phys+qv)
++              new_nc = new_nc*(1.0_kind_phys-spechum)
++              new_nwfa = new_nwfa*(1.0_kind_phys-spechum)
++              new_nifa = new_nifa*(1.0_kind_phys-spechum)
+            end if
+          end if
+ 
+-- 
+2.55.0
+

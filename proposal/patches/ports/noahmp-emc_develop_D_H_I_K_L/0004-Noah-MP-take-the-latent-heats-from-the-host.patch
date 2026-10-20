@@ -1,0 +1,104 @@
+From b0f9c263b88539c62e895915fd4df77ee228ea88 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 16:44:53 -0600
+Subject: [PATCH 4/8] Noah-MP: take the latent heats from the host
+
+Noah-MP charges the land its own latent heats (hvap = 2.5104e6,
+hsub = 2.844e6, hfus = 0.3336e6 J/kg), while the atmosphere's moist energy
+uses the host's (con_hvap = 2.5e6, con_hfus = 3.3358e5). With the water flux
+now handed over directly (previous commit), the land paid more latent energy
+than the vapour it released carries into the atmosphere.
+
+hvap, hsub and hfus become module variables, with the old values as defaults,
+in the soil and glacier modules, set at the start of noahmpdrv_run from its
+con_hvap and con_hfus arguments (hsub = con_hvap + con_hfus). The run phase
+already receives both, from the NUOPC land component and from CCPP alike, so
+no interface changes. The WRF driver does not call noahmpdrv_run, so it keeps
+the old values.
+
+Port of the ufs-community/ccpp-physics fix (same code), measured in UFS
+(C96 control_p8_ugwpv1, 24 h, all water fixes): the land paid +0.131 W/m2
+per land column more latent energy than its vapour carries into the
+atmosphere (0.41 % of the 31.8 W/m2 land latent heat flux, one-signed); with
+the fix exactly 0. hvap and hsub enter the energy solution, so surface
+temperatures, evaporation and melt shift slightly; the water closure itself
+is unchanged. The ccpp-physics copy makes the same change. Related: NCAR/ccpp-physics#582.
+
+Measured with the rest of this series in the land component
+(datm_cdeps_lnd_gswp3, 24 h, a water meter in noahmpdrv_run): Noah-MP's
+water-check residual summed over land points was -1.50 mm (-5.2e-4 of the
+precipitation, one-signed) before the series and -2.3e-9 mm (-8e-13) after;
+the metered original reproduces the regression baseline.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ drivers/ccpp/noahmpdrv.F90       | 10 ++++++++++
+ src/module_sf_noahmp_glacier.F90 |  6 +++---
+ src/module_sf_noahmplsm.F90      |  6 +++---
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/ccpp/noahmpdrv.F90 b/drivers/ccpp/noahmpdrv.F90
+index 3fc6571..fd86097 100644
+--- a/drivers/ccpp/noahmpdrv.F90
++++ b/drivers/ccpp/noahmpdrv.F90
+@@ -500,6 +500,8 @@ end subroutine noahmpdrv_timestep_init
+ 
+   use module_sf_noahmplsm,   only : gfs_stability
+   use module_sf_noahmp_glacier
++  use module_sf_noahmplsm,    only : hvap_lsm => hvap, hsub_lsm => hsub, hfus_lsm => hfus
++  use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus
+   use noahmp_tables
+ 
+   implicit none
+@@ -988,6 +990,14 @@ end subroutine noahmpdrv_timestep_init
+ !
+ !  --- Just return if external land component is activated for two-way interaction
+ !
++  ! the host's latent heats, so the land pays the latent energy its water carries in the atmosphere
++  hvap_lsm = con_hvap
++  hfus_lsm = con_hfus
++  hsub_lsm = con_hvap + con_hfus
++  hvap_gla = hvap_lsm
++  hfus_gla = hfus_lsm
++  hsub_gla = hsub_lsm
++
+   if (cpllnd .and. cpllnd2atm) return
+ 
+   do i = 1, im
+diff --git a/src/module_sf_noahmp_glacier.F90 b/src/module_sf_noahmp_glacier.F90
+index fcbe40a..c48d8a9 100644
+--- a/src/module_sf_noahmp_glacier.F90
++++ b/src/module_sf_noahmp_glacier.F90
+@@ -20,9 +20,9 @@ module noahmp_glacier_globals
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+diff --git a/src/module_sf_noahmplsm.F90 b/src/module_sf_noahmplsm.F90
+index 3f94ec0..27fd78b 100644
+--- a/src/module_sf_noahmplsm.F90
++++ b/src/module_sf_noahmplsm.F90
+@@ -183,9 +183,9 @@ use machine ,   only : kind_phys
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+-- 
+2.55.0
+

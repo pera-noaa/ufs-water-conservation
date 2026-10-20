@@ -1,0 +1,53 @@
+From 85578f4fe40fc7ed5ac3d4f193c8d9670b96263f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:54 -0500
+Subject: [PATCH 11/12] Noah-MP csnow: snow heat capacity per mass
+
+csnow builds the snow heat capacity from the volume fractions it caps for
+porosity and conductivity, so mass that crosses the caps changes a layer's
+heat content.
+
+Compute cvsno from the ice and liquid mass,
+(cice/denice*snice + cwat/denh2o*snliq)/dzsnso. Both modules.
+
+Effect measured with the combine fix (sensible heat when layers merge).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 | 3 ++-
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90      | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index e5ed0a44..25203d7f 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -776,7 +776,8 @@ contains
+ 
+   do iz = isnow+1, 0
+       bdsnoi(iz) = (snice(iz)+snliq(iz))/dzsnso(iz)
+-      cvsno(iz) = cice*snicev(iz)+cwat*snliqv(iz)
++      ! cs1: heat capacity per mass (the volume fractions are capped for porosity and conductivity)
++      cvsno(iz) = (cice/denice*snice(iz) + cwat/denh2o*snliq(iz))/dzsnso(iz)
+ !      cvsno(iz) = 0.525e06                          ! constant
+   enddo
+ 
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index e7229152..57ffae6f 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -2645,7 +2645,8 @@ endif   ! croptype == 0
+ 
+   do iz = isnow+1, 0
+       bdsnoi(iz) = (snice(iz)+snliq(iz))/dzsnso(iz)
+-      cvsno(iz) = cice*snicev(iz)+cwat*snliqv(iz)
++      ! cs1: heat capacity per mass (the volume fractions are capped for porosity and conductivity)
++      cvsno(iz) = (cice/denice*snice(iz) + cwat/denh2o*snliq(iz))/dzsnso(iz)
+ !      cvsno(iz) = 0.525e06                          ! constant
+   enddo
+ 
+-- 
+2.31.1
+

@@ -1,0 +1,4 @@
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta

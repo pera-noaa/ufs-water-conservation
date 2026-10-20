@@ -1,0 +1,13 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 2066 (offset 4 lines).
+Hunk #2 succeeded at 8272 (offset 12 lines).
+Hunk #3 succeeded at 8706 (offset 12 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 9661 (offset 26 lines).
+patching file UFSATM/ccpp/driver/GFS_diagnostics.F90
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+Hunk #3 succeeded at 4015 (offset 5 lines).
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+Hunk #3 succeeded at 2840 (offset 5 lines).
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta

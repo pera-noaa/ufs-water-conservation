@@ -1,0 +1,4 @@
+23:55 submit: cp -p optn2/ufs-weather-model/tests/fv3_e2_optn2.exe mopt2/ufs-weather-model/tests/fv3_e2_mopt2.exe exe/ && tools/mkrun3.sh e2B0 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_bfxn.exe
+ layout = 3,8 
+Submitted batch job 10153738
+QUEUE DONE

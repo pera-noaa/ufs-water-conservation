@@ -1,0 +1,38 @@
+From c58261a3e6697090435893fd730d2f1d93d26968 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:55 -0500
+Subject: [PATCH 3/4] satmedmfvdifq: apply surface fluxes to the host layer
+ mass
+
+The surface sources are applied with dt/(zi(2) - zi(1)) while the fluxes
+were made kinematic with rho_a, so applied over reported minus 1 is the
+non-hydrostatic dz deviation.
+
+Apply them with dt*rho_a*g/del.
+
+Measured (C96, 24 h): FV3_GFS_v16 suite water residual +2.6e-8 ->
+-3.6e-16 kg/m2/day. In control_p8 the two forms are equal up to rounding
+(24-h T rms 0.146 K, noise).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/PBL/SATMEDMF/satmedmfvdifq.F | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/physics/PBL/SATMEDMF/satmedmfvdifq.F b/physics/PBL/SATMEDMF/satmedmfvdifq.F
+index f218f07f..2ea306ff 100644
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.F
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.F
+@@ -812,7 +812,9 @@
+       enddo
+ !>  - Compute \f$\frac{\Delta t}{\Delta z}\f$ , \f$u_*\f$
+       do i=1,im
+-         dtdz1(i)  = dt2 / (zi(i,2)-zi(i,1))
++!  surface fluxes are kinematic with rho_a: apply them to the host layer mass del/g
++!  (rho_a*(zi(2)-zi(1)) differs from del/g by the nonhydrostatic dz)
++         dtdz1(i)  = dt2 * rho_a(i) * g / del(i,1)
+       enddo
+ !
+       do i=1,im

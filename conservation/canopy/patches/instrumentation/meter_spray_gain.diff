@@ -1,0 +1,67 @@
+--- a/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
++++ b/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
+@@ -248,6 +248,7 @@
+     real (kind=kind_phys), parameter :: alps=0.75,bets=0.75,gams=0.15, &
+          ws10cr=30., conlf=7.2e-9, consf=6.4e-8
+     real (kind=kind_phys) :: windrel
++    real (kind=kind_phys) :: m_ca, m_cb, m_dqs, m_at, m_aq, m_gt, m_gq, m_tr, m_det, m_lam, m_ex, m_e
+     real (kind=kind_phys) :: ca, cb, dqs, at, aq, a11, a12, a21, a22, r1, r2, det, dts, dqv
+     !
+     !======================================================================================================
+@@ -645,6 +646,33 @@
+     !> - Include sea spray effects
+     !
+     do i=1,im
++       if(.not. lseaspray .and. flag(i)) then
++          f10m = fm10(i) / fm(i)
++          ws10 = sqrt((f10m * u1(i))**2 + (f10m * v1(i))**2)
++          ws10 = min(max(ws10,1.),ws10cr)
++          tem = .015 * ws10 * ws10
++          ru10 = 1. - .087 * log(10./tem)
++          qss1 = fpvs(t1(i))
++          qss1 = eps * qss1 / (prsl1(i) + epsm1 * qss1)
++          bb1 = 1. / (1. + eps * hvap * hvap * qss1 / (rd * cp * t1(i) * t1(i)))
++          m_ca = conlf * (ws10**5.4) * ru10 * bb1 * rho_a(i) * hvap
++          m_cb = consf * (ws10**3.4) * ru10 * rho_a(i) * cp
++          m_e = fpvs(t1(i) + 0.05_kp)
++          m_dqs = eps * m_e / (prsl1(i) + epsm1 * m_e)
++          m_e = fpvs(t1(i) - 0.05_kp)
++          m_dqs = (m_dqs - eps * m_e / (prsl1(i) + epsm1 * m_e)) * 10._kp
++          m_at = timestep * con_g / (cp * (prsi(i,1) - prsi(i,2)))
++          m_aq = timestep * con_g / (hvap * (prsi(i,1) - prsi(i,2)))
++          m_gt = m_at * (bets * m_cb + (alps - gams) * m_ca * m_dqs)
++          m_gq = m_aq * alps * m_ca
++          m_tr = m_gt + m_gq
++          m_det = m_gt * m_gq - (m_at * (alps - gams) * m_ca) * (m_aq * alps * m_ca * m_dqs)
++          m_lam = 0.5_kp * (m_tr + sqrt(max(m_tr * m_tr - 4._kp * m_det, 0._kp)))
++          if (m_lam > 1._kp) write(*,'(a,i6,2f9.3,f7.2,f8.3,f9.3,es12.4,f9.3,es12.4,3es12.4)') 'SPR ', kdt, &
++               xlon(i)*rad2deg, asin(sinlat(i))*rad2deg, ws10, m_lam, t1(i), q0(i), tskin(i), qss1, 0._kp, 0._kp, 0._kp
++       endif
++    enddo
++    do i=1,im
+        if(lseaspray .and. flag(i)) then
+           f10m = fm10(i) / fm(i)
+           u10m = f10m * u1(i)
+@@ -689,6 +717,22 @@
+           if (nst_spray_opt == 1) hflxs = cb * (tskin(i) - t1(i) - dts)
+           ptem = alps - gams
+           hflx(i) = hflx(i) + bets * hflxs - ptem * evaps
++          m_ca = conlf * (ws10**5.4) * ru10 * bb1 * rho_a(i) * hvap
++          m_cb = consf * (ws10**3.4) * ru10 * rho_a(i) * cp
++          m_e = fpvs(t1(i) + 0.05_kp)
++          m_dqs = eps * m_e / (prsl1(i) + epsm1 * m_e)
++          m_e = fpvs(t1(i) - 0.05_kp)
++          m_dqs = (m_dqs - eps * m_e / (prsl1(i) + epsm1 * m_e)) * 10._kp
++          m_at = timestep * con_g / (cp * (prsi(i,1) - prsi(i,2)))
++          m_aq = timestep * con_g / (hvap * (prsi(i,1) - prsi(i,2)))
++          m_gt = m_at * (bets * m_cb + (alps - gams) * m_ca * m_dqs)
++          m_gq = m_aq * alps * m_ca
++          m_tr = m_gt + m_gq
++          m_det = m_gt * m_gq - (m_at * (alps - gams) * m_ca) * (m_aq * alps * m_ca * m_dqs)
++          m_lam = 0.5_kp * (m_tr + sqrt(max(m_tr * m_tr - 4._kp * m_det, 0._kp)))
++          m_ex = m_ca * (qss1 - q0(i))
++          if (m_lam > 1._kp) write(*,'(a,i6,2f9.3,f7.2,f8.3,f9.3,es12.4,f9.3,es12.4,3es12.4)') 'SPR ', kdt, &
++               xlon(i)*rad2deg, asin(sinlat(i))*rad2deg, ws10, m_lam, t1(i), q0(i), tskin(i), qss1, m_ex, evaps, hflxs
+        endif
+     enddo
+     !

@@ -1,0 +1,77 @@
+steps 119 (1..119)  area 5.100965e+14  land 0.2762 ice 0.0365 water 0.6873
+
+== Noah-MP soil: per-call column budget (W m-2 global; land frame: liquid ref, T - 273.16 K, massless canopy)
+  calls/col-steps weight 3.4022e-04   dH +1.151325e+01
+  SW abs +3.935337e+01  LW net up +1.868978e+01  SH +1.010876e+01  LH charged +9.238741e+00  PAH +1.329406e-02  G +1.329392e+00
+  masses (kg m-2 s-1 x area): E 3.639532e-06 Pfroz 1.293940e-06 Pliq 6.097492e-06 runsrf 4.305720e-07 drain 8.458585e-08 floor 0.000000e+00  host P 7.391432e-06 MPfroz 1.191559e-06 host-frozen(srflag) 1.293940e-06
+  booked B +1.039343e+00   residual R = dH - B +1.047391e+01
+   R_P precip_heat +6.132e-04 | R_E soil/snow column in energy() +2.817e-08 (phase drop -0.000e+00, T->tfrz -0.000e+00, tsnosoi +4.179e-15) | R_S surface -(canhs+erreng) -3.402e-17 (canhs +0.000e+00, erreng +3.402e-17) | R_W water() +1.047e+01
+   in R_W: canopy melt-freeze latent -9.492e-03, new snow layer -1.970e-04, remainder (moved water's sensible heat etc.) +1.048e+01
+   canopy storage frame: hcv*dtv(energy) +2.424e+01, hcv*dtv(canwater) -2.419e+01; storage-frame R_S +2.424e+01
+   PAH clipped +8.347e-02   dHs/dHl P +0.00e+00/-4.69e-02 E +1.17e+01/-1.04e+01 W +1.06e+01/-3.25e-01 T +0.00e+00/+0.00e+00
+  latent: charged - returned - hvap*E - hfus*E_ice = -1.193007e-02 (canopy charged-carried +5.933e-02, of which frozen-canopy transpiration +2.942e-06); E_ice canopy 3.977e-08 ground 1.748e-07
+
+== Noah-MP glacier: per-call column budget (W m-2 global; land frame: liquid ref, T - 273.16 K, massless canopy)
+  calls/col-steps weight 4.3397e-05   dH -5.849998e-02
+  SW abs +4.464567e-01  LW net up +1.445561e+00  SH -9.440773e-01  LH charged +1.201135e-02  PAH +0.000000e+00  G -6.703842e-02
+  masses (kg m-2 s-1 x area): E 4.238930e-09 Pfroz 1.651123e-07 Pliq 2.543717e-09 runsrf 6.347055e-09 drain 1.570700e-07 floor 0.000000e+00  host P 1.676560e-07 MPfroz 1.620110e-07 host-frozen(srflag) 1.651123e-07
+  booked B (fgev used in the solve, ice vapour, ice runoff) -6.741869e-02   residual +8.918714e-03
+  fgev in solve +1.201135e-02 vs reported +1.201135e-02 (diff +1.735e-18); bottom +8.884e-04
+  latent: reported LH - hsub*E = +5.204e-18
+
+== sea ice (sfc_sice), per ice area, Winton heat content (liquid at -0.054 C ref)
+  calls 5.0714e-05  dH -7.079814e-01 = snowfall -1.428e-01 + clip -1.899e-14 + ice3lay -5.586e-01 + post -6.554e-03
+  F used (sum over calls) -6.316496e-01 = SW +6.465e-01 + LW -1.655e+00 - SH -4.661e-01 - LH +8.951e-02; focn +7.303e-02; snowfall mass 4.2756e-07 -> -li*m -1.428e-01
+  ice3lay residual dH - F - focn -1.076639e-13; S2 dropped +0.000e+00 (n 0 wtd)
+  final fluxes to atmosphere: SH -4.6618e-01 LH +9.1252e-02; LW dn +6.7648e+00 emit(final T) +8.4197e+00; cell SW the ice saw +8.6529e-01; ice evap mass 3.6501e-08
+
+== open water (NSST), per open-water area
+  calls 9.9468e-04  warm-layer dH +6.3776e+00 (dtm_1p +1.656e+01, adjust/reset -1.018e+01); q_warm +9.075e+00
+  NSST books: SW +1.3419e+02, f_nsol +1.2724e+02 (SH +9.143e+00 LH +7.802e+01 LWup +2.776e+02 LWdn +2.379e+02 rain +4.173e-01); into ocean +6.9440e+00
+  atmosphere gets: SH +7.8306e+00 LH +7.9695e+01 (spray SH -1.290e+00 LH +1.708e+00); LW emit at final tskin +2.7758e+02; rain mass 2.3611e-05
+  NSST's ocean flux minus the atmosphere-side one (SW - LWnet(old T) - SH - LH): -5.0209e-02
+
+== hand-off, whole globe (W m-2): atmosphere books (sfc, radiation time) vs components
+  SW net : atm +1.751633e+02 (adjsfcnsw +1.751633e+02)  components +1.746335e+02  diff -5.2982e-01
+  LW net : atm -6.141705e+01 (adjsfcdlw +3.341161e+02)  components -6.145786e+01  diff -4.0816e-02
+  SH     : atm +1.653342e+01  components +1.652906e+01  diff -4.3622e-03
+  LH     : atm +8.883078e+01  components (hvap*E land) +8.889528e+01  diff +6.4500e-02
+  frozen precip (prev step, MP) over land/ice/water x hfus: +4.5152e-01 +1.3746e-01 +6.2431e-01; surfaces received: land +4.3163e-01 glacier +5.5078e-02 ice +1.4263e-01
+  total precip mass (prev step) land/ice/water 3.7355e-06 4.2072e-07 7.6984e-06
+
+== second-layer meters (instrument_es_sfc2.py)
+  Noah-MP soil water() by part (dHs/dHl): canwater +4.935e-02/+3.774e-03  snowwater -1.011e-02/-3.299e-01  NM11 return +8.018e-02/+1.048e-03  soilwater +2.819e-01/+1.850e-15  groundwater +1.015e+01/-6.012e-16
+  storage change between calls: soil +0.0000e+00 (latent +0.0000e+00)  glacier +0.0000e+00  sea ice -4.1782e-16
+  SW (component - cell atmosphere): land -3.1107e-01 ice -2.1875e-01 water +0.0000e+00
+  LW (component - cell atmosphere): land +1.0734e-01 ice +9.6395e-02 water(final T) -2.3223e-01
+  LH components-PBL by cell: land-only +6.7092e-08 water-only +1.4066e-11 mixed +6.4509e-02 (ice-containing +7.4179e-02);  SH: +7.1095e-08 -4.3047e-16 -4.3449e-03
+  sea-ice snow-ice formation (flooding) dH -7.7504e-14
+  glacier: dH energy -6.6150e-02 vs ssoil+bottom -6.6150e-02 (R_E -1.061e-14); surface residual +4.443e-19; dH water +6.3808e-03 vs -hfus*qsnow -5.5078e-02 + hfus*(E+runsub) +5.3809e-02 (R_W +7.650e-03); dH end +1.269e-03
+  ice cells: composite evap x rho_ice x hvap +5.53841e-01 vs PBL dqsfc1 +5.53841e-01; ice share in composite +9.12525e-02 vs ice booked +9.12525e-02; composite hflx x rho_ice x cp +1.69977e-01 vs PBL dtsfc1 +1.69977e-01
+
+== round-2 meters (instrument_es_sfc6.py)
+  groundwater dHs +1.01462e+01 = aquifer exchange enthalpy (bottom-layer T) +1.02140e+01 + subsurface runoff enthalpy -2.28571e-05 + watmin moves -6.28800e-03; remainder -6.149e-02
+  land SW (soil): A radiation-time albedo +3.93348e+01  B current albedo, radiation bands +3.91704e+01  C Noah-MP fsa +3.93534e+01  -> albedo change B-A -1.6436e-01, split/cosz C-B +1.8298e-01
+  land-only cells: A +1.97502e+01 vs atmosphere net SW +1.97749e+01 (A-atm -2.471e-02); fsa +1.97688e+01 (fsa-atm -6.090e-03)
+  host-frozen convective precipitation: hfus x mass +7.52902e-02 (mass 2.2570e-07)
+
+== frame F evaporation/precipitation booking (encpl): kg m-2 s-1 K global
+  land : E(Ts-T0) +9.5302e-05  E(T1-T0) +7.6480e-05  -> Kirchhoff (c_l-cp_v)E(Ts-T0) +2.2296e-01 W m-2, vapour skin->T1 cp_v E(Ts-T1) +3.4746e-02 W m-2
+  ice  : E(Ts-T0) -1.1559e-07  E(T1-T0) -1.9541e-07  -> Kirchhoff (c_l-cp_v)E(Ts-T0) -2.7042e-04 W m-2, vapour skin->T1 cp_v E(Ts-T1) +1.4735e-04 W m-2
+  water: E(Ts-T0) +7.2064e-04  E(T1-T0) +6.6137e-04  -> Kirchhoff (c_l-cp_v)E(Ts-T0) +1.6859e+00 W m-2, vapour skin->T1 cp_v E(Ts-T1) +1.0942e-01 W m-2
+  land precipitation P(T1-T0) +1.1587e-04 -> c_l P (T1-T0) +4.8499e-01 W m-2
+
+== round-3 meters (instrument_es2_r3*.py), soil columns, W m-2 global
+  soilwater + groundwater dHs +1.042813e+01 (latent +1.25e-15)
+   boundary water at layer T: soilwater +2.253221e-01  groundwater +1.021397e+01 (= aquifer +1.021399e+01 + subsurface runoff -2.286e-05: diff +2.99e-15)
+   pore air displaced -2.516324e-03 (soilwater -6.765e-05, groundwater -2.448673e-03)
+   infiltration source T (rain tg, melt/drip tfrz) - layer-1 T -1.115654e-02
+   internal inter-layer (stock bookkeeping) +5.040328e-02   AD1 heat computed -6.155982e-02 applied -6.155982e-02   bottom imbalance -3.234e-21 kg m-2 s-1 x area
+   booked boundary +1.042562e+01  ->  residual dH - booked +2.516324e-03 (expected internal - source + applied = +9.714451e-17)
+  evaporated water content: snow/soil-ice sublimation -5.5486e-04, frozen-ground evaporation +7.1728e-05
+  EV1 frame-F evaporation enthalpy mismatch (soil) +1.267915e-01
+  convective precipitation (soil): 3.79913e-06; T1-snow/host-rain 2.6918e-08; T1-rain/host-snow 1.7591e-08; column-steps with convection 2.0160e+15 (area-wt), disagreeing 1.1792e+14 -> fraction 0.0585
+  cells LW1/EV1 heating applied +1.156231e-01 = LW -1.121608e-02 + EV +1.268392e-01 (diff -2.78e-17)
+   LW booked net-up: land +2.013534e+01 ice +1.653119e+00 water +3.966693e+01; radiation-time +6.141705e+01; booked - rad - applied LW +4.96e-02
+   EV applied +1.268392e-01 vs soil EV booked +1.267915e-01 (diff +4.77e-05)
+  PH: host-frozen convective hfus x mass +7.529023e-02 (mass 2.25704e-07); PH1 heating applied +7.529023e-02

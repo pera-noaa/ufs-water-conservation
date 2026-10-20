@@ -1,0 +1,207 @@
+== NOISE with E2 opt1 (consv_te 0.999) (qF1c - qF1)
+f006 GLOBAL T rms 0.0354 K  ps rms 2.163 Pa  LH mean +0.0011 rms 0.167 W/m2
+f006 LAND  evcw_ave      ctl +9.5902e+00  d -1.6738e-04 (-0.002 %)  rms 1.8679e-01
+f006 LAND  trans_ave     ctl +8.7901e+00  d +3.7016e-04 (+0.004 %)  rms 6.0972e-02
+f006 LAND  sbsno_ave     ctl +2.8145e+00  d +2.5553e-04 (+0.009 %)  rms 2.9026e-02
+f006 LAND  lhtfl_ave     ctl +4.4465e+01  d +1.2729e-03 (+0.003 %)  rms 2.1916e-01
+f006 LAND  tmp2m         ctl +2.8319e+02  d -6.6024e-05 (-0.000 %)  rms 4.1618e-02
+f006 LAND  spfh2m        ctl +6.6918e-03  d +3.5675e-08 (+0.001 %)  rms 1.4496e-05
+f006 LAND  cnwat         ctl +8.5032e-02  d +1.1350e-05 (+0.013 %)  rms 2.1344e-03
+f006 OCEAN lhtfl_ave     ctl +1.1448e+02  d +1.1229e-03 (+0.001 %)  rms 1.4418e-01
+f006 OCEAN shtfl_ave     ctl +7.9110e+00  d -2.9342e-04 (-0.004 %)  rms 4.2412e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d +4.3308e-05 (+0.000 %)  rms 2.6902e-02
+f024 GLOBAL T rms 0.1438 K  ps rms 7.821 Pa  LH mean -0.0116 rms 2.850 W/m2
+f024 LAND  evcw_ave      ctl +3.3255e+00  d +1.9928e-02 (+0.599 %)  rms 1.4447e+00
+f024 LAND  trans_ave     ctl +6.7723e+00  d +7.8141e-04 (+0.012 %)  rms 1.6829e+00
+f024 LAND  sbsno_ave     ctl +2.4228e+00  d +1.0852e-03 (+0.045 %)  rms 2.9792e-01
+f024 LAND  lhtfl_ave     ctl +3.0212e+01  d -2.1013e-02 (-0.070 %)  rms 3.9558e+00
+f024 LAND  tmp2m         ctl +2.8209e+02  d +2.4548e-03 (+0.001 %)  rms 2.6752e-01
+f024 LAND  spfh2m        ctl +6.7392e-03  d +7.8618e-07 (+0.012 %)  rms 9.3974e-05
+f024 LAND  cnwat         ctl +7.2623e-02  d -1.7569e-04 (-0.242 %)  rms 3.3911e-02
+f024 OCEAN lhtfl_ave     ctl +1.1138e+02  d -7.9580e-03 (-0.007 %)  rms 2.2947e+00
+f024 OCEAN shtfl_ave     ctl +8.9110e+00  d +3.4820e-03 (+0.039 %)  rms 6.3762e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d +4.0474e-04 (+0.000 %)  rms 1.0556e-01
+== NOISE with E2 opt2 (consv_te 0.999) (qF2c - qF2)
+f006 GLOBAL T rms 0.0324 K  ps rms 1.828 Pa  LH mean +0.0019 rms 0.186 W/m2
+f006 LAND  evcw_ave      ctl +9.8854e+00  d -1.1055e-03 (-0.011 %)  rms 2.5435e-01
+f006 LAND  trans_ave     ctl +8.7789e+00  d +1.4170e-03 (+0.016 %)  rms 1.2622e-01
+f006 LAND  sbsno_ave     ctl +2.7485e+00  d +3.0427e-04 (+0.011 %)  rms 3.3613e-02
+f006 LAND  lhtfl_ave     ctl +4.4201e+01  d +5.3975e-03 (+0.012 %)  rms 2.8848e-01
+f006 LAND  tmp2m         ctl +2.8318e+02  d +5.5001e-04 (+0.000 %)  rms 4.3877e-02
+f006 LAND  spfh2m        ctl +6.6910e-03  d +1.8720e-08 (+0.000 %)  rms 1.8135e-05
+f006 LAND  cnwat         ctl +8.7032e-02  d +3.8021e-06 (+0.004 %)  rms 1.3123e-03
+f006 OCEAN lhtfl_ave     ctl +1.1449e+02  d +3.9862e-04 (+0.000 %)  rms 1.2290e-01
+f006 OCEAN shtfl_ave     ctl +7.9114e+00  d -5.0161e-04 (-0.006 %)  rms 4.1081e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d +1.2418e-05 (+0.000 %)  rms 2.3266e-02
+f024 GLOBAL T rms 0.1393 K  ps rms 7.800 Pa  LH mean -0.0410 rms 2.824 W/m2
+f024 LAND  evcw_ave      ctl +3.4355e+00  d +2.6667e-03 (+0.078 %)  rms 1.4728e+00
+f024 LAND  trans_ave     ctl +6.7917e+00  d -8.5199e-03 (-0.125 %)  rms 2.0349e+00
+f024 LAND  sbsno_ave     ctl +2.3885e+00  d -4.0831e-04 (-0.017 %)  rms 2.8425e-01
+f024 LAND  lhtfl_ave     ctl +3.0304e+01  d -4.8391e-02 (-0.160 %)  rms 3.9564e+00
+f024 LAND  tmp2m         ctl +2.8208e+02  d +2.4774e-04 (+0.000 %)  rms 2.5677e-01
+f024 LAND  spfh2m        ctl +6.7404e-03  d -1.1126e-06 (-0.017 %)  rms 9.2665e-05
+f024 LAND  cnwat         ctl +7.4489e-02  d -2.5703e-04 (-0.345 %)  rms 2.9461e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -4.0561e-02 (-0.036 %)  rms 2.2460e+00
+f024 OCEAN shtfl_ave     ctl +8.9139e+00  d -1.4244e-03 (-0.016 %)  rms 5.9756e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -8.4706e-04 (-0.000 %)  rms 9.9725e-02
+== E2 opt1 own impact, TH8 off (qT8F1 - qT8)
+f006 GLOBAL T rms 0.0515 K  ps rms 3.019 Pa  LH mean +0.3410 rms 2.783 W/m2
+f006 LAND  evcw_ave      ctl +6.6982e+00  d +2.8899e+00 (+43.145 %)  rms 1.1342e+01
+f006 LAND  trans_ave     ctl +9.0730e+00  d -2.8286e-01 (-3.118 %)  rms 1.9210e+00
+f006 LAND  sbsno_ave     ctl +3.5590e+00  d -7.4336e-01 (-20.887 %)  rms 3.2238e+00
+f006 LAND  lhtfl_ave     ctl +4.3305e+01  d +1.1636e+00 (+2.687 %)  rms 5.1378e+00
+f006 LAND  tmp2m         ctl +2.8322e+02  d -3.3209e-02 (-0.012 %)  rms 2.3010e-01
+f006 LAND  spfh2m        ctl +6.6756e-03  d +1.6141e-05 (+0.242 %)  rms 1.0351e-04
+f006 LAND  cnwat         ctl +1.0209e-01  d -1.7055e-02 (-16.705 %)  rms 6.6163e-02
+f006 OCEAN lhtfl_ave     ctl +1.1448e+02  d +5.8892e-04 (+0.001 %)  rms 1.3923e-01
+f006 OCEAN shtfl_ave     ctl +7.9099e+00  d +8.6105e-04 (+0.011 %)  rms 5.3291e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -9.9440e-05 (-0.000 %)  rms 2.4470e-02
+f024 GLOBAL T rms 0.1534 K  ps rms 8.310 Pa  LH mean +0.0402 rms 3.676 W/m2
+f024 LAND  evcw_ave      ctl +2.8285e+00  d +4.8588e-01 (+17.178 %)  rms 4.9520e+00
+f024 LAND  trans_ave     ctl +6.8430e+00  d -3.6808e-02 (-0.538 %)  rms 2.7054e+00
+f024 LAND  sbsno_ave     ctl +2.4597e+00  d -2.0252e-02 (-0.823 %)  rms 8.3174e-01
+f024 LAND  lhtfl_ave     ctl +3.0062e+01  d +1.8887e-01 (+0.628 %)  rms 5.8407e+00
+f024 LAND  tmp2m         ctl +2.8210e+02  d -1.5633e-02 (-0.006 %)  rms 3.6949e-01
+f024 LAND  spfh2m        ctl +6.7272e-03  d +1.3269e-05 (+0.197 %)  rms 1.6760e-04
+f024 LAND  cnwat         ctl +8.8800e-02  d -1.6226e-02 (-18.273 %)  rms 7.1955e-02
+f024 OCEAN lhtfl_ave     ctl +1.1137e+02  d -2.2074e-02 (-0.020 %)  rms 2.2874e+00
+f024 OCEAN shtfl_ave     ctl +8.9010e+00  d +1.3680e-02 (+0.154 %)  rms 6.8261e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -6.9433e-04 (-0.000 %)  rms 1.0209e-01
+== E2 opt2 own impact, TH8 off (qT8F2 - qT8)
+f006 GLOBAL T rms 0.0532 K  ps rms 3.193 Pa  LH mean +0.2645 rms 2.530 W/m2
+f006 LAND  evcw_ave      ctl +6.6982e+00  d +3.1859e+00 (+47.563 %)  rms 1.3024e+01
+f006 LAND  trans_ave     ctl +9.0730e+00  d -2.9414e-01 (-3.242 %)  rms 1.9732e+00
+f006 LAND  sbsno_ave     ctl +3.5590e+00  d -8.0997e-01 (-22.759 %)  rms 3.5308e+00
+f006 LAND  lhtfl_ave     ctl +4.3305e+01  d +8.9827e-01 (+2.074 %)  rms 4.6703e+00
+f006 LAND  tmp2m         ctl +2.8322e+02  d -4.3861e-02 (-0.015 %)  rms 2.6041e-01
+f006 LAND  spfh2m        ctl +6.6756e-03  d +1.5436e-05 (+0.231 %)  rms 1.0733e-04
+f006 LAND  cnwat         ctl +1.0209e-01  d -1.5065e-02 (-14.757 %)  rms 6.0914e-02
+f006 OCEAN lhtfl_ave     ctl +1.1448e+02  d +2.3575e-03 (+0.002 %)  rms 1.2351e-01
+f006 OCEAN shtfl_ave     ctl +7.9099e+00  d +1.4591e-03 (+0.018 %)  rms 5.6344e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d +5.6442e-05 (+0.000 %)  rms 2.1694e-02
+f024 GLOBAL T rms 0.1546 K  ps rms 8.621 Pa  LH mean +0.0960 rms 3.368 W/m2
+f024 LAND  evcw_ave      ctl +2.8285e+00  d +5.9720e-01 (+21.114 %)  rms 4.9850e+00
+f024 LAND  trans_ave     ctl +6.8430e+00  d -6.9273e-02 (-1.012 %)  rms 2.7238e+00
+f024 LAND  sbsno_ave     ctl +2.4597e+00  d -5.4002e-02 (-2.196 %)  rms 9.8743e-01
+f024 LAND  lhtfl_ave     ctl +3.0062e+01  d +2.2280e-01 (+0.741 %)  rms 5.2435e+00
+f024 LAND  tmp2m         ctl +2.8210e+02  d -2.4485e-02 (-0.009 %)  rms 3.7598e-01
+f024 LAND  spfh2m        ctl +6.7272e-03  d +1.1789e-05 (+0.175 %)  rms 1.6879e-04
+f024 LAND  cnwat         ctl +8.8800e-02  d -1.4185e-02 (-15.974 %)  rms 6.5918e-02
+f024 OCEAN lhtfl_ave     ctl +1.1137e+02  d +4.6686e-02 (+0.042 %)  rms 2.2108e+00
+f024 OCEAN shtfl_ave     ctl +8.9010e+00  d +7.0317e-03 (+0.079 %)  rms 6.8520e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -1.8564e-04 (-0.000 %)  rms 1.0382e-01
+== E2 opt1 impact, TH8+TH9 on (qT9F1 - qT9)
+f006 GLOBAL T rms 0.0532 K  ps rms 3.205 Pa  LH mean +0.3715 rms 2.883 W/m2
+f006 LAND  evcw_ave      ctl +6.5008e+00  d +3.0885e+00 (+47.510 %)  rms 1.1606e+01
+f006 LAND  trans_ave     ctl +9.1000e+00  d -3.0965e-01 (-3.403 %)  rms 1.9962e+00
+f006 LAND  sbsno_ave     ctl +3.6061e+00  d -7.9041e-01 (-21.919 %)  rms 3.3155e+00
+f006 LAND  lhtfl_ave     ctl +4.3204e+01  d +1.2645e+00 (+2.927 %)  rms 5.3224e+00
+f006 LAND  tmp2m         ctl +2.8323e+02  d -3.3974e-02 (-0.012 %)  rms 2.3115e-01
+f006 LAND  spfh2m        ctl +6.6745e-03  d +1.7464e-05 (+0.262 %)  rms 1.0690e-04
+f006 LAND  cnwat         ctl +1.0366e-01  d -1.8632e-02 (-17.974 %)  rms 6.9126e-02
+f006 OCEAN lhtfl_ave     ctl +1.1448e+02  d +2.0698e-03 (+0.002 %)  rms 1.4426e-01
+f006 OCEAN shtfl_ave     ctl +7.9097e+00  d +1.4468e-03 (+0.018 %)  rms 5.6820e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -1.8932e-04 (-0.000 %)  rms 2.6497e-02
+f024 GLOBAL T rms 0.1572 K  ps rms 8.384 Pa  LH mean +0.0485 rms 3.660 W/m2
+f024 LAND  evcw_ave      ctl +2.8331e+00  d +4.8077e-01 (+16.970 %)  rms 5.0628e+00
+f024 LAND  trans_ave     ctl +6.7969e+00  d -6.5930e-03 (-0.097 %)  rms 2.7426e+00
+f024 LAND  sbsno_ave     ctl +2.4541e+00  d -1.4305e-02 (-0.583 %)  rms 8.2669e-01
+f024 LAND  lhtfl_ave     ctl +2.9959e+01  d +2.8757e-01 (+0.960 %)  rms 5.8063e+00
+f024 LAND  tmp2m         ctl +2.8210e+02  d -1.3217e-02 (-0.005 %)  rms 3.8972e-01
+f024 LAND  spfh2m        ctl +6.7256e-03  d +1.4422e-05 (+0.214 %)  rms 1.7423e-04
+f024 LAND  cnwat         ctl +8.9672e-02  d -1.6962e-02 (-18.916 %)  rms 7.1193e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -5.2048e-02 (-0.047 %)  rms 2.2887e+00
+f024 OCEAN shtfl_ave     ctl +8.9016e+00  d +1.3352e-02 (+0.150 %)  rms 6.8770e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -9.1172e-04 (-0.000 %)  rms 1.0301e-01
+== E2 opt2 impact, TH8+TH9 on (qT9F2 - qT9)
+f006 GLOBAL T rms 0.0561 K  ps rms 3.508 Pa  LH mean +0.2944 rms 2.636 W/m2
+f006 LAND  evcw_ave      ctl +6.5008e+00  d +3.3833e+00 (+52.045 %)  rms 1.3247e+01
+f006 LAND  trans_ave     ctl +9.1000e+00  d -3.2043e-01 (-3.521 %)  rms 2.0505e+00
+f006 LAND  sbsno_ave     ctl +3.6061e+00  d -8.5708e-01 (-23.768 %)  rms 3.6153e+00
+f006 LAND  lhtfl_ave     ctl +4.3204e+01  d +1.0004e+00 (+2.316 %)  rms 4.8649e+00
+f006 LAND  tmp2m         ctl +2.8323e+02  d -4.5068e-02 (-0.016 %)  rms 2.6214e-01
+f006 LAND  spfh2m        ctl +6.6745e-03  d +1.6486e-05 (+0.247 %)  rms 1.1059e-04
+f006 LAND  cnwat         ctl +1.0366e-01  d -1.6637e-02 (-16.049 %)  rms 6.3964e-02
+f006 OCEAN lhtfl_ave     ctl +1.1448e+02  d +2.3011e-03 (+0.002 %)  rms 1.4986e-01
+f006 OCEAN shtfl_ave     ctl +7.9097e+00  d +1.7972e-03 (+0.023 %)  rms 6.0982e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -1.1619e-04 (-0.000 %)  rms 2.6879e-02
+f024 GLOBAL T rms 0.1592 K  ps rms 8.636 Pa  LH mean +0.0666 rms 3.465 W/m2
+f024 LAND  evcw_ave      ctl +2.8331e+00  d +6.1066e-01 (+21.555 %)  rms 5.1158e+00
+f024 LAND  trans_ave     ctl +6.7969e+00  d -4.0495e-02 (-0.596 %)  rms 2.6898e+00
+f024 LAND  sbsno_ave     ctl +2.4541e+00  d -5.1002e-02 (-2.078 %)  rms 1.0245e+00
+f024 LAND  lhtfl_ave     ctl +2.9959e+01  d +2.8152e-01 (+0.940 %)  rms 5.3821e+00
+f024 LAND  tmp2m         ctl +2.8210e+02  d -2.2911e-02 (-0.008 %)  rms 4.0811e-01
+f024 LAND  spfh2m        ctl +6.7256e-03  d +1.5127e-05 (+0.225 %)  rms 1.7479e-04
+f024 LAND  cnwat         ctl +8.9672e-02  d -1.5404e-02 (-17.178 %)  rms 6.7843e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -2.2556e-02 (-0.020 %)  rms 2.2873e+00
+f024 OCEAN shtfl_ave     ctl +8.9016e+00  d +8.0228e-03 (+0.090 %)  rms 6.5580e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -4.6695e-04 (-0.000 %)  rms 1.0241e-01
+== TH8 effect, E2 opt2 (TH9 off) (qF2 - qT8F2)
+f006 GLOBAL T rms 0.0296 K  ps rms 1.641 Pa  LH mean -0.0007 rms 0.147 W/m2
+f006 LAND  evcw_ave      ctl +9.8840e+00  d +1.3783e-03 (+0.014 %)  rms 2.4829e-01
+f006 LAND  trans_ave     ctl +8.7789e+00  d +2.1764e-05 (+0.000 %)  rms 1.2601e-01
+f006 LAND  sbsno_ave     ctl +2.7490e+00  d -4.7963e-04 (-0.017 %)  rms 5.8360e-02
+f006 LAND  lhtfl_ave     ctl +4.4203e+01  d -1.5882e-03 (-0.004 %)  rms 2.1191e-01
+f006 LAND  tmp2m         ctl +2.8318e+02  d -1.0083e-04 (-0.000 %)  rms 3.8446e-02
+f006 LAND  spfh2m        ctl +6.6911e-03  d -4.7620e-08 (-0.001 %)  rms 1.2398e-05
+f006 LAND  cnwat         ctl +8.7027e-02  d +5.2407e-06 (+0.006 %)  rms 1.6142e-03
+f006 OCEAN lhtfl_ave     ctl +1.1449e+02  d -4.8798e-04 (-0.000 %)  rms 1.1122e-01
+f006 OCEAN shtfl_ave     ctl +7.9114e+00  d +6.6141e-05 (+0.001 %)  rms 2.8180e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -1.0674e-04 (-0.000 %)  rms 1.9792e-02
+f024 GLOBAL T rms 0.1385 K  ps rms 7.598 Pa  LH mean +0.0011 rms 2.865 W/m2
+f024 LAND  evcw_ave      ctl +3.4257e+00  d +9.8834e-03 (+0.289 %)  rms 1.5470e+00
+f024 LAND  trans_ave     ctl +6.7737e+00  d +1.7986e-02 (+0.266 %)  rms 1.7778e+00
+f024 LAND  sbsno_ave     ctl +2.4057e+00  d -1.7165e-02 (-0.714 %)  rms 4.0479e-01
+f024 LAND  lhtfl_ave     ctl +3.0284e+01  d +1.9391e-02 (+0.064 %)  rms 4.1017e+00
+f024 LAND  tmp2m         ctl +2.8208e+02  d +1.0967e-03 (+0.000 %)  rms 2.4693e-01
+f024 LAND  spfh2m        ctl +6.7390e-03  d +1.4530e-06 (+0.022 %)  rms 9.2984e-05
+f024 LAND  cnwat         ctl +7.4615e-02  d -1.2566e-04 (-0.168 %)  rms 3.7049e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -5.8486e-03 (-0.005 %)  rms 2.2076e+00
+f024 OCEAN shtfl_ave     ctl +8.9080e+00  d +5.8748e-03 (+0.066 %)  rms 6.2407e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -6.6121e-04 (-0.000 %)  rms 1.0104e-01
+== TH8+TH9 effect, E2 opt2 (qT9F2 - qT8F2)
+f006 GLOBAL T rms 0.0316 K  ps rms 1.821 Pa  LH mean -0.0000 rms 0.138 W/m2
+f006 LAND  evcw_ave      ctl +9.8840e+00  d +5.7037e-05 (+0.001 %)  rms 1.2070e-01
+f006 LAND  trans_ave     ctl +8.7789e+00  d +6.1145e-04 (+0.007 %)  rms 8.1755e-02
+f006 LAND  sbsno_ave     ctl +2.7490e+00  d -2.4512e-05 (-0.001 %)  rms 1.8938e-02
+f006 LAND  lhtfl_ave     ctl +4.4203e+01  d +1.5043e-03 (+0.003 %)  rms 1.8404e-01
+f006 LAND  tmp2m         ctl +2.8318e+02  d -5.8996e-05 (-0.000 %)  rms 3.1321e-02
+f006 LAND  spfh2m        ctl +6.6911e-03  d -1.3769e-07 (-0.002 %)  rms 1.3364e-05
+f006 LAND  cnwat         ctl +8.7027e-02  d -1.4094e-06 (-0.002 %)  rms 2.7278e-03
+f006 OCEAN lhtfl_ave     ctl +1.1449e+02  d -7.3724e-04 (-0.001 %)  rms 1.1712e-01
+f006 OCEAN shtfl_ave     ctl +7.9114e+00  d +7.8057e-05 (+0.001 %)  rms 3.2616e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -1.4833e-04 (-0.000 %)  rms 2.2289e-02
+f024 GLOBAL T rms 0.1430 K  ps rms 7.861 Pa  LH mean -0.0285 rms 3.040 W/m2
+f024 LAND  evcw_ave      ctl +3.4257e+00  d +1.8076e-02 (+0.528 %)  rms 1.5963e+00
+f024 LAND  trans_ave     ctl +6.7737e+00  d -1.7354e-02 (-0.256 %)  rms 2.1626e+00
+f024 LAND  sbsno_ave     ctl +2.4057e+00  d -2.5891e-03 (-0.108 %)  rms 3.4976e-01
+f024 LAND  lhtfl_ave     ctl +3.0284e+01  d -4.3555e-02 (-0.144 %)  rms 4.5003e+00
+f024 LAND  tmp2m         ctl +2.8208e+02  d -7.0330e-04 (-0.000 %)  rms 2.7791e-01
+f024 LAND  spfh2m        ctl +6.7390e-03  d +1.7777e-06 (+0.026 %)  rms 9.3286e-05
+f024 LAND  cnwat         ctl +7.4615e-02  d -3.4637e-04 (-0.464 %)  rms 2.7009e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -2.3515e-02 (-0.021 %)  rms 2.2178e+00
+f024 OCEAN shtfl_ave     ctl +8.9080e+00  d +1.5236e-03 (+0.017 %)  rms 6.2996e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d -2.1820e-04 (-0.000 %)  rms 1.0119e-01
+== TH9 effect given TH8, E2 opt2 (qT9F2 - qF2)
+f006 GLOBAL T rms 0.0296 K  ps rms 1.560 Pa  LH mean +0.0007 rms 0.154 W/m2
+f006 LAND  evcw_ave      ctl +9.8854e+00  d -1.3212e-03 (-0.013 %)  rms 2.4776e-01
+f006 LAND  trans_ave     ctl +8.7789e+00  d +5.8968e-04 (+0.007 %)  rms 1.0974e-01
+f006 LAND  sbsno_ave     ctl +2.7485e+00  d +4.5512e-04 (+0.017 %)  rms 5.5879e-02
+f006 LAND  lhtfl_ave     ctl +4.4201e+01  d +3.0925e-03 (+0.007 %)  rms 2.4208e-01
+f006 LAND  tmp2m         ctl +2.8318e+02  d +4.1835e-05 (+0.000 %)  rms 3.8168e-02
+f006 LAND  spfh2m        ctl +6.6910e-03  d -9.0075e-08 (-0.001 %)  rms 1.4044e-05
+f006 LAND  cnwat         ctl +8.7032e-02  d -6.6501e-06 (-0.008 %)  rms 2.7322e-03
+f006 OCEAN lhtfl_ave     ctl +1.1449e+02  d -2.4926e-04 (-0.000 %)  rms 9.8735e-02
+f006 OCEAN shtfl_ave     ctl +7.9114e+00  d +1.1916e-05 (+0.000 %)  rms 2.8298e-02
+f006 OCEAN tmp_hyblev1   ctl +2.9100e+02  d -4.1583e-05 (-0.000 %)  rms 1.9532e-02
+f024 GLOBAL T rms 0.1386 K  ps rms 7.766 Pa  LH mean -0.0296 rms 2.912 W/m2
+f024 LAND  evcw_ave      ctl +3.4355e+00  d +8.1924e-03 (+0.238 %)  rms 1.4941e+00
+f024 LAND  trans_ave     ctl +6.7917e+00  d -3.5341e-02 (-0.520 %)  rms 2.1272e+00
+f024 LAND  sbsno_ave     ctl +2.3885e+00  d +1.4576e-02 (+0.610 %)  rms 3.4702e-01
+f024 LAND  lhtfl_ave     ctl +3.0304e+01  d -6.2947e-02 (-0.208 %)  rms 4.2113e+00
+f024 LAND  tmp2m         ctl +2.8208e+02  d -1.8000e-03 (-0.001 %)  rms 2.7230e-01
+f024 LAND  spfh2m        ctl +6.7404e-03  d +3.2468e-07 (+0.005 %)  rms 9.1259e-05
+f024 LAND  cnwat         ctl +7.4489e-02  d -2.2070e-04 (-0.296 %)  rms 3.9983e-02
+f024 OCEAN lhtfl_ave     ctl +1.1141e+02  d -1.7667e-02 (-0.016 %)  rms 2.2116e+00
+f024 OCEAN shtfl_ave     ctl +8.9139e+00  d -4.3512e-03 (-0.049 %)  rms 6.1036e-01
+f024 OCEAN tmp_hyblev1   ctl +2.9101e+02  d +4.4301e-04 (+0.000 %)  rms 1.0032e-01

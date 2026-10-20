@@ -1,0 +1,140 @@
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:18.000000000 -0500
+@@ -1204,6 +1204,7 @@
+     logical              :: do_gsl_drag_ls_bl    !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     !< flag for GSL drag (turbulent orog form drag only)
++    integer              :: ngw_heat_opt         !< UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
+     logical              :: gwd_ke_heat          !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
+     logical              :: samf_cmt_heat        !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       !< flag for PSL drag (mesoscale GWD and blocking only)
+@@ -3852,6 +3853,7 @@
+     logical              :: do_gsl_drag_ls_bl    = .false.      !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       = .false.      !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     = .false.      !< flag for GSL drag (turbulent orog form drag only)
++    integer              :: ngw_heat_opt         = 0            !< UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
+     logical              :: gwd_ke_heat          = .false.      !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
+     logical              :: samf_cmt_heat        = .false.      !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       = .false.      !< flag for PSL drag (mesoscale GWD and blocking only)
+@@ -4320,6 +4322,7 @@
+                                do_ugwp_v0_nst_only,                                         &
+                                do_gsl_drag_ls_bl, do_gsl_drag_ss, do_gsl_drag_tofd,         &
+                                do_gwd_opt_psl, do_ngw_ec,                                   &
++                               ngw_heat_opt,                                                &
+                                gwd_ke_heat,                                                 &
+                                samf_cmt_heat,                                               &
+                                do_ugwp_v1, do_ugwp_v1_orog_only,  do_ugwp_v1_w_gsldrag,     &
+@@ -5357,6 +5360,7 @@
+     Model%do_gsl_drag_ls_bl    = do_gsl_drag_ls_bl
+     Model%do_gsl_drag_ss       = do_gsl_drag_ss
+     Model%do_gsl_drag_tofd     = do_gsl_drag_tofd
++    Model%ngw_heat_opt         = ngw_heat_opt
+     Model%gwd_ke_heat          = gwd_ke_heat
+     Model%samf_cmt_heat        = samf_cmt_heat
+     Model%do_gwd_opt_psl       = do_gwd_opt_psl
+@@ -7331,6 +7335,7 @@
+       print *, ' do_gsl_drag_ls_bl    : ', Model%do_gsl_drag_ls_bl
+       print *, ' do_gsl_drag_ss       : ', Model%do_gsl_drag_ss
+       print *, ' do_gsl_drag_tofd     : ', Model%do_gsl_drag_tofd
++      print *, ' ngw_heat_opt         : ', Model%ngw_heat_opt
+       print *, ' gwd_ke_heat          : ', Model%gwd_ke_heat
+       print *, ' samf_cmt_heat        : ', Model%samf_cmt_heat
+       print *, ' do_gwd_opt_psl       : ', Model%do_gwd_opt_psl
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:18.000000000 -0500
+@@ -8103,6 +8103,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[ngw_heat_opt]
++  standard_name = control_for_nonorographic_gravity_wave_heating
++  long_name = UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
++  units = flag
++  dimensions = ()
++  type = integer
+ [do_gwd_opt_psl]
+   standard_name = do_gsl_drag_suite_with_psl_gwd_option
+   long_name = flag to activate PSL drag suite - mesoscale GWD and blocking
+diff -ru a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90 b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90
+--- a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 20:33:18.000000000 -0500
+@@ -42,6 +42,7 @@
+     use cires_ugwpv1_triggers, only:  slat_geos5_2020, slat_geos5_tamp_v1
+     use cires_ugwpv1_module,   only:  cires_ugwpv1_init, ngwflux_update, calendar_ugwp
+     use cires_ugwpv1_module,   only:  knob_ugwp_version, cires_ugwp_dealloc, tamp_mpa
++    use cires_ugwpv1_module,   only:  knob_ugwp_palaunch
+     use cires_ugwpv1_solv2,    only:  cires_ugwpv1_ngw_solv2
+ !    use cires_ugwpv1_solv2,     only:  cires_ugwpv1_ngw_solv2, ecmwf_ngw
+      use ecmwf_ngw,             only:  ecmwf_ngw_emc
+@@ -311,7 +312,8 @@
+           zogw,  zlwb,  zobl,  zngw,   dusfcg, dvsfcg, rdxzb,                           &
+           dtend, dtidx, index_of_x_wind, index_of_y_wind, index_of_temperature,         &
+           index_of_process_orographic_gwd, index_of_process_nonorographic_gwd,          &
+-          lprnt, ipr, spp_wts_gwd, spp_gwd, gwd_ke_heat, errmsg, errflg)
++          lprnt, ipr, spp_wts_gwd, spp_gwd, gwd_ke_heat, ngw_heat_opt,       &
++          errmsg, errflg)
+ 
+ !
+ !########################################################################
+@@ -436,6 +438,9 @@
+ ! local variables
+     integer :: i, k
+     logical, intent(in) :: gwd_ke_heat
++    integer, intent(in) :: ngw_heat_opt
++    integer :: kl
++    real(kind=kind_phys) :: ngwe
+     real(kind=kind_phys) :: un, vn
+     real(kind=kind_phys), dimension(im)       :: sgh30
+     real(kind=kind_phys), dimension(im, levs) :: Pdvdt, Pdudt
+@@ -717,6 +722,32 @@
+ !       endif
+ 
+     end if   ! do_ugwp_v1
++!
++! ngw_heat_opt = 1: NGW heating is the KE loss of its own wind increment only
++! ngw_heat_opt = 2: keep it; withdraw the column's net NGW energy input at the launch level
++!
++    if (do_ugwp_v1 .and. ngw_heat_opt == 1) then
++      do k=1,levs
++        do i=1,im
++          dtdt_ngw(i,k) = -( dudt_ngw(i,k)*(ugrs(i,k) + 0.5*dtp*dudt_ngw(i,k))          &
++                           + dvdt_ngw(i,k)*(vgrs(i,k) + 0.5*dtp*dvdt_ngw(i,k)) )/con_cp
++        enddo
++      enddo
++    else if (do_ugwp_v1 .and. ngw_heat_opt == 2) then
++      do i=1,im
++        ngwe = 0.
++        do k=1,levs
++          ngwe = ngwe + del(i,k)*( con_cp*dtdt_ngw(i,k)                                  &
++                 + dudt_ngw(i,k)*(ugrs(i,k) + 0.5*dtp*dudt_ngw(i,k))                    &
++                 + dvdt_ngw(i,k)*(vgrs(i,k) + 0.5*dtp*dvdt_ngw(i,k)) )
++        enddo
++        do kl=1,levs
++          if (prsl(i,kl) < knob_ugwp_palaunch) exit
++        enddo
++        kl = max(kl-1, 3)     ! launch layer, as in cires_ugwpv1_ngw_solv2
++        dtdt_ngw(i,kl) = dtdt_ngw(i,kl) - ngwe/(con_cp*del(i,kl))
++      enddo
++    endif
+ 
+     if(ldiag3d .and. lssav .and. .not. flag_for_gwd_generic_tend) then
+       idtend = dtidx(index_of_x_wind,index_of_process_nonorographic_gwd)
+diff -ru a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta
+--- a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta	2026-10-17 20:33:18.000000000 -0500
+@@ -1141,6 +1141,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[ngw_heat_opt]
++  standard_name = control_for_nonorographic_gravity_wave_heating
++  long_name = UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
++  units = flag
++  dimensions = ()
++  type = integer
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

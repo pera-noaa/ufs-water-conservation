@@ -1,0 +1,106 @@
+From d9fc3d118dabb259f11f85c0abcfac34605b00f3 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Sat, 17 Oct 2026 18:36:50 -0600
+Subject: [PATCH 10/13] Thompson: export the applied sedimentation per layer
+
+Add the module array ebud_sed(i,k,1:4): per call, the mass per area moved
+into each layer from above and out of its bottom, liquid (rain, cloud) and
+ice (ice, snow, graupel), summed over the sedimentation substeps exactly as
+the mixing-ratio updates apply them. Diagnostic only: nothing reads it
+unless config_mp_energy_coupling = 'layer' (next commit), and the model
+state is bit-identical with or without this commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/physics_wrf/module_mp_thompson.F  | 33 +++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index ad08664..e9447f8 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -427,6 +427,9 @@
+ !+---+
+ !ctrlL
+ 
++      ! EB: sedimentation into / out of each layer per call (i,k: 1 in_liq, 2 out_liq, 3 in_ice, 4 out_ice), kg/m2
++      REAL, ALLOCATABLE, DIMENSION(:,:,:):: ebud_sed
++
+       CONTAINS
+ 
+ !=================================================================================================================
+@@ -1186,6 +1189,12 @@
+             nwfa1 = 11.1E6
+          endif
+ 
++         if (allocated(ebud_sed)) then
++            if (lbound(ebud_sed,1) /= ims .or. ubound(ebud_sed,1) /= ime .or. lbound(ebud_sed,2) /= kts &
++                .or. ubound(ebud_sed,2) /= kte) deallocate(ebud_sed)
++         end if
++         if (.not. allocated(ebud_sed)) allocate(ebud_sed(ims:ime,kts:kte,4))
++         ebud_sed(i,:,:) = 0.
+          call mp_thompson(qv1d, qc1d, qi1d, qr1d, qs1d, qg1d, ni1d,     &
+                       nr1d, nc1d, nwfa1d, nifa1d, t1d, p1d, w1d, dz1d,  &
+                       pptrain, pptsnow, pptgraul, pptice,               &
+@@ -3459,6 +3468,11 @@
+          nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+          rr(k) = MAX(0., rr(k) - sed_r(k)*odzq*DT*onstep(1))
+          nr(k) = MAX(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
++         ebud_sed(ii,kte,2) = ebud_sed(ii,kte,2) + sed_r(kte)*DT*onstep(1)
++         do k = ksed1(1), kts, -1
++            ebud_sed(ii,k,1) = ebud_sed(ii,k,1) + sed_r(k+1)*DT*onstep(1)
++            ebud_sed(ii,k,2) = ebud_sed(ii,k,2) + sed_r(k)*DT*onstep(1)
++         enddo
+          do k = ksed1(1), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+@@ -3492,6 +3506,10 @@
+             sed_c(k) = vtck(k)*rc(k)
+             sed_n(k) = vtnck(k)*nc(k)
+          enddo
++         do k = ksed1(5), kts, -1
++            ebud_sed(ii,k,1) = ebud_sed(ii,k,1) + sed_c(k+1)*dtsed
++            ebud_sed(ii,k,2) = ebud_sed(ii,k,2) + sed_c(k)*dtsed
++         enddo
+          do k = ksed1(5), kts, -1
+             odzq = 1./dzq(k)
+             orho = onstep(5)/rho(k)
+@@ -3525,6 +3543,11 @@
+          niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+          ri(k) = MAX(0., ri(k) - sed_i(k)*odzq*DT*onstep(2))
+          ni(k) = MAX(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
++         ebud_sed(ii,kte,4) = ebud_sed(ii,kte,4) + sed_i(kte)*DT*onstep(2)
++         do k = ksed1(2), kts, -1
++            ebud_sed(ii,k,3) = ebud_sed(ii,k,3) + sed_i(k+1)*DT*onstep(2)
++            ebud_sed(ii,k,4) = ebud_sed(ii,k,4) + sed_i(k)*DT*onstep(2)
++         enddo
+          do k = ksed1(2), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+@@ -3560,6 +3583,11 @@
+          orho = 1./rho(k)
+          qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+          rs(k) = MAX(0., rs(k) - sed_s(k)*odzq*DT*onstep(3))
++         ebud_sed(ii,kte,4) = ebud_sed(ii,kte,4) + sed_s(kte)*DT*onstep(3)
++         do k = ksed1(3), kts, -1
++            ebud_sed(ii,k,3) = ebud_sed(ii,k,3) + sed_s(k+1)*DT*onstep(3)
++            ebud_sed(ii,k,4) = ebud_sed(ii,k,4) + sed_s(k)*DT*onstep(3)
++         enddo
+          do k = ksed1(3), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+@@ -3591,6 +3619,11 @@
+          orho = 1./rho(k)
+          qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+          rg(k) = MAX(0., rg(k) - sed_g(k)*odzq*DT*onstep(4))
++         ebud_sed(ii,kte,4) = ebud_sed(ii,kte,4) + sed_g(kte)*DT*onstep(4)
++         do k = ksed1(4), kts, -1
++            ebud_sed(ii,k,3) = ebud_sed(ii,k,3) + sed_g(k+1)*DT*onstep(4)
++            ebud_sed(ii,k,4) = ebud_sed(ii,k,4) + sed_g(k)*DT*onstep(4)
++         enddo
+          do k = ksed1(4), kts, -1
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+-- 
+2.55.0
+

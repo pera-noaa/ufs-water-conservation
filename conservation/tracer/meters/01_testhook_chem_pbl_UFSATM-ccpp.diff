@@ -1,0 +1,19 @@
+--- a/data/CCPP_typedefs.F90
++++ b/data/CCPP_typedefs.F90
+@@ -1225,7 +1225,7 @@
+     Interstitial%ntrwx            = 0
+ 
+     ! perform aerosol convective transport and PBL diffusion
+-    Interstitial%trans_aero = Model%cplchm .and. Model%trans_trac
++    Interstitial%trans_aero = (Model%cplchm .or. Model%ntchm > 0) .and. Model%trans_trac  ! TEST HOOK
+ 
+     if (Model%imp_physics == Model%imp_physics_thompson .or. &
+          Model%imp_physics == Model%imp_physics_tempo) then
+@@ -1239,6 +1239,7 @@
+       if (Model%imp_physics == Model%imp_physics_tempo .and. Model%lthailaware) then
+         Interstitial%nvdiff = Interstitial%nvdiff + 2
+       endif
++      if (Interstitial%trans_aero .and. .not. Model%cplchm) Interstitial%nvdiff = Interstitial%nvdiff + Model%ntchm  ! TEST HOOK
+       if (Model%satmedmf) Interstitial%nvdiff = Interstitial%nvdiff + 1
+     elseif ( Model%imp_physics == Model%imp_physics_nssl ) then
+       if (Model%me == Model%master)  write(0,*) 'nssl_settings1: nvdiff,ntrac = ', Interstitial%nvdiff, Model%ntrac

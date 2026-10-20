@@ -1,0 +1,181 @@
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:17.000000000 -0500
+@@ -1204,6 +1204,7 @@
+     logical              :: do_gsl_drag_ls_bl    !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     !< flag for GSL drag (turbulent orog form drag only)
++    logical              :: gwd_ke_heat          !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
+     logical              :: samf_cmt_heat        !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           !< flag for version 1 ugwp GWD
+@@ -3851,6 +3852,7 @@
+     logical              :: do_gsl_drag_ls_bl    = .false.      !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       = .false.      !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     = .false.      !< flag for GSL drag (turbulent orog form drag only)
++    logical              :: gwd_ke_heat          = .false.      !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
+     logical              :: samf_cmt_heat        = .false.      !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       = .false.      !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           = .false.      !< flag for version 1 ugwp GWD
+@@ -4318,6 +4320,7 @@
+                                do_ugwp_v0_nst_only,                                         &
+                                do_gsl_drag_ls_bl, do_gsl_drag_ss, do_gsl_drag_tofd,         &
+                                do_gwd_opt_psl, do_ngw_ec,                                   &
++                               gwd_ke_heat,                                                 &
+                                samf_cmt_heat,                                               &
+                                do_ugwp_v1, do_ugwp_v1_orog_only,  do_ugwp_v1_w_gsldrag,     &
+                                ugwp_seq_update, var_ric, coef_ric_l, coef_ric_s, hurr_pbl,  &
+@@ -5354,6 +5357,7 @@
+     Model%do_gsl_drag_ls_bl    = do_gsl_drag_ls_bl
+     Model%do_gsl_drag_ss       = do_gsl_drag_ss
+     Model%do_gsl_drag_tofd     = do_gsl_drag_tofd
++    Model%gwd_ke_heat          = gwd_ke_heat
+     Model%samf_cmt_heat        = samf_cmt_heat
+     Model%do_gwd_opt_psl       = do_gwd_opt_psl
+     Model%do_ngw_ec            = do_ngw_ec
+@@ -7327,6 +7331,7 @@
+       print *, ' do_gsl_drag_ls_bl    : ', Model%do_gsl_drag_ls_bl
+       print *, ' do_gsl_drag_ss       : ', Model%do_gsl_drag_ss
+       print *, ' do_gsl_drag_tofd     : ', Model%do_gsl_drag_tofd
++      print *, ' gwd_ke_heat          : ', Model%gwd_ke_heat
+       print *, ' samf_cmt_heat        : ', Model%samf_cmt_heat
+       print *, ' do_gwd_opt_psl       : ', Model%do_gwd_opt_psl
+       print *, ' do_ugwp_v1           : ', Model%do_ugwp_v1
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -8097,6 +8097,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[gwd_ke_heat]
++  standard_name = flag_for_gravity_wave_drag_dissipation_heating
++  long_name = flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++  units = flag
++  dimensions = ()
++  type = logical
+ [do_gwd_opt_psl]
+   standard_name = do_gsl_drag_suite_with_psl_gwd_option
+   long_name = flag to activate PSL drag suite - mesoscale GWD and blocking
+diff -ru a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90 b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90
+--- a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90	2026-10-17 20:33:17.000000000 -0500
+@@ -311,7 +311,7 @@
+           zogw,  zlwb,  zobl,  zngw,   dusfcg, dvsfcg, rdxzb,                           &
+           dtend, dtidx, index_of_x_wind, index_of_y_wind, index_of_temperature,         &
+           index_of_process_orographic_gwd, index_of_process_nonorographic_gwd,          &
+-          lprnt, ipr, spp_wts_gwd, spp_gwd, errmsg, errflg)
++          lprnt, ipr, spp_wts_gwd, spp_gwd, gwd_ke_heat, errmsg, errflg)
+ 
+ !
+ !########################################################################
+@@ -435,6 +435,8 @@
+ 
+ ! local variables
+     integer :: i, k
++    logical, intent(in) :: gwd_ke_heat
++    real(kind=kind_phys) :: un, vn
+     real(kind=kind_phys), dimension(im)       :: sgh30
+     real(kind=kind_phys), dimension(im, levs) :: Pdvdt, Pdudt
+     real(kind=kind_phys), dimension(im, levs) :: Pdtdt, Pkdis
+@@ -732,6 +734,24 @@
+     endif
+ 
+ !
++! gwd_ke_heat: GSL drag (ls, bl, ss, tofd) dissipative heating, -d(KE)/cp of the drag increment
++! applied after the NGW increment, so the joint GWD update conserves energy
++!
++    if (gwd_ke_heat .and. (do_gsl_drag_ls_bl.or.do_gsl_drag_ss.or.do_gsl_drag_tofd)) then
++      do k=1,levs
++        do i=1,im
++          un = 0.
++          vn = 0.
++          if (do_ugwp_v1) then
++            un = dtp*dudt_ngw(i,k)
++            vn = dtp*dvdt_ngw(i,k)
++          endif
++          Pdtdt(i,k) = Pdtdt(i,k) - ( Pdudt(i,k)*(ugrs(i,k) + un + 0.5*dtp*Pdudt(i,k))   &
++                                    + Pdvdt(i,k)*(vgrs(i,k) + vn + 0.5*dtp*Pdvdt(i,k)) )/con_cp
++        enddo
++      enddo
++    endif
++!
+ ! get total sso-OGW + NGW
+ !
+      if (do_ugwp_v1) then
+diff -ru a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta
+--- a/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -1134,6 +1134,13 @@
+   dimensions = ()
+   type = integer
+   intent = in
++[gwd_ke_heat]
++  standard_name = flag_for_gravity_wave_drag_dissipation_heating
++  long_name = flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ru a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-17 20:33:17.000000000 -0500
+@@ -13,12 +13,14 @@
+ !>  @{
+       subroutine GFS_GWD_generic_post_run(im, levs, ntrac, tend_opt_gwd, lssav, ldiag3d, dtf, dtp, dusfcg, dvsfcg, ten_t, ten_u, ten_v, ten_q, dudt, dvdt, dtdt, dqdt, &
+       &  dugwd, dvgwd, gt0, gq0, gu0, gv0, flag_for_gwd_generic_tend, dtend, dtidx, index_of_temperature, index_of_x_wind,  &
+-      &  index_of_y_wind, index_of_process_orographic_gwd, errmsg, errflg)
++      &  index_of_y_wind, index_of_process_orographic_gwd, gwd_ke_heat, con_cp, errmsg, errflg)
+ 
+       use machine, only : kind_phys
+       implicit none
+       
+       integer, intent(in) :: im, levs, ntrac, tend_opt_gwd
++      logical, intent(in) :: gwd_ke_heat
++      real(kind=kind_phys), intent(in) :: con_cp
+       logical, intent(in) :: lssav, ldiag3d, flag_for_gwd_generic_tend
+       
+       real(kind=kind_phys), intent(in) :: dusfcg(:), dvsfcg(:)
+@@ -76,6 +78,14 @@
+         case (3) !add tendencies to sum and apply
+                   !Current state = current state + dt*(accumulated tendency + current tendency)
+                   !Accumulated tendency = 0
++          if (gwd_ke_heat) then
++            ! joint update of the pending (PBL) and GWD wind increments: heat the KE cross term
++            do k=1,levs
++              do i=1,im
++                gt0(i,k) = gt0(i,k) - dtp*dtp*(dudt(i,k)*ten_u(i,k) + dvdt(i,k)*ten_v(i,k))/con_cp
++              end do
++            end do
++          endif
+           do k=1,levs
+             do i=1,im
+               gt0(i,k) = gt0(i,k) + dtp*(dtdt(i,k) + ten_t(i,k))
+diff -ru a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -245,6 +245,21 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[gwd_ke_heat]
++  standard_name = flag_for_gravity_wave_drag_dissipation_heating
++  long_name = flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

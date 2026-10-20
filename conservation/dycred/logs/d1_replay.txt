@@ -1,0 +1,28 @@
+self-test pkz(dyn_core) vs pkz(fv_dynamics): max rel diff 1.55e-15
+h=0.001 K  orig   dTE/heat: mass-mean 1.400961  min 1.400043  max 1.412682
+h=0.001 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.001 K  cp_air dTE/heat: mass-mean 1.000656  min 1.000001  max 1.009028
+h=0.001 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.400960  max|orig-theory| 1.60e-06
+h=0.010 K  orig   dTE/heat: mass-mean 1.400971  min 1.400053  max 1.412691
+h=0.010 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.010 K  cp_air dTE/heat: mass-mean 1.000661  min 1.000006  max 1.009033
+h=0.010 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.400960  max|orig-theory| 1.60e-05
+h=0.100 K  orig   dTE/heat: mass-mean 1.401071  min 1.400145  max 1.412778
+h=0.100 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.100 K  cp_air dTE/heat: mass-mean 1.000712  min 1.000053  max 1.009077
+h=0.100 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.400960  max|orig-theory| 1.60e-04
+dry cp/cv = 1.400042
+self-test pkz(dyn_core) vs pkz(fv_dynamics): max rel diff 1.55e-15
+h=0.001 K  orig   dTE/heat: mass-mean 1.401209  min 1.400043  max 1.410871
+h=0.001 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.001 K  cp_air dTE/heat: mass-mean 1.000833  min 1.000001  max 1.007735
+h=0.001 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.401207  max|orig-theory| 1.60e-06
+h=0.010 K  orig   dTE/heat: mass-mean 1.401219  min 1.400053  max 1.410880
+h=0.010 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.010 K  cp_air dTE/heat: mass-mean 1.000838  min 1.000006  max 1.007739
+h=0.010 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.401207  max|orig-theory| 1.60e-05
+h=0.100 K  orig   dTE/heat: mass-mean 1.401318  min 1.400144  max 1.410966
+h=0.100 K  fix    dTE/heat: mass-mean 1.000000  min 1.000000  max 1.000000
+h=0.100 K  cp_air dTE/heat: mass-mean 1.000889  min 1.000052  max 1.007783
+h=0.100 K  linear theory (R+cvm/(1+zvir qv))/(cv_air(1-qc)): mass-mean 1.401207  max|orig-theory| 1.60e-04
+dry cp/cv = 1.400042

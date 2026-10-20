@@ -1,0 +1,116 @@
+From c4aaef539872cda0b88720d463692ef989db7080 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 17:18:08 -0600
+Subject: [PATCH 02/13] Thompson: water at or below R1 goes to vapour instead
+ of being deleted
+
+Thompson treats hydrometeors at or below R1 (1e-12) as absent. On entry, the
+cloud, ice, rain, snow and graupel branches set them to zero, and rain left
+at or below R1 after the source and sink terms had its tendency overwritten
+to remove it; in both places the water left the model. Add it to vapour
+instead, with the matching latent heat (liquid with lvap at the local
+temperature, ice phases with lsub), as the final clip already does. A column
+whose entry exchange leaves vapour below the floor (negative condensate
+larger than the vapour) skips the no-microphysics early return, so the
+end-of-step refill handles it rather than mp_gt_driver's negative-vapour
+fixer, which sets the vapour to the mean of its neighbours. Such columns
+then run the full microphysics, and the refill may borrow vapour from other
+layers; the water involved is negligible.
+
+Port of ufs-community/ccpp-physics fix M5 (same code), where the deleted
+water was 2e-8 of the precipitation (C96 control_p8_ugwpv1, in-model
+Thompson meters). Its third part, in semi_lagrange_sedim, has no counterpart
+here. The entry branches take any input at or below R1, including negative
+values from advection; a negative input is then filled from vapour, as the
+scheme's silent fill did before, now with its latent heat. Built and run in
+MPAS together with the previous commit (numbers there).
+
+The no-early-return check (part of ufs-community/ccpp-physics fix M5, diff
+15) was ported with port_thompson_m5_noreturn_any.py and adapted to this
+copy (its indentation; same code). Not run in MPAS or a column harness; the
+added code is the WRF port's without graupel number and volume, verified in
+the WRF column harness. The in-MPAS numbers predate this check.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/physics_wrf/module_mp_thompson.F  | 22 +++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index b2d8bde..26e091a 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -1680,6 +1680,9 @@
+                   / am_r*lamc**bm_r)
+             if (.NOT. is_aerosol_aware) nc(k) = Nt_c
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qc1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+             rc(k) = R1
+@@ -1710,6 +1713,9 @@
+              ni(k) = cig(1)*oig2*ri(k)/am_i*lami**bm_i
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qi1d(k)
++            t1d(k) = t1d(k) - lsub*qi1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+             ri(k) = R1
+@@ -1739,6 +1745,9 @@
+                nr(k) = crg(2)*org3*rr(k)*lamr**bm_r / am_r
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qr1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+             rr(k) = R1
+@@ -1750,6 +1759,9 @@
+             rs(k) = qs1d(k)*rho(k)
+             L_qs(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qs1d(k)
++            t1d(k) = t1d(k) - lsub*qs1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+             L_qs(k) = .false.
+@@ -1759,6 +1771,9 @@
+             rg(k) = qg1d(k)*rho(k)
+             L_qg(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qg1d(k)
++            t1d(k) = t1d(k) - lsub*qg1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             rg(k) = R1
+             L_qg(k) = .false.
+@@ -1818,6 +1833,10 @@
+ !.. condense cloud water, just exit quickly!
+ !+---+-----------------------------------------------------------------+
+ 
++!..Entry exchanges can leave vapour below the floor; such a column goes through the end-of-step refill.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) no_micro = .false.
++      enddo
+       if (no_micro) return
+ 
+ !+---+-----------------------------------------------------------------+
+@@ -2801,6 +2820,9 @@
+               nrten(k) = (xnr-nr1d(k)*rho(k))*odts*orho
+            endif
+          else
++           ! rain left at or below R1 goes to vapour with its latent heat, not deleted
++           qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*dtsave)*odts
++           tten(k) = tten(k) - lvap(k)*ocp(k)*(qr1d(k) + qrten(k)*dtsave)*odts*(1-IFDRY)
+            qrten(k) = -qr1d(k)*odts
+            nrten(k) = -nr1d(k)*odts
+          endif
+-- 
+2.55.0
+

@@ -1,0 +1,134 @@
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-13 15:40:09.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -734,6 +734,7 @@
+                                   !< The default is .false.
+    logical :: fill_wz = .false.
+    logical :: fill_gfs = .true. ! default behavior
++   integer :: cpl_water_energy = 0 !< physics water-mass write: 1 PE, 2 vapour flow work, 4 sensible (bits)
+    logical :: check_negative = .false.   !< Whether to print the most negativ global value of microphysical tracers.
+    logical :: non_ortho = .true.
+    logical :: moist_phys = .true.     !< Run with moist physics
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-13 15:40:09.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -345,6 +345,7 @@
+      logical , pointer :: fill_dp
+      logical , pointer :: fill_wz
+      logical , pointer :: fill_gfs
++     integer , pointer :: cpl_water_energy
+      logical , pointer :: check_negative
+      logical , pointer :: non_ortho
+      logical , pointer :: adiabatic
+@@ -937,6 +938,7 @@
+        fill_dp                       => Atm%flagstruct%fill_dp
+        fill_wz                       => Atm%flagstruct%fill_wz
+        fill_gfs                      => Atm%flagstruct%fill_gfs
++       cpl_water_energy              => Atm%flagstruct%cpl_water_energy
+        check_negative                => Atm%flagstruct%check_negative
+        non_ortho                     => Atm%flagstruct%non_ortho
+        adiabatic                     => Atm%flagstruct%adiabatic
+@@ -1101,7 +1103,7 @@
+             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
+             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
+             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+-            consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
++            consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, cpl_water_energy, consv_am, RF_fast, &
+             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, rf_cutoff_w, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+             sa3dtke_dyco, &
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 14:15:11.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -151,9 +151,9 @@
+ !-----------------
+ use block_control_mod,      only: block_control_type
+ #ifdef OVERLOAD_R4
+-use constantsR4_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
++use constantsR4_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, cp_vapor
+ #else
+-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
++use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, cp_vapor
+ #endif
+ use physcons,               only: con_rd, con_fvirt
+ use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
+@@ -1635,6 +1635,9 @@
+      enddo
+ 
+ 
++     if (Atm(n)%flagstruct%cpl_water_energy > 0) call cpl_water_energy(nb, blen, Atm(n)%flagstruct%cpl_water_energy, &
++                                     flip_vc, rdt, IPD_Control, IPD_Statein, IPD_Stateout, Atm_block)
++
+      do k = 1, npz
+        if(flip_vc) then
+          k1 = npz+1-k !reverse the k direction
+@@ -2653,4 +2656,72 @@
+ 
+   end subroutine fill_nested_grid_cpl
+ 
++ subroutine cpl_water_energy(nb, blen, ibits, flip_vc, rdt, IPD_Control, IPD_Statein, IPD_Stateout, Atm_block)
++   ! Heating that makes the physics water-mass write energy-consistent in FV3's frame (cvm*T + phi + K
++   ! + Kirchhoff latent terms; water leaves/enters at the surface at T(npz), phis). Called before the write.
++   integer, intent(in) :: nb, blen, ibits
++   logical, intent(in) :: flip_vc
++   real(kind=kind_phys), intent(in) :: rdt
++   type(IPD_control_type), intent(in) :: IPD_Control
++   type(GFS_statein_type), intent(in) :: IPD_Statein
++   type(GFS_stateout_type), intent(in) :: IPD_Stateout
++   type(block_control_type), intent(in) :: Atm_block
++   real(kind=kind_phys), parameter :: c_liq = 4.1855e+3, c_ice = 1972., t_frz = 273.15  ! = fv_mapz c_liq, c_ice
++   real(kind=kind_phys) :: dpn(npz), dm(npz), dmv(npz), tk(npz), phib(npz+1), ftop(npz+1)
++   real(kind=kind_phys) :: qpe(npz), qfw(npz), qse(npz), qp, cb, e
++   integer :: ix, i, j, im, k, k1, n, nwat
++   n = mygrid
++   nwat = Atm(n)%flagstruct%nwat
++   do ix = 1, blen
++      i = Atm_block%index(nb)%ii(ix)
++      j = Atm_block%index(nb)%jj(ix)
++      im = IPD_control%chunk_begin(nb)+ix-1
++      phib(npz+1) = Atm(n)%phis(i,j)
++      do k1 = npz, 1, -1
++         phib(k1) = phib(k1+1) - Atm(n)%grav_var(i,j,k1)*Atm(n)%delz(i,j,k1)
++      enddo
++      do k1 = 1, npz
++         if (flip_vc) then
++            k = npz+1-k1
++            qp = IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1)
++         else
++            k = k1
++            qp = IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k)
++         endif
++         ! same layer mass the write produces; dm, dmv: water and vapour mass change (Pa)
++         dpn(k1) = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + sum(qp*IPD_Stateout%gq0(im,k,1:nwat))
++         dm(k1) = dpn(k1) - Atm(n)%delp(i,j,k1)
++         dmv(k1) = qp*IPD_Stateout%gq0(im,k,sphum) - Atm(n)%delp(i,j,k1)*Atm(n)%q(i,j,k1,sphum)
++         tk(k1) = Atm(n)%pt(i,j,k1)
++      enddo
++      ! net downward water flux through the top of each layer (Pa); ftop(npz+1) = P - E
++      ftop(1) = 0.
++      do k1 = 1, npz
++         ftop(k1+1) = ftop(k1) - dm(k1)
++      enddo
++      qse(:) = 0.
++      do k1 = 1, npz
++         qpe(k1) = 0.5*(ftop(k1) + ftop(k1+1))*(phib(k1) - phib(k1+1))
++         qfw(k1) = rvgas*tk(k1)*dmv(k1)
++      enddo
++      do k1 = 1, npz-1
++         if (ftop(k1+1) >= 0.) then
++            cb = c_liq
++            if (tk(k1) < t_frz) cb = c_ice
++            qse(k1+1) = qse(k1+1) - ftop(k1+1)*cb*(tk(k1+1) - tk(k1))
++         else
++            qse(k1) = qse(k1) - ftop(k1+1)*cp_vapor*(tk(k1+1) - tk(k1))
++         endif
++      enddo
++      do k1 = 1, npz
++         e = 0.
++         if (iand(ibits, 1) /= 0) e = e + qpe(k1)
++         if (iand(ibits, 2) /= 0) e = e + qfw(k1)
++         if (iand(ibits, 4) /= 0) e = e + qse(k1)
++         ! fv_update_phys injects cp_air*t_dt*dt*delp_new/grav
++         t_dt(i,j,k1) = t_dt(i,j,k1) + e*rdt/(cp_air*dpn(k1))
++      enddo
++   enddo
++ end subroutine cpl_water_energy
++
+ end module atmosphere_mod

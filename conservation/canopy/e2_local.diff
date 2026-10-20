@@ -1,0 +1,233 @@
+diff -ruN a/NOAHMP-interface/noahmp/src/module_sf_noahmplsm.F90 b/NOAHMP-interface/noahmp/src/module_sf_noahmplsm.F90
+--- a/NOAHMP-interface/noahmp/src/module_sf_noahmplsm.F90	2026-10-13 14:39:58
++++ b/NOAHMP-interface/noahmp/src/module_sf_noahmplsm.F90	2026-10-18 03:09:29
+@@ -13,8 +13,10 @@
+ 
+   public  :: noahmp_options
+   public  :: noahmp_sflx
++  public  :: noahmp_options_fwet
+   public  :: sfcdif4
+   public  :: psi_init
++  integer, save :: opt_fwt = 0        ! canopy wetted fraction rule (noahmp_options_fwet)
+ 
+ 
+   private :: atm
+@@ -411,6 +413,32 @@
+ 
+ 
+ contains
++
++  !> canopy wetted fraction rule (gfs_physics_nml noahmp_fwet_opt); 0 = stock: any ice sets fwet from the ice alone
++  subroutine noahmp_options_fwet(fwt)
++    integer, intent(in) :: fwt
++    opt_fwt = fwt
++  end subroutine noahmp_options_fwet
++
++  !> fill fraction of a canopy holding both phases, before the 0.667 power (opt_fwt 1-3)
++  pure function canopy_wetfrac(canliq, canice, maxliq, maxsno) result(fw)
++    real (kind=kind_phys), intent(in) :: canliq, canice, maxliq, maxsno
++    real (kind=kind_phys) :: fw, wl, wi, fl, fi
++    wl = max(0.,canliq)
++    wi = max(0.,canice)
++    fl = min(wl / max(maxliq,1.e-06), 1.)
++    fi = min(wi / max(maxsno,1.e-06), 1.)
++    select case (opt_fwt)
++    case (1)       ! each phase's fill fraction weighted by its share of the canopy water
++      fw = 0.
++      if (wl + wi > 0.) fw = (wl*fl + wi*fi) / (wl + wi)
++    case (2)       ! the larger fill fraction
++      fw = max(fl, fi)
++    case default   ! 3: the phase with more mass (NCAR Noah-MP v5 CanopyHydrologyMod)
++      fw = fl
++      if (wi > 0. .and. wi >= wl) fw = fi
++    end select
++  end function canopy_wetfrac
+ !
+ !== begin noahmp_sflx ==============================================================================
+ 
+@@ -1386,6 +1414,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! total canopy water
+@@ -7343,6 +7372,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! phase change
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 02:08:21
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 03:09:29
+@@ -1161,6 +1161,7 @@
+     integer              :: iopt_stc  !snow/soil temperature time scheme (only layer 1)
+     integer              :: iopt_trs  !thermal roughness scheme (1-z0h=z0m; 2-czil; 3-ec;4-kb inversed)
+     integer              :: iopt_diag !2m t/q diagnostic approach (1->external GFS sfc_diag 2->original NoahMP 2-title 3->NoahMP
++    integer              :: noahmp_fwet_opt    !< Noah-MP canopy wetted fraction: 0 stock, 1 mass-weighted, 2 larger, 3 dominant phase
+     integer              :: noahmp_canopy_heat !< Noah-MP canopy heat: 0 stock, 1 massless canopy, 2 heat storage over the step
+     logical              :: precip_phase_host  !< flag: surfaces take the host convective snow decision and the atmosphere pays hfus for it
+     logical              :: noahmp_sw_radshare !< flag: Noah-MP absorbs the radiation share of net shortwave for the land
+@@ -3862,6 +3863,7 @@
+     integer              :: iopt_trs       =  2  !thermal roughness scheme (1-z0h=z0m; 2-czil; 3-ec;4-kb reversed)
+     integer              :: iopt_diag      =  2  !2m t/q diagnostic approach (1->external GFS sfc_diag 2->original NoahMP 2-title
+     integer              :: noahmp_canopy_heat = 0
++    integer              :: noahmp_fwet_opt    = 0
+     logical              :: precip_phase_host  = .false.
+     logical              :: noahmp_sw_radshare = .false.
+     logical              :: lw_sfc_consistent  = .false.
+@@ -4357,7 +4359,7 @@
+                                iopt_trs, iopt_diag,                                         &
+                                noahmp_canopy_heat, precip_phase_host, noahmp_sw_radshare,   &
+                                lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect,    &
+-                               noahmp_kirchhoff,                                            &
++                               noahmp_kirchhoff, noahmp_fwet_opt,                           &
+                           !    RUC lsm options
+                                add_fire_heat_flux,                                          &
+                                mosaic_lu, mosaic_soil, isncond_opt, isncovr_opt,            &
+@@ -5277,6 +5279,7 @@
+     Model%sfc_evap_enthalpy = sfc_evap_enthalpy
+     Model%noahmp_heat_advect = noahmp_heat_advect
+     Model%noahmp_kirchhoff = noahmp_kirchhoff
++    Model%noahmp_fwet_opt = noahmp_fwet_opt
+ 
+ ! RUC lsm options
+     Model%mosaic_lu        = mosaic_lu
+@@ -7322,6 +7325,7 @@
+         print *, ' sfc_evap_enthalpy : ', Model%sfc_evap_enthalpy
+         print *, ' noahmp_heat_advect : ', Model%noahmp_heat_advect
+         print *, ' noahmp_kirchhoff : ', Model%noahmp_kirchhoff
++        print *, ' noahmp_fwet_opt : ', Model%noahmp_fwet_opt
+       elseif (Model%lsm == Model%lsm_ruc) then
+         print *,' RUC Land Surface Model used'
+         print *, 'The Physics options are'
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 02:08:21
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 03:09:29
+@@ -5755,6 +5755,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[noahmp_fwet_opt]
++  standard_name = control_for_noahmp_canopy_wetted_fraction
++  long_name = Noah-MP canopy wetted fraction rule
++  units = index
++  dimensions = ()
++  type = integer
+ [use_ufo]
+   standard_name = flag_for_gcycle_surface_option
+   long_name = flag for gcycle surface option
+diff -ruN a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 02:08:21
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90	2026-10-18 03:09:29
+@@ -19,8 +19,10 @@
+   integer, save :: opt_cnh = 0        ! canopy heat: 0 stock, 1 massless canopy, 2 storage over the step
+   logical, save :: opt_kir = .false.  ! phase change remainder heats the layer at its new composition
+   logical, save :: opt_adv = .false.  ! soil water moved between layers carries its sensible heat
++  integer, save :: opt_fwt = 0        ! canopy wetted fraction rule (noahmp_options_fwet)
+   real (kind=kind_phys), save :: cl_f = 4185.5, cpv_f = 1846.0, t0_f = 273.15  ! frame F constants
+   public  :: noahmp_options_energy
++  public  :: noahmp_options_fwet
+   public  :: sfcdif4
+   public  :: psi_init
+ 
+@@ -436,6 +438,32 @@
+     t0_f = t0
+   end subroutine noahmp_options_energy
+ 
++  !> canopy wetted fraction rule (gfs_physics_nml noahmp_fwet_opt); 0 = stock: any ice sets fwet from the ice alone
++  subroutine noahmp_options_fwet(fwt)
++    integer, intent(in) :: fwt
++    opt_fwt = fwt
++  end subroutine noahmp_options_fwet
++
++  !> fill fraction of a canopy holding both phases, before the 0.667 power (opt_fwt 1-3)
++  pure function canopy_wetfrac(canliq, canice, maxliq, maxsno) result(fw)
++    real (kind=kind_phys), intent(in) :: canliq, canice, maxliq, maxsno
++    real (kind=kind_phys) :: fw, wl, wi, fl, fi
++    wl = max(0.,canliq)
++    wi = max(0.,canice)
++    fl = min(wl / max(maxliq,1.e-06), 1.)
++    fi = min(wi / max(maxsno,1.e-06), 1.)
++    select case (opt_fwt)
++    case (1)       ! each phase's fill fraction weighted by its share of the canopy water
++      fw = 0.
++      if (wl + wi > 0.) fw = (wl*fl + wi*fi) / (wl + wi)
++    case (2)       ! the larger fill fraction
++      fw = max(fl, fi)
++    case default   ! 3: the phase with more mass (NCAR Noah-MP v5 CanopyHydrologyMod)
++      fw = fl
++      if (wi > 0. .and. wi >= wl) fw = fi
++    end select
++  end function canopy_wetfrac
++
+   subroutine noahmp_sflx (parameters, &
+                    iloc    , jloc    , lat     , yearlen , julian  , cosz    , & ! in : time/space-related
+                    dt      , dx      , dz8w    , nsoil   , zsoil   , nsnow   , & ! in : model configuration 
+@@ -1432,6 +1460,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! total canopy water
+@@ -7545,6 +7574,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! phase change
+diff -ruN a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 02:08:21
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 03:09:29
+@@ -455,7 +455,7 @@
+       lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect, noahmp_kirchhoff, &
+       lsswr, landfrac, adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd,               &
+       albdvis_rad, albdnir_rad, albivis_rad, albinir_rad, adjsfculw_land,       &
+-      hflx_evap_enth, con_cliq, con_cvap, con_t0c                                &
++      hflx_evap_enth, con_cliq, con_cvap, con_t0c, noahmp_fwet_opt               &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -537,6 +537,7 @@
+   integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
+   ! energy options (gfs_physics_nml) and what they need; optional, so external callers are unaffected
+   integer, optional, intent(in) :: noahmp_canopy_heat
++  integer, optional, intent(in) :: noahmp_fwet_opt  ! canopy wetted fraction rule (0 stock)
+   logical, optional, intent(in) :: precip_phase_host, noahmp_sw_radshare, lw_sfc_consistent, &
+                                    sfc_evap_enthalpy, noahmp_heat_advect, noahmp_kirchhoff, lsswr
+   real(kind=kind_phys), dimension(:), optional, intent(in)    :: landfrac, adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd
+@@ -998,6 +999,11 @@
+   adv_d = .false.
+   if (present(noahmp_heat_advect)) adv_d = noahmp_heat_advect
+   call noahmp_options_energy(opt_cnh_d, kir_d, adv_d, con_cliq, con_cvap, con_t0c)
++  if (present(noahmp_fwet_opt)) then
++    call noahmp_options_fwet(noahmp_fwet_opt)
++  else
++    call noahmp_options_fwet(0)
++  endif
+   ! the radiation ran this step with the land albedos Noah-MP left last step: keep them
+   if (present(albdvis_rad) .and. present(lsswr) .and. first_iter) then
+     if (lsswr) then
+diff -ruN a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta	2026-10-18 02:08:21
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta	2026-10-18 03:09:29
+@@ -1805,3 +1805,11 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[noahmp_fwet_opt]
++  standard_name = control_for_noahmp_canopy_wetted_fraction
++  long_name = Noah-MP canopy wetted fraction rule
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True

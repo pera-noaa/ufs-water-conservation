@@ -1,0 +1,164 @@
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+@@ -11,7 +11,7 @@
+   real(kind=8), allocatable, save :: emw(:,:), emdw(:,:)   ! previous-probe layer water; segment layer change
+   real(kind=8), save :: emsx(emnp, emnc) = 0.d0            ! segment sensible exchange S_cross (cp_v for all flux)
+   real(kind=8), save :: emg(14, emnp) = 0.d0, emx(12) = 0.d0, emf(16, emnc) = 0.d0
+-  real(kind=8), save :: emlp(emnc) = 0.d0, emlt(emnc) = 0.d0, emla(emnc) = 0.d0, eml(4) = 0.d0  ! lag meter
++  real(kind=8), save :: emlp(emnc) = 0.d0, emlt(emnc) = 0.d0, emla(emnc) = 0.d0, eml(8) = 0.d0  ! lag meter
+   integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
+ contains
+   subroutine em_probe(p, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90
+@@ -9,7 +9,8 @@
+ !! \htmlinclude em_p01_run.html
+ !!
+   subroutine em_p01_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
+-       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, tgrs, errmsg, errflg)
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, tgrs, garea, frland, fice, tprcp, srflag, &
++       tprcp_t1, sfc_precip_t1_carry, errmsg, errflg)
+     integer, intent(in) :: im
+     integer, intent(in) :: levs
+     integer, intent(in) :: kdt
+@@ -34,12 +35,35 @@
+     real(kind=kind_phys), intent(in) :: con_hvap
+     real(kind=kind_phys), intent(in) :: con_hfus
+     real(kind=kind_phys), intent(in) :: tgrs(:,:)
++    real(kind=kind_phys), intent(in) :: garea(:), frland(:), fice(:), tprcp(:), srflag(:), tprcp_t1(:)
++    logical, intent(in) :: sfc_precip_t1_carry
++    integer :: jj
++    real(kind=8) :: a, t1, tu, cps
+     character(len=*), intent(out) :: errmsg
+     integer, intent(out) :: errflg
+     integer :: j0, i
+ 
+     call em_probe(1, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                   ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, tgrs, j0)
++    ! pl1 meter: step N's precipitation (emlp, emlt from em_p12 of N) as the surfaces of N+1 will book it
++    do i = 1, im
++       jj = j0 + i
++       a = garea(i)
++       t1 = tgrs(i,1)
++       tu = t1
++       if (sfc_precip_t1_carry .and. tprcp_t1(i) > 0.d0) tu = tprcp_t1(i)
++       if (emla(jj) == a) then
++          eml(1) = eml(1) + emlp(jj)*(tu - emlt(jj))*a
++          eml(2) = eml(2) + emlp(jj)*(tu - emlt(jj))*a*frland(i)
++          eml(5) = eml(5) + emlp(jj)*(tu - emlt(jj))*a*(1.d0 - frland(i))*fice(i)
++          eml(6) = eml(6) + emlp(jj)*(t1 - emlt(jj))*a
++          cps = 1000.d0*tprcp(i)*(4185.5d0*(1.d0 - srflag(i)) + 1972.d0*srflag(i))
++          eml(7) = eml(7) + abs(cps - emlp(jj))*a
++          eml(8) = eml(8) + emlp(jj)*a
++       else
++          eml(3) = eml(3) + 1.d0
++       endif
++    enddo
+ 
+     errmsg = ''
+     errflg = 0
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta
+@@ -189,6 +189,61 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[garea]
++  standard_name = cell_area
++  long_name = garea
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[frland]
++  standard_name = land_area_fraction
++  long_name = frland
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[fice]
++  standard_name = sea_ice_area_fraction_of_sea_area_fraction
++  long_name = fice
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[tprcp]
++  standard_name = nonnegative_lwe_thickness_of_precipitation_amount_on_dynamics_timestep
++  long_name = tprcp
++  units = m
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[srflag]
++  standard_name = precipitation_type
++  long_name = srflag
++  units = flag
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = tprcp_t1
++  units = K
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[sfc_precip_t1_carry]
++  standard_name = flag_for_surface_precipitation_at_fallout_temperature
++  long_name = sfc_precip_t1_carry
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
+@@ -48,7 +48,7 @@
+     ! segment s = probe s -> s+1; fluxes per segment (J m-2, kg m-2), residual r = dE - F
+     real(kind=8) :: d(8), rf, bc, t1, pd, ps, pl, pi, ev, e0, e1, f, w, frad, fpbl, fmp, wpbl, wmp, wcv, a
+     integer :: s, jj, ierr
+-    real(kind=8) :: buf(14*emnp+12), rbuf(14*emnp+12), lv00, li00, lbuf(4), lrbuf(4), cs
++    real(kind=8) :: buf(14*emnp+12), rbuf(14*emnp+12), lv00, li00, lbuf(8), lrbuf(8), cs
+     if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
+        buf(1:14*emnp) = reshape(emg, (/14*emnp/))
+        buf(14*emnp+1:) = emx
+@@ -59,12 +59,12 @@
+           enddo
+           write(*,'(a,i6,12es25.16)') 'EMF ', emkdt(12), buf(14*emnp+1:)
+           lbuf = eml
+-          call MPI_Reduce(MPI_IN_PLACE, lbuf, 4, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
+-          write(*,'(a,i6,4es25.16)') 'EML ', emkdt(12), lbuf
++          call MPI_Reduce(MPI_IN_PLACE, lbuf, 8, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          write(*,'(a,i6,8es25.16)') 'EML ', emkdt(12), lbuf
+        else
+           call MPI_Reduce(buf, rbuf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
+           lbuf = eml
+-          call MPI_Reduce(lbuf, lrbuf, 4, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          call MPI_Reduce(lbuf, lrbuf, 8, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
+        endif
+        emg = 0.d0
+        emx = 0.d0
+@@ -145,12 +145,7 @@
+        emx(11) = emx(11) + (emf(10, jj) + emf(12, jj))*a
+        emx(12) = emx(12) + a
+        cs = emf(16, jj)
+-       if (emla(jj) == a) then
+-          eml(1) = eml(1) + emlp(jj)*(t1 - emlt(jj))*a
+-          eml(2) = eml(2) + emlp(jj)*(t1 - emlt(jj))*a*frland(i)
+-       else
+-          eml(3) = eml(3) + 1.d0
+-       endif
++       ! pl1 meter: the lag of P(N) is taken at probe 1 of N+1 (em_p01), before the surfaces
+        eml(4) = eml(4) + cs*(4185.5d0 - 1972.d0)*(t1 - 273.15d0)*a
+        emlp(jj) = 4185.5d0*(pl + pd + ps - cs) + 1972.d0*(pi + cs)
+        emlt(jj) = t1

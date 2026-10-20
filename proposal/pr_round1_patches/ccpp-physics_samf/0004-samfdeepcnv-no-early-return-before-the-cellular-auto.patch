@@ -1,0 +1,107 @@
+From 59b7cf394c8facff1a4ccee1ab49479c8bcd7a97 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:56 -0500
+Subject: [PATCH 4/4] samfdeepcnv: no early return before the
+ cellular-automaton trigger
+
+Six early returns (taken when no column in the block is still convecting)
+sit before the ca_trigger re-enable, so whether a column convects depends on
+the other columns in its block, and the forecast on the decomposition.
+
+Flag the columns the CA trigger can turn on (caon) and skip the early
+returns while any is set.
+
+Measured: control_p8_mynn 3x8 vs 4x6, 90 of 126 atmf024 variables differ ->
+0. Impact below noise (rms 0.3-0.7x). control_p8 also runs ca_trigger; the
+case did not arise in its 24 h.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/CONV/SAMF/samfdeepcnv.f | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 99f0caad..6644ec4d 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -301,6 +301,8 @@ c  cloud water
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
+ !
+       logical do_aerosols, totflg, cnvflg(im), asqecflg(im), flg(im)
++!  columns the cellular-automaton trigger can turn on again (ca_trigger)
++      logical caon(im)
+ !
+ !    asqecflg: flag for the quasi-equilibrium assumption of Arakawa-Schubert
+ !
+@@ -401,6 +403,9 @@ c
+       wet_dep = 0.0_conv_wp
+ !
+       do i=1,im
++        caon(i) = .false.
++        if(do_ca .and. ca_trigger) caon(i) =
++     &    real(ca_deep(i), kind=conv_wp) > real(nthresh, kind=conv_wp)
+         cnvflg(i) = .true.
+         if(do_mynnedmf) then
+             if(real(maxMF(i), kind=conv_wp) .gt. 0.0_conv_wp)
+@@ -837,7 +842,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -900,7 +907,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -957,7 +966,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1007,7 +1018,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1432,7 +1445,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i = 1, im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif
+@@ -1518,7 +1533,9 @@ c
+       if(.not.progomega)then
+          totflg = .true.
+          do i=1,im
++!  no early return while a later ca_trigger re-enable can still turn a column on
+             totflg = totflg .and. (.not. cnvflg(i))
++     &               .and. (.not. caon(i))
+          enddo
+          if(totflg) return
+       endif

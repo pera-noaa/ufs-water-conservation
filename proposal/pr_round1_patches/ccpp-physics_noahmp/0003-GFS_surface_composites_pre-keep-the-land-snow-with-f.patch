@@ -1,0 +1,43 @@
+From 6d1dc859cce75ab52584c01d1099856a7c27864f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:49 -0500
+Subject: [PATCH 03/12] GFS_surface_composites_pre: keep the land snow with
+ frac_grid
+
+composites_post sets weasd = txl*weasd_lnd + txi*weasd_ice; composites_pre then
+set weasd_lnd = weasd for every LSM but RUC. With frac_grid weasd_lnd is the
+persistent land value (Sfcprop%weasdl, initialised at cold start by dividing
+out the land and ice fractions), so coastal land snow was diluted every step.
+Noah-MP rebuilds layered snow from its snow layers (which made its water
+check, errwat, report +16 mm per land column per 6 h); thin snow was lost.
+
+Skip the overwrite with frac_grid, as already done for RUC.
+
+Measured with in-model meters (with the single-step fix): Noah-MP's errwat
+falls from +5 kg/m2 per 6 h (global mean) to -6e-5, and nothing outside
+Noah-MP changes land water any more.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ .../UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90             | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90 b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90
+index b6a52d16..8a6ad84f 100644
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90
+@@ -271,7 +271,8 @@ contains
+         endif
+         if (dry(i)) then                   ! Land
+           uustar_lnd(i) = uustar(i)
+-           if(lsm /= lsm_ruc) weasd_lnd(i) = weasd(i)
++           ! with frac_grid, weasd is the cell mean and weasd_lnd the persistent land value (Sfcprop%weasdl)
++           if(lsm /= lsm_ruc .and. .not. frac_grid) weasd_lnd(i) = weasd(i)
+            tsurf_lnd(i) = tsfcl(i)
+         ! DH*
+         else
+-- 
+2.31.1
+

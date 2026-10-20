@@ -1,0 +1,119 @@
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 01:11:30.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 01:11:35.000000000 -0500
+@@ -1248,6 +1248,7 @@
+     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
+     logical              :: dspheat         !< flag for tke dissipative heating
+     logical              :: dspheat_ke      !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
++    logical              :: pbl_kirchhoff   !< PBL condensate filler at FV3's L_h(T)
+     logical              :: sa3dtke         !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl        !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg       !< flag for canopy heat storage parameterization
+@@ -3915,6 +3916,7 @@
+     logical              :: do_ysu         = .false.                  !< flag for YSU vertical turbulent mixing scheme
+     logical              :: dspheat        = .false.                  !< flag for tke dissipative heating
+     logical              :: dspheat_ke     = .false.                  !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
++    logical              :: pbl_kirchhoff  = .false.                  !< PBL condensate filler at FV3's L_h(T)
+     logical              :: sa3dtke        = .false.                  !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl       = .false.                  !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg      = .false.                  !< flag for canopy heat storage parameterization
+@@ -4355,7 +4357,7 @@
+                                betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+                                pdfcld, shcnvcw, redrag,                                     &
+                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
+-                               shinhong, do_ysu, dspheat, dspheat_ke, lheatstrg, lseaspray, cnvcld,     &
++                               shinhong, do_ysu, dspheat, dspheat_ke, pbl_kirchhoff, lheatstrg, lseaspray, cnvcld,     &
+                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
+                                isatmedmf, conv_cf_opt, do_deep, jcap, cscale,               &
+                                cs_parm, flgmin, cgwf, ccwf, cdmbgwd, alpha_fd,              &
+@@ -5319,6 +5321,7 @@
+     Model%do_ysu            = do_ysu
+     Model%dspheat           = dspheat
+     Model%dspheat_ke        = dspheat_ke
++    Model%pbl_kirchhoff     = pbl_kirchhoff
+     Model%hurr_pbl          = hurr_pbl
+     Model%lheatstrg         = lheatstrg
+     Model%lseaspray         = lseaspray
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 01:11:30.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 01:11:35.000000000 -0500
+@@ -5927,6 +5927,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[pbl_kirchhoff]
++  standard_name = flag_for_pbl_kirchhoff_latent_heat
++  long_name = flag for the PBL condensate filler at the host latent heat L_h(T)
++  units = flag
++  dimensions = ()
++  type = logical
+ [sa3dtke]
+   standard_name = do_scale_aware_3d_tke
+   long_name = flag for scale-aware 3d tke scheme
+diff -ruN a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-18 01:11:29.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F	2026-10-18 01:11:35.000000000 -0500
+@@ -97,7 +97,7 @@
+      &     prsi,del,prsl,prslk,phii,phil,delt,tte_edmf,                 &
+      &     dspheat,dusfc,dvsfc,dtsfc,dqsfc,hpbl,dkt,dku,tkeh,           &
+      &     kinver,xkzm_m,xkzm_h,xkzm_s,dspfac,bl_upfr,bl_dnfr,          &
+-     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,                 &
++     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,pbl_kirchhoff,   &
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+@@ -168,6 +168,7 @@
+       logical, intent(in)  :: dspheat
+ !  flag for dissipative heating = resolved KE loss of the momentum solve
+       logical, intent(in)  :: dspheat_ke
++      logical, intent(in)  :: pbl_kirchhoff
+       real(kind=kind_phys), intent(out) :: ten_t(:,:),                  &
+      &                                     ten_u(:,:), ten_v(:,:)
+ !  flag for TTE-EDMF scheme
+@@ -2705,10 +2706,14 @@
+                 if(tem >= 0.0) then
+                   f2(i,k) = tem
+                   f1(i,k) = f1(i,k) - elocp * f2(i,k+is)
++                  if (pbl_kirchhoff) f1(i,k) = f1(i,k)
++     &   - (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k+is)
+                   f2(i,k+is) = 0.
+                 elseif (f2(i,k) > 0.0) then
+                   f2(i,k+is) = tem
+                   f1(i,k) = f1(i,k) + elocp * f2(i,k)
++                  if (pbl_kirchhoff) f1(i,k) = f1(i,k)
++     &   + (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k)
+                   f2(i,k) = 0.
+                 endif
+               endif
+@@ -2742,10 +2747,14 @@
+                 if(tem >= 0.0) then
+                   f2(i,k) = tem
+                   f1(i,k) = f1(i,k) - elocp * f2(i,k+is)
++                  if (pbl_kirchhoff) f1(i,k) = f1(i,k)
++     &   - (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k+is)
+                   f2(i,k+is) = 0.
+                 elseif (f2(i,k) > 0.0) then
+                   f2(i,k+is) = tem
+                   f1(i,k) = f1(i,k) + elocp * f2(i,k)
++                  if (pbl_kirchhoff) f1(i,k) = f1(i,k)
++     &   + (1846.d0-4185.5d0)*(t1(i,k)-273.15d0)/cp*f2(i,k)
+                   f2(i,k) = 0.
+                 endif
+               endif
+diff -ruN a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-18 01:11:29.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta	2026-10-18 01:11:35.000000000 -0500
+@@ -492,6 +492,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[pbl_kirchhoff]
++  standard_name = flag_for_pbl_kirchhoff_latent_heat
++  long_name = flag for the PBL condensate filler at the host latent heat L_h(T)
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [sa3dtke]
+   standard_name = do_scale_aware_3d_tke
+   long_name = flag for scale-aware 3d tke scheme

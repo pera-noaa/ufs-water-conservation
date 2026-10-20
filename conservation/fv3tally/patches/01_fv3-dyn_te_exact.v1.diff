@@ -1,0 +1,421 @@
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90
+@@ -103,7 +103,7 @@
+ !   </tr>
+ ! </table>
+ 
+-  use constants_mod,      only: rdgas, radius, cp_air, pi, grav
++  use constants_mod,      only: rdgas, radius, cp_air, pi, grav, rvgas
+   use mpp_mod,            only: mpp_pe
+   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
+                                 domain2d
+@@ -292,6 +292,9 @@
+     integer :: i,j,k, it, iq, n_con, nf_ke
+     integer :: iep1, jep1
+     real    :: beta, beta_d, d_con_k, damp_w, damp_t, kgb, cv_air
++    real    :: qv, ql, qs, cvm, tm   ! dyn_te_exact bit 1
++    integer :: iliq, irain, iice, isnow, igrp
++    real, parameter :: cv_vap = 3.*rvgas, c_ice = 1972., c_liq = 4.1855e+3  ! as fv_mapz
+     real    :: dt, dt2, rdt
+     real    :: d2_divg
+     real    :: k1k, dtmp, delt
+@@ -900,6 +903,8 @@
+ 
+        endif
+ 
++       if ( btest(flagstruct%dyn_te_exact,5) ) d_con_k = flagstruct%d_con   ! heat the sponge-layer damping too
++
+        if( (.not.flagstruct%use_old_omega) .and. last_step ) then
+ ! Average horizontal "convergence" to cell center
+             do j=js,je
+@@ -1494,6 +1499,35 @@
+              endif
+           enddo
+        enddo
++#if defined(MOIST_CAPPA) && defined(USE_COND) && !defined(MULTI_GASES)
++    elseif ( btest(flagstruct%dyn_te_exact,0) ) then
++! heat_source (delp*J/kg) at cvm and fixed delz: T = pt*pkz/((1+zvir*qv)*(1-qc)) goes as pt**(1/(1-cappa)),
++! so pt + dtmp/pkz would heat by dtmp/(1-cappa), i.e. cp/cv times dtmp
++       iliq = get_tracer_index(MODEL_ATMOS, 'liq_wat'); irain = get_tracer_index(MODEL_ATMOS, 'rainwat')
++       iice = get_tracer_index(MODEL_ATMOS, 'ice_wat'); isnow = get_tracer_index(MODEL_ATMOS, 'snowwat')
++       igrp = get_tracer_index(MODEL_ATMOS, 'graupel')
++!$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pkz,cappa,rdg,delp,delz,pt, &
++!$OMP                                  heat_source,cv_air,bdt,q,sphum,zvir,iliq,irain,iice,isnow,igrp) &
++!$OMP                          private(dtmp, delt, qv, ql, qs, cvm, tm)
++       do k=1,n_con
++          delt = abs(bdt*flagstruct%delt_max)
++          if ( k == 1 ) delt = 0.1*delt
++          if ( k == 2 ) delt = 0.5*delt
++          do j=js,je
++             do i=is,ie
++                pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
++                qv = q(i,j,k,sphum)
++                ql = 0.; if (iliq > 0) ql = ql + q(i,j,k,iliq); if (irain > 0) ql = ql + q(i,j,k,irain)
++                qs = 0.; if (iice > 0) qs = qs + q(i,j,k,iice); if (isnow > 0) qs = qs + q(i,j,k,isnow)
++                if (igrp > 0) qs = qs + q(i,j,k,igrp)
++                cvm = (1.-(qv+ql+qs))*cv_air + qv*cv_vap + ql*c_liq + qs*c_ice
++                tm = pt(i,j,k)*pkz(i,j,k)/((1.+zvir*qv)*(1.-(ql+qs)))
++                dtmp = heat_source(i,j,k) / (cvm*delp(i,j,k))
++                pt(i,j,k) = pt(i,j,k)*exp((1.-cappa(i,j,k))*log(1.+sign(min(delt, abs(dtmp)),dtmp)/tm))
++             enddo
++          enddo
++       enddo
++#endif
+     else
+ !$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pkz,cappa,rdg,delp,delz,pt, &
+ !$OMP                                  heat_source,k1k,cv_air,bdt) &
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+@@ -682,6 +682,8 @@
+    real    :: consv_te = 0.   !< Fraction of total energy lost during the adiabatic integration
+    logical :: cpl_ke_heating = .false. !< heat the KE mismatch of the A- to D-grid wind-increment mapping
+    integer :: cpl_ke_smooth = 0  !< passes of a conservative 5-point smoother on that heating (0: per cell)
++   integer :: dyn_te_exact = 0   !< dycore TE accounting (bits): 1 d_con heat at cvm, fixed volume; 2 top-layer w heat
++                                 !< in delp units; 4 w heat on the w it damps; 8 Rayleigh heat = D-grid KE loss at cvm
+                               !< between calls of the physics, to be added backglobally as heat;
+                               !< essentially the strength of the energy fixer in the physics.
+                               !< Note that this is a global energy fixer and cannot add back energy
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+@@ -334,6 +334,7 @@
+      real    , pointer :: consv_te
+      logical , pointer :: cpl_ke_heating
+      integer , pointer :: cpl_ke_smooth
++     integer , pointer :: dyn_te_exact
+      real    , pointer :: tau
+      real    , pointer :: tau_w
+      real    , pointer :: fast_tau_w_sec
+@@ -931,6 +932,7 @@
+        consv_te                      => Atm%flagstruct%consv_te
+        cpl_ke_heating                => Atm%flagstruct%cpl_ke_heating
+        cpl_ke_smooth                 => Atm%flagstruct%cpl_ke_smooth
++       dyn_te_exact                  => Atm%flagstruct%dyn_te_exact
+        tau                           => Atm%flagstruct%tau
+        tau_w                         => Atm%flagstruct%tau_w
+        fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
+@@ -1129,7 +1131,8 @@
+             write_coarse_diagnostics,&
+             write_only_coarse_intermediate_restarts, &
+             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, increment_file_on_native_grid, &
+-            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum, cpl_ke_heating, cpl_ke_smooth
++            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum, cpl_ke_heating, cpl_ke_smooth, &
++            dyn_te_exact
+ 
+        ! Read FVCORE namelist
+        read (input_nml_file,fv_core_nml,iostat=ios)
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
+@@ -602,7 +602,22 @@
+                   q, ncnst,  &
+ #endif
+                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
+-                .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
++                .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd, &
++                qw=q, nqw=ncnst, te_exact=btest(flagstruct%dyn_te_exact,3))
++#if defined(MOIST_CAPPA) && defined(USE_COND) && !defined(MULTI_GASES)
++             if ( btest(flagstruct%dyn_te_exact,3) .and. .not. hydrostatic ) then
++! pkz from the heated T: the conversion to virtual potential temperature below must keep T at fixed delz
++                do k=1,npz
++                   if ( pfull(k) >= flagstruct%rf_cutoff ) exit
++                   do j=js,je
++                      do i=is,ie
++                         pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
++                                      (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
++                      enddo
++                   enddo
++                enddo
++             endif
++#endif
+ !         endif
+         else
+              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
+@@ -821,7 +836,8 @@
+                      hybrid_z,     &
+                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
+                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+-                     flagstruct%moist_phys, grav_var, flagstruct%dry_tr(1:nr))
++                     flagstruct%moist_phys, grav_var, flagstruct%dry_tr(1:nr), &
++                     te_remap=btest(flagstruct%dyn_te_exact,6))
+      
+                                                   call timing_off('Remapping')
+ 
+@@ -1261,7 +1277,7 @@
+                            q, ncnst,  &
+ #endif
+                            ua, va, delz, agrid, cp, rg, ptop, hydrostatic,     &
+-                           conserve, molecular_diffusion, consv_te, rf_cutoff, gridstruct, domain, bd)
++                           conserve, molecular_diffusion, consv_te, rf_cutoff, gridstruct, domain, bd, qw, nqw, te_exact)
+     real, intent(in):: dt
+     real, intent(in):: tau              !< time scale (days)
+     real, intent(in):: tau_w            !< time scale (days) for w
+@@ -1272,6 +1288,9 @@
+     logical, intent(in):: conserve, molecular_diffusion
+     real, intent(in):: consv_te
+     type(fv_grid_bounds_type), intent(IN) :: bd
++    integer, intent(in), optional :: nqw
++    real, intent(in), optional :: qw(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*) !< tracers, for cvm (te_exact)
++    logical, intent(in), optional :: te_exact  !< heat the D-grid KE loss (+ w) at cvm, as compute_total_energy counts it
+     real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) !< D grid zonal wind (m/s)
+     real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) !< D grid meridional wind (m/s)
+     real, intent(inout)::  w(bd%isd:      ,bd%jsd:      ,1: ) !< cell center vertical wind (m/s)
+@@ -1295,6 +1314,10 @@
+     real rcp, rcv, tau0, tau1
+     integer i, j, k
+     logical convert
++    logical texact
++    real qv, ql, qs, cvm, ked
++    integer sphum, iliq, irain, iice, isnow, igrp
++    real, parameter :: cv_vap = 3.*rvgas, c_ice = 1972., c_liq = 4.1855e+3  ! as fv_mapz
+ 
+     integer :: is,  ie,  js,  je
+     integer :: isd, ied, jsd, jed
+@@ -1320,7 +1343,16 @@
+         endif
+     endif
+ 
++    texact = .false.
++    if ( present(te_exact) .and. present(qw) .and. present(nqw) .and. .not. hydrostatic ) texact = te_exact .and. convert
++    sphum = 1; iliq = 0; irain = 0; iice = 0; isnow = 0; igrp = 0
++    if ( texact ) then
++       sphum = get_tracer_index(MODEL_ATMOS, 'sphum');   iliq  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
++       irain = get_tracer_index(MODEL_ATMOS, 'rainwat'); iice  = get_tracer_index(MODEL_ATMOS, 'ice_wat')
++       isnow = get_tracer_index(MODEL_ATMOS, 'snowwat'); igrp  = get_tracer_index(MODEL_ATMOS, 'graupel')
++    endif
+ 
++
+      if ( .not. RF_initialized ) then
+ #ifdef HIWPP
+           allocate ( u00(is:ie,  js:je+1,npz) )
+@@ -1405,7 +1437,9 @@
+ !$OMP                                  q, &
+ #endif
+ !$OMP                                  convert,molecular_diffusion, consv_te, &
+-!$OMP                                   hydrostatic,pt,ua,va,u2f,w2f,cp,rg,ptop,rcp,rcv)
++!$OMP                                   hydrostatic,pt,ua,va,u2f,w2f,cp,rg,ptop,rcp,rcv, &
++!$OMP                                   texact,qw,sphum,iliq,irain,iice,isnow,igrp,gridstruct) &
++!$OMP                           private(qv,ql,qs,cvm,ked)
+      do k=1,kmax
+         if ( pm(k) < rf_cutoff ) then
+ #ifdef HIWPP
+@@ -1436,6 +1470,22 @@
+                      pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2)*(1.-u2f(i,j,k)**2)/(cp-rg*ptop/pm(k))
+                   enddo
+                enddo
++#if defined(MOIST_CAPPA) && !defined(MULTI_GASES)
++             elseif ( texact ) then
++! u, v scale by the same u2f at every edge of a level, so the D-grid KE of each cell falls by KE_D*(1-u2f**2)
++               do j=js,je
++                  do i=is,ie
++                     qv = qw(i,j,k,sphum)
++                     ql = 0.; if (iliq > 0) ql = ql + qw(i,j,k,iliq); if (irain > 0) ql = ql + qw(i,j,k,irain)
++                     qs = 0.; if (iice > 0) qs = qs + qw(i,j,k,iice); if (isnow > 0) qs = qs + qw(i,j,k,isnow)
++                     if (igrp > 0) qs = qs + qw(i,j,k,igrp)
++                     cvm = (1.-(qv+ql+qs))*(cp-rg) + qv*cv_vap + ql*c_liq + qs*c_ice
++                     ked = 0.25*gridstruct%rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2+v(i,j,k)**2+v(i+1,j,k)**2 -  &
++                           (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))
++                     pt(i,j,k) = pt(i,j,k) + (ked*(1.-u2f(i,j,k)**2) + 0.5*w(i,j,k)**2*(1.-w2f(i,j,k)**2))/cvm
++                  enddo
++               enddo
++#endif
+              else
+                do j=js,je
+                   do i=is,ie
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
+@@ -144,8 +144,9 @@
+                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
+                       hydrostatic, phys_hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
+                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
+-                      moist_phys, grav_var, dry_tr)
++                      moist_phys, grav_var, dry_tr, te_remap)
+   logical, intent(in):: last_step
++  logical, intent(in), optional:: te_remap   !< return the remap's column TE change as a uniform dT (non-hydrostatic)
+   logical, intent(in):: fv_debug
+   real,    intent(in):: mdt                   !< remap time step
+   real,    intent(in):: pdt                   !< phys time step
+@@ -224,6 +225,9 @@
+   real, allocatable, dimension(:,:,:) :: dp0, u0, v0
+   real, allocatable, dimension(:,:,:) :: u_dt, v_dt
+   real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1
++  real, dimension(is:ie,js:je):: tcol0, tcol1, cvcol   ! te_remap
++  real :: dtcol(is:ie)
++  logical :: tremap
+   real, dimension(is:ie,km)  :: q2, dp2, t0, w2
+   real, dimension(is:ie,km+1):: pe1, pe2, pk1, pk2, pn2, phis
+   real, dimension(isd:ied,jsd:jed,km):: pe4
+@@ -244,6 +248,9 @@
+         rg = rdgas
+        rcp = 1./ cp
+ 
++       tremap = .false.
++       if ( present(te_remap) ) tremap = te_remap .and. (.not. hydrostatic) .and. kord_tm < 0
++
+ !$OMP parallel do default(none) shared(is,ie,js,je,km,rrg,grav_var)
+        do k=1,km
+          do j=js,je
+@@ -266,6 +273,12 @@
+             GFDL_interstitial%fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
+        endif
+ 
++#if defined(MOIST_CAPPA) && !defined(MULTI_GASES)
++       if ( tremap ) call te_column(.true., is, ie, js, je, isd, ied, jsd, jed, km, nwat, sphum, liq_wat, rainwat, &
++                          ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, hs, r_vir, rrg, grav_var,  &
++                          gridstruct, tcol0, cvcol)
++#endif
++
+ !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
+ !$OMP                                  pt,pk,rg,peln,q,nwat,liq_wat,rainwat,ice_wat,snowwat, &
+ !$OMP                                  graupel,hailwat,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
+@@ -682,6 +695,27 @@
+      enddo
+ 
+ 1000  continue
++#if defined(MOIST_CAPPA) && !defined(MULTI_GASES)
++  if ( tremap ) then
++! The remap moves T (log p), q, delz, w, u, v separately; return the column TE it changed as a uniform dT at fixed delz
++     call te_column(.false., is, ie, js, je, isd, ied, jsd, jed, km, nwat, sphum, liq_wat, rainwat, &
++                    ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, hs, r_vir, rrg, grav_var,  &
++                    gridstruct, tcol1, cvcol)
++     do j=js,je
++        do i=is,ie
++           dtcol(i) = (tcol0(i,j) - tcol1(i,j))/cvcol(i,j)
++        enddo
++        do k=1,km
++           call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
++                         ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
++           do i=is,ie
++              pt(i,j,k) = pt(i,j,k) + dtcol(i)*(1.+r_vir*q(i,j,k,sphum))*(1.-gz(i))
++              pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
++           enddo
++        enddo
++     enddo
++  endif
++#endif
+ 
+ !$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,  &
+ !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
+@@ -940,6 +974,49 @@
+ !$OMP end parallel
+ 
+  end subroutine Lagrangian_to_Eulerian
++
++!> Column TE (delp-weighted, as compute_total_energy) and column sum(cvm*delp); pt is virtual potential
++!! temperature (th = .true., at L2E entry) or density temperature T*(1+r_vir*qv)*(1-qc) (th = .false.)
++ subroutine te_column(th, is, ie, js, je, isd, ied, jsd, jed, km, nwat, sphum, liq_wat, rainwat, &
++                      ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, hs, r_vir, rrg, grav_var, &
++                      gridstruct, tec, cvc)
++  logical, intent(in):: th
++  integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed, km, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat
++  real, intent(in):: u(isd:ied,jsd:jed+1,km), v(isd:ied+1,jsd:jed,km), w(isd:,jsd:,1:), delz(is:,js:,1:)
++  real, intent(in):: pt(isd:ied,jsd:jed,km), delp(isd:ied,jsd:jed,km), q(isd:ied,jsd:jed,km,*), hs(isd:ied,jsd:jed)
++  real, intent(in):: r_vir, rrg(is:ie,js:je,km), grav_var(isd:ied,jsd:jed,km)
++  type(fv_grid_type), intent(in):: gridstruct
++  real, intent(out):: tec(is:ie,js:je), cvc(is:ie,js:je)
++  real:: qd(is:ie), cvm(is:ie), phiz(is:ie,km+1), t, kap
++  integer:: i, j, k
++  do j=js,je
++     do i=is,ie
++        tec(i,j) = 0.;  cvc(i,j) = 0.;  phiz(i,km+1) = hs(i,j)
++     enddo
++     do k=km,1,-1
++        do i=is,ie
++           phiz(i,k) = phiz(i,k+1) - grav_var(i,j,k)*delz(i,j,k)
++        enddo
++     enddo
++     do k=1,km
++        call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
++                      ice_wat, snowwat, graupel, hailwat, q, qd, cvm)
++        do i=is,ie
++           if ( th ) then
++              kap = rdgas/(rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)))
++              t = pt(i,j,k)*exp(kap/(1.-kap)*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
++           else
++              t = pt(i,j,k)
++           endif
++           t = t/((1.+r_vir*q(i,j,k,sphum))*(1.-qd(i)))
++           tec(i,j) = tec(i,j) + delp(i,j,k)*(cvm(i)*t + 0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
++                      u(i,j,k)**2+u(i,j+1,k)**2+v(i,j,k)**2+v(i+1,j,k)**2 -  &
++                      (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))))
++           cvc(i,j) = cvc(i,j) + cvm(i)*delp(i,j,k)
++        enddo
++     enddo
++  enddo
++ end subroutine te_column
+ 
+ 
+ !>@brief The subroutine 'compute_total_energy' performs the FV3-consistent computation of the global total energy.
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90
+@@ -594,6 +594,7 @@
+ 
+       real :: dt2, dt4, dt5, dt6
+       real :: damp, damp2, damp4, dd8, u2, v2, du2, dv2
++      real :: uf1, uf2, vf1, vf2   ! dyn_te_exact bit 16
+       real :: u_lon
+       integer :: i,j, is2, ie1, js2, je1, n, nt, n2, iq
+ 
+@@ -994,6 +995,7 @@
+ !                   heat_source(i,j) = -d_con*dw(i,j)*(w(i,j)+0.5*dw(i,j))
+                     heat_source(i,j) = dd8 - dw(i,j)*(w(i,j)+0.5*dw(i,j))
+                     diss_est(i,j) = heat_source(i,j)
++                    if ( btest(flagstruct%dyn_te_exact,2) ) heat_source(i,j) = dd8  ! w part booked where dw is added
+                    enddo
+                 enddo
+             endif
+@@ -1335,6 +1337,14 @@
+             enddo
+         endif
+         if ( damp_w>1.E-5 ) then
++          if ( btest(flagstruct%dyn_te_exact,2) ) then
++! KE the damping removes from the w it is added to (advected), not from w before advection
++             do j=js,je
++                do i=is,ie
++                   heat_source(i,j) = heat_source(i,j) - dw(i,j)*(w(i,j)+0.5*dw(i,j))
++                enddo
++             enddo
++          endif
+           do j=js,je
+              do i=is,ie
+                 w(i,j) = w(i,j) + dw(i,j)
+@@ -1628,16 +1638,35 @@
+            dv2 = vb(i,j) + vb(i+1,j)
+ ! Total energy conserving:
+ ! Convert lost KE due to divergence damping to "heat"
++         if ( btest(flagstruct%dyn_te_exact,4) ) then
++! KE(u_f - du) - KE(u_f) with u_f the final wind (fy, fx + vorticity damping), du = ub, vb: the KE the damping removed
++            uf1 = fy(i,j) + vt(i,j)*rdx(i,j);   uf2 = fy(i,j+1) + vt(i,j+1)*rdx(i,j+1)
++            vf1 = fx(i,j) - ut(i,j)*rdy(i,j);   vf2 = fx(i+1,j) - ut(i+1,j)*rdy(i+1,j)
++            heat_source(i,j) = delp(i,j)*(heat_source(i,j) - damp*rsin2(i,j)*( &
++                  - (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
++                  + 2.*(uf1*ub(i,j) + uf2*ub(i,j+1) + vf1*vb(i,j) + vf2*vb(i+1,j))   &
++                  - cosa_s(i,j)*((uf1+uf2)*dv2 + (vf1+vf2)*du2 - du2*dv2)) )
++         else
+          heat_source(i,j) = delp(i,j)*(heat_source(i,j) - damp*rsin2(i,j)*( &
+                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
+                               + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
+                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2)) )
++         endif
+            if (flagstruct%do_skeb) then
+              diss_est(i,j) = diss_est(i,j)-rsin2(i,j)*( &
+                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
+                               + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
+                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2))
+            endif
++         enddo
++      enddo
++   endif
++
++   if ( btest(flagstruct%dyn_te_exact,1) .and. .not. (d_con > 1.e-5 .or. flagstruct%do_skeb) ) then
++! layers with d_con_k = 0 (sponge): the w-damping heat is J/kg here; dyn_core expects delp*J/kg
++      do j=js,je
++         do i=is,ie
++            heat_source(i,j) = delp(i,j)*heat_source(i,j)
+          enddo
+       enddo
+    endif

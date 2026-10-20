@@ -1,0 +1,41 @@
+From 3d17d573f6a32777697d05d6ac0e90f76e20848f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:53 -0500
+Subject: [PATCH 20/29] sfc_nst: rain is a depth per time step, not a rate
+
+rain (m of water per time step) is used as kg m-2 s-1 in qrain (the rain's
+sensible heat flux) and in sep (the salinity flux).
+
+Convert with 1e3*rain/timestep.
+
+qrain grows by 1000/720 at a 720 s step. NSST-internal; forecast at noise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Layer/UFS/sfc_nst.f90 | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/physics/SFC_Layer/UFS/sfc_nst.f90 b/physics/SFC_Layer/UFS/sfc_nst.f90
+index d6b0e338..e4d37aad 100644
+--- a/physics/SFC_Layer/UFS/sfc_nst.f90
++++ b/physics/SFC_Layer/UFS/sfc_nst.f90
+@@ -375,7 +375,7 @@ contains
+                * (t1(i)-t0k))*0.02411_kp/(rho_a(i)*cp)  ! heat diffusivity
+           wetc     = 622.0_kp*le*qss(i)/(rd*t1(i)*t1(i))
+           alfac    = one / (one + (wetc*le*dwat)/(cp*dtmp)) ! wet bulb factor
+-          tem      = (1.0e3_kp * rain(i) / rho_w) * alfac * cp_w
++          tem      = (1.0e3_kp * (1.0e3_kp*rain(i)/timestep) / rho_w) * alfac * cp_w  ! rain is m per step
+           qrain(i) =  tem * (tsea-t1(i)+1.0e3_kp*(qss(i)-q0(i))*le/cp)
+ 
+           !> - Calculate input non solar heat flux as upward = positive to models here
+@@ -386,7 +386,7 @@ contains
+           !    &hflx(i),' evap=',evap(i),' ulwflx=',ulwflx(i),' dlwflx=',dlwflx(i)
+           !    &,' omg_sh=',omg_sh,' qrain=',qrain(i)
+ 
+-          sep      = sss*(evap(i)/le-rain(i))/rho_w
++          sep      = sss*(evap(i)/le-1.0e3_kp*rain(i)/timestep)/rho_w
+           ustar_a  = sqrt(stress(i)/rho_a(i))          ! air friction velocity
+           !
+           !  sensitivities of heat flux components to ts

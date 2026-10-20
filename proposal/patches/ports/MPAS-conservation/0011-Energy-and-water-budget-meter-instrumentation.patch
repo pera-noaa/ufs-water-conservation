@@ -1,0 +1,617 @@
+From b4d227c070c5480e382712489dd7e4a1840bbdbc Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Sat, 17 Oct 2026 19:04:46 -0600
+Subject: [PATCH 11/13] Energy and water budget meter (instrumentation)
+
+config_energy_meter (&nhyd_model, .false.): per-step global dry mass,
+water and total energy at six points of atm_srk3, written as EB lines on
+rank 0's stderr. E = IE + PE + KE + LV0*Wv - LF0*(Wi + Pice) (+ g z_sfc P)
+in the energy the dynamics integrates: IE = cv T_m from MPAS's EOS,
+(1+qt) loading on PE and KE, liquid water as the zero. Every global sum
+is an order-independent fixed-point sum (6 int64 digits of base 2^40,
+after MOM6's reproducing_sum); the precipitation totals and the run's
+reference energy are carried in the restart file.
+
+Test switches for the meter, microphysics off only:
+config_energy_test_heating / _cooling (W/m2, 0 = off) apply a prescribed
+8-h heat source and low-level sink, energy-consistently (dE = q);
+config_energy_test_dry zeroes the moist species at the first step.
+
+The meter only reads the state: with it on or off the forecast is
+bit-identical to the previous commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/core_atmosphere/Registry.xml              |  36 ++
+ .../dynamics/mpas_atm_time_integration.F      | 474 ++++++++++++++++++
+ 2 files changed, 510 insertions(+)
+
+diff --git a/src/core_atmosphere/Registry.xml b/src/core_atmosphere/Registry.xml
+index cfb7066..53a722d 100644
+--- a/src/core_atmosphere/Registry.xml
++++ b/src/core_atmosphere/Registry.xml
+@@ -236,6 +236,26 @@
+                      description="Whether to enable positive-definite (Skamarock 2006 flux renormalization) instead of monotonic advection of scalars on the final RK stage; used only with config_monotonic = false and without lateral boundary conditions"
+                      possible_values=".true. or .false."/>
+ 
++                <nml_option name="config_energy_meter" type="logical" default_value="false" in_defaults="false"
++                     units="-"
++                     description="Write per-step global dry-mass, water and energy budgets (EB lines) to the standard error of rank 0"
++                     possible_values=".true. or .false."/>
++
++                <nml_option name="config_energy_test_heating" type="real" default_value="0.0" in_defaults="false"
++                     units="W m^{-2}"
++                     description="Energy meter test (microphysics off): domain-mean power of a prescribed 8-h heat source at the domain centre; 0 = off"
++                     possible_values="Non-negative real values"/>
++
++                <nml_option name="config_energy_test_cooling" type="real" default_value="0.0" in_defaults="false"
++                     units="W m^{-2}"
++                     description="Energy meter test (microphysics off): domain-mean power of a prescribed 8-h low-level heat sink 12 km from the domain centre; 0 = off"
++                     possible_values="Non-negative real values"/>
++
++                <nml_option name="config_energy_test_dry" type="logical" default_value="true" in_defaults="false"
++                     units="-"
++                     description="Energy meter test: zero all moist species at the first step (at fixed theta_m) when the test heating is on"
++                     possible_values=".true. or .false."/>
++
+                 <nml_option name="config_monotonic" type="logical" default_value="true"
+                      units="-"
+                      description="Whether to enable monotonic limiter in scalar advection"
+@@ -655,6 +675,10 @@
+                         immutable="true">
+ 
+ 			<stream name="invariant" packages="no_invariant_stream"/>
++			<var name="ebud_eref"/>
++			<var name="ebud_pall"/>
++			<var name="ebud_pice"/>
++			<var name="ebud_ppe"/>
+ 			<var name="u_init"/>
+ 			<var name="v_init"/>
+ 			<var name="t_init"/>
+@@ -1792,6 +1816,18 @@
+ 
+         <var_struct name="diag" time_levs="1">
+ 
++                <var name="ebud_eref" type="real" dimensions="Time" units="J m^{-2}"
++                     description="Energy meter / fixer: reference total energy per unit area (first step of the original run)"/>
++
++                <var name="ebud_pall" type="real" dimensions="Time" units="kg"
++                     description="Energy meter: domain total accumulated grid-scale precipitation, all phases"/>
++
++                <var name="ebud_pice" type="real" dimensions="Time" units="kg"
++                     description="Energy meter: domain total accumulated frozen grid-scale precipitation"/>
++
++                <var name="ebud_ppe" type="real" dimensions="Time" units="J"
++                     description="Energy meter: domain total potential energy carried out by precipitation (g z_sfc P)"/>
++
+                 <!-- coefficients for the vertical tridiagonal solve -->
+                 <!-- Note:  these could be local but...              -->
+                 <var name="cofrz" type="real" dimensions="nVertLevels Time" units="s m^{-1}"
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index b3f4d28..6cfcd79 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -114,6 +114,15 @@ module atm_time_integration
+    integer, parameter :: NONNEG_CLIP = 0     ! the plain clip only
+    integer, parameter :: NONNEG_BORROW = 1   ! borrow within the column; a column without positive mass gets the plain clip
+ 
++   ! EB meter (diagnostic only) and energy closure
++   real (kind=8), save :: ebud_pall = 0.d0, ebud_pice = 0.d0, ebud_ppe = 0.d0, ebud_e0 = 0.d0, ebud_eref = 0.d0
++   real (kind=8), save :: ebud_cpall = 0.d0, ebud_cpice = 0.d0, ebud_cppe = 0.d0   ! compensation (global totals)
++   integer, parameter :: ebud_nd = 6   ! reproducing sum: digits of base 2^40, weights 2^120 ... 2^-80
++   logical, save :: ebud_have_ref = .false., ebud_cfg_done = .false., ebud_sw(4) = .false., ebud_tdry = .true.
++   real (kind=8), save :: ebud_theat = 0.d0, ebud_tcool = 0.d0
++   real (kind=8), parameter :: ebud_lv0 = 2.5d6 - 461.6d0*273.15d0 - 717.5d0*(461.6d0/287.0d0)*273.15d0
++   real (kind=8), parameter :: ebud_lf0 = 3.34d5
++
+    contains
+ 
+ 
+@@ -2122,6 +2131,10 @@ module atm_time_integration
+       !$acc update device(theta_m,scalars_1,pressure_p,rtheta_p) if (.not. config_gpu_aware_mpi)
+       MPAS_ACC_TIMER_STOP('atm_srk3: halo_exchanges + ACC_data_xfer')
+ 
++      if (ebud_active(domain)) then
++         if (ebud_sw(4) .and. ebud_tdry .and. itimestep == 1) call etest_dry(domain)
++         call ebud_point(domain, 1, 0, itimestep)
++      end if
+       call mpas_timer_start('atm_rk_integration_setup')
+ 
+ !$OMP PARALLEL DO
+@@ -2671,6 +2684,7 @@ module atm_time_integration
+          call mpas_timer_stop('atm_rk_dynamics_substep_finish')
+ 
+       end do DYNAMICS_SUBSTEPS
++      if (ebud_meter_on(domain)) call ebud_point(domain, 2, 6, itimestep)   ! dry parts only
+ 
+ 
+       deallocate(qtot)  !  we are finished with these now
+@@ -2767,6 +2781,8 @@ module atm_time_integration
+                            )
+ 
+ 
++      !
++      if (ebud_active(domain)) call ebud_point(domain, 2, 1, itimestep)
+       !
+       ! call to parameterizations of cloud microphysics. calculation of the tendency of water vapor to horizontal and
+       ! vertical advection needed for the Tiedtke parameterization of convection.
+@@ -2850,6 +2866,7 @@ module atm_time_integration
+       MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
+       !$acc update device(scalars_2, rthdynten)
+       MPAS_ACC_TIMER_STOP('atm_srk3: physics ACC_data_xfer')
++      if (ebud_active(domain)) call ebud_point(domain, 2, 2, itimestep)
+       !call microphysics schemes:
+       if (trim(config_microp_scheme) /= 'off')  then
+         call pre_microphysics( block % configs, state, diag, 2)
+@@ -2863,6 +2880,12 @@ module atm_time_integration
+         call mpas_timer_stop('microphysics')
+         call post_microphysics( block % configs, state, diag, tend, 2)
+       end if
++      if (ebud_active(domain)) then
++         call ebud_point(domain, 2, 3, itimestep)
++         if (ebud_sw(4)) call etest_heat(domain, dt, itimestep)
++         call ebud_point(domain, 2, 4, itimestep)
++         call ebud_point(domain, 2, 5, itimestep)
++      end if
+ 
+       !
+       ! Note: A halo exchange for 'exner' here as well as at the end of
+@@ -9230,4 +9253,455 @@ module atm_time_integration
+ 
+    end subroutine summarize_timestep
+ 
++
++   subroutine ebud_restart_load(domain)
++      ! on a restart, take the reference energy and the precipitation totals from the restart file
++      type (domain_type), intent(in) :: domain
++      type (mpas_pool_type), pointer :: diag
++      real (kind=RKIND), pointer :: eref, pall, pice, ppe
++      logical, pointer :: do_restart
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_do_restart', do_restart)
++      if (.not. do_restart) return
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'diag', diag)
++      call mpas_pool_get_array(diag, 'ebud_eref', eref)
++      call mpas_pool_get_array(diag, 'ebud_pall', pall)
++      call mpas_pool_get_array(diag, 'ebud_pice', pice)
++      call mpas_pool_get_array(diag, 'ebud_ppe', ppe)
++      if (eref == 0.0_RKIND) return   ! restart file written without the meter
++      ebud_eref = dble(eref); ebud_pall = dble(pall); ebud_pice = dble(pice); ebud_ppe = dble(ppe)
++      ebud_cpall = 0.d0; ebud_cpice = 0.d0; ebud_cppe = 0.d0
++      ebud_have_ref = .true.
++   end subroutine ebud_restart_load
++
++   subroutine ebud_restart_store(domain)
++      type (domain_type), intent(in) :: domain
++      type (mpas_pool_type), pointer :: diag
++      real (kind=RKIND), pointer :: eref, pall, pice, ppe
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'diag', diag)
++      call mpas_pool_get_array(diag, 'ebud_eref', eref)
++      call mpas_pool_get_array(diag, 'ebud_pall', pall)
++      call mpas_pool_get_array(diag, 'ebud_pice', pice)
++      call mpas_pool_get_array(diag, 'ebud_ppe', ppe)
++      ! fold the compensations in so the stored totals are what the meter uses
++      ebud_pall = ebud_pall + ebud_cpall; ebud_cpall = 0.d0
++      ebud_pice = ebud_pice + ebud_cpice; ebud_cpice = 0.d0
++      ebud_ppe = ebud_ppe + ebud_cppe; ebud_cppe = 0.d0
++      eref = real(ebud_eref, RKIND); pall = real(ebud_pall, RKIND); pice = real(ebud_pice, RKIND); ppe = real(ebud_ppe, RKIND)
++   end subroutine ebud_restart_store
++
++   subroutine ebud_cfg(domain)
++      type (domain_type), intent(in) :: domain
++      logical, pointer :: lp
++      real (kind=RKIND), pointer :: rp
++      character (len=StrKIND), pointer :: cp
++      if (ebud_cfg_done) return
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_meter', lp); ebud_sw(1) = lp
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_heating', rp); ebud_theat = dble(rp)
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_cooling', rp); ebud_tcool = dble(rp)
++      ebud_sw(4) = (ebud_theat > 0.d0 .or. ebud_tcool > 0.d0)
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_dry', lp); ebud_tdry = lp
++      if (ebud_sw(4)) then
++         call mpas_pool_get_config(domain % blocklist % configs, 'config_microp_scheme', cp)
++         if (trim(cp) /= 'off' .or. ebud_sw(2) .or. .not. ebud_sw(1)) call mpas_log_write( &
++            'config_energy_test_heating needs config_microp_scheme = off, stock coupling and the meter', messageType=MPAS_LOG_CRIT)
++      end if
++      ebud_cfg_done = .true.
++   end subroutine ebud_cfg
++
++   logical function ebud_meter_on(domain)
++      type (domain_type), intent(in) :: domain
++      call ebud_cfg(domain); ebud_meter_on = ebud_sw(1)
++   end function ebud_meter_on
++
++   logical function ebud_active(domain)
++      type (domain_type), intent(in) :: domain
++      call ebud_cfg(domain); ebud_active = any(ebud_sw)
++   end function ebud_active
++
++   subroutine ebud_nsum(s, c, x)
++      ! Neumaier compensated summation
++      real (kind=8), intent(inout) :: s, c
++      real (kind=8), intent(in) :: x
++      real (kind=8) :: t
++      t = s + x
++      if (abs(s) >= abs(x)) then
++         c = c + ((s - t) + x)
++      else
++         c = c + ((x - t) + s)
++      end if
++      s = t
++   end subroutine ebud_nsum
++
++   subroutine ebud_ptrs(domain, tl, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                        zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      type (domain_type), intent(in) :: domain
++      integer, intent(in) :: tl
++      integer, intent(out) :: nCellsSolve, nVertLevels, ms, me, iq(6)
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      type (mpas_pool_type), pointer :: mesh, state
++      integer, pointer :: p
++      integer :: n
++      character (len=8), parameter :: sp(6) = (/'index_qv','index_qc','index_qr','index_qi','index_qs','index_qg'/)
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', mesh)
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'state', state)
++      call mpas_pool_get_dimension(mesh, 'nCellsSolve', p); nCellsSolve = p
++      call mpas_pool_get_dimension(mesh, 'nVertLevels', p); nVertLevels = p
++      call mpas_pool_get_dimension(state, 'moist_start', p); ms = p
++      call mpas_pool_get_dimension(state, 'moist_end', p); me = p
++      do n = 1, 6
++         iq(n) = -1
++         nullify(p)
++         call mpas_pool_get_dimension(state, trim(sp(n)), p)
++         if (associated(p)) iq(n) = p
++      end do
++      call mpas_pool_get_array(state, 'rho_zz', rho_zz, tl)
++      call mpas_pool_get_array(state, 'theta_m', theta_m, tl)
++      call mpas_pool_get_array(state, 'scalars', scalars, tl)
++      call mpas_pool_get_array(state, 'u', u, tl)
++      call mpas_pool_get_array(state, 'w', w, tl)
++      call mpas_pool_get_array(mesh, 'zz', zz)
++      call mpas_pool_get_array(mesh, 'zgrid', zgrid)
++      call mpas_pool_get_array(mesh, 'rdzw', rdzw)
++      call mpas_pool_get_array(mesh, 'areaCell', areaCell)
++      call mpas_pool_get_array(mesh, 'dcEdge', dcEdge)
++      call mpas_pool_get_array(mesh, 'dvEdge', dvEdge)
++      call mpas_pool_get_array(mesh, 'edgesOnCell', edgesOnCell)
++      call mpas_pool_get_array(mesh, 'nEdgesOnCell', nEdgesOnCell)
++   end subroutine ebud_ptrs
++
++   subroutine ebud_layer(k, iCell, ms, me, iq, rho_zz, theta_m, scalars, u, w, zz, zgrid, rdzw, areaCell, &
++                         dcEdge, dvEdge, edgesOnCell, nEdgesOnCell, v)
++      ! per-area layer contributions (no area weight): v = Md IE PE KEh KEw Wv Wl Wi Wt
++      integer, intent(in) :: k, iCell, ms, me, iq(6)
++      real (kind=RKIND), dimension(:,:), intent(in) :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), intent(in) :: scalars
++      real (kind=RKIND), dimension(:), intent(in) :: rdzw, areaCell, dcEdge, dvEdge
++      integer, dimension(:,:), intent(in) :: edgesOnCell
++      integer, dimension(:), intent(in) :: nEdgesOnCell
++      real (kind=8), intent(out) :: v(11)
++      real (kind=8) :: dm, qt, ql, qi, ex, keh, kew, zmid
++      integer :: n, j
++      dm = dble(rho_zz(k,iCell))/dble(rdzw(k))
++      qt = 0.d0
++      do n = ms, me
++         qt = qt + dble(scalars(n,k,iCell))
++      end do
++      ql = 0.d0
++      do n = 2, 3
++         if (iq(n) > 0) ql = ql + dble(scalars(iq(n),k,iCell))
++      end do
++      qi = 0.d0
++      do n = 4, 6
++         if (iq(n) > 0) qi = qi + dble(scalars(iq(n),k,iCell))
++      end do
++      ex = (dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))*dble(theta_m(k,iCell)))**(dble(rgas)/dble(cv))
++      zmid = 0.5d0*(dble(zgrid(k,iCell)) + dble(zgrid(k+1,iCell)))
++      keh = 0.d0
++      do j = 1, nEdgesOnCell(iCell)
++         keh = keh + 0.25d0*dble(dcEdge(edgesOnCell(j,iCell)))*dble(dvEdge(edgesOnCell(j,iCell))) &
++                   * dble(u(k,edgesOnCell(j,iCell)))**2
++      end do
++      keh = keh/dble(areaCell(iCell))
++      kew = 0.25d0*(dble(w(k,iCell))**2 + dble(w(k+1,iCell))**2)
++      v(1) = dm
++      v(2) = dble(cv)*dble(theta_m(k,iCell))*ex*dm
++      v(3) = (1.d0 + qt)*dble(gravity)*zmid*dm
++      v(4) = (1.d0 + qt)*keh*dm
++      v(5) = (1.d0 + qt)*kew*dm
++      v(6) = dble(scalars(iq(1),k,iCell))*dm
++      v(7) = ql*dm
++      v(8) = qi*dm
++      v(9) = qt*dm
++      v(10) = dble(gravity)*zmid*dm
++      v(11) = (keh + kew)*dm
++   end subroutine ebud_layer
++
++   real (kind=8) function ebud_w(j)
++      integer, intent(in) :: j
++      ebud_w = 2.d0**(40*(ebud_nd - j) - 80)
++   end function ebud_w
++
++   subroutine ebud_radd(acc, x)
++      ! add x to the fixed-point accumulator exactly (bits below 2^-80 dropped)
++      integer (kind=8), intent(inout) :: acc(ebud_nd)
++      real (kind=8), intent(in) :: x
++      real (kind=8) :: r, d
++      integer :: j
++      if (.not. (abs(x) < 2.d0**150)) call mpas_log_write('ebud_radd: value out of range', messageType=MPAS_LOG_CRIT)
++      r = x
++      do j = 1, ebud_nd
++         d = aint(r/ebud_w(j))
++         acc(j) = acc(j) + int(d, 8)
++         r = r - d*ebud_w(j)
++      end do
++   end subroutine ebud_radd
++
++   subroutine ebud_rnorm(acc, n)
++      ! carry so that |digit| < 2^40 below the leading one (keeps the int64 digits far from overflow)
++      integer, intent(in) :: n
++      integer (kind=8), intent(inout) :: acc(ebud_nd, n)
++      integer (kind=8) :: c
++      integer :: i, j
++      do i = 1, n
++         do j = ebud_nd, 2, -1
++            c = acc(j,i)/2_8**40
++            acc(j,i) = acc(j,i) - c*2_8**40
++            acc(j-1,i) = acc(j-1,i) + c
++         end do
++      end do
++   end subroutine ebud_rnorm
++
++   subroutine ebud_rsum(domain, n, acc, tot)
++      ! global integer sum (exact, order-independent), then one fixed-order conversion to double
++#ifdef MPAS_USE_MPI_F08
++      use mpi_f08, only : MPI_Allreduce, MPI_INTEGER8, MPI_SUM
++#else
++      use mpi
++#endif
++      type (domain_type), intent(in) :: domain
++      integer, intent(in) :: n
++      integer (kind=8), intent(inout) :: acc(ebud_nd, n)
++      real (kind=8), intent(out) :: tot(n)
++      integer (kind=8) :: g(ebud_nd, n)
++      integer :: i, j, ierr
++      call ebud_rnorm(acc, n)
++#ifdef _MPI
++      call MPI_Allreduce(acc, g, ebud_nd*n, MPI_INTEGER8, MPI_SUM, domain % dminfo % comm, ierr)
++#else
++      g(:,:) = acc(:,:)
++#endif
++      call ebud_rnorm(g, n)
++      do i = 1, n
++         tot(i) = 0.d0
++         do j = ebud_nd, 1, -1
++            tot(i) = tot(i) + dble(g(j,i))*ebud_w(j)
++         end do
++      end do
++   end subroutine ebud_rsum
++
++   subroutine ebud_global(domain, tl, glob)
++      ! glob(1:9) per-area means of the layer sums, glob(10:11) Pall, Pice, glob(12) total area, glob(13) g*zs*P,
++      ! glob(14:15) dry PE and KE; all order-independent
++      type (domain_type), intent(in) :: domain
++      integer, intent(in) :: tl
++      real (kind=8), intent(out) :: glob(15)
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      integer :: nCellsSolve, nVertLevels, ms, me, iq(6), iCell, k, n
++      integer (kind=8) :: acc(ebud_nd, 12)
++      real (kind=8) :: v(11), tot(12), a
++      call ebud_ptrs(domain, tl, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                     zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      !$acc update self(rho_zz, theta_m, scalars, u, w)
++      acc(:,:) = 0_8
++      do iCell = 1, nCellsSolve
++         a = dble(areaCell(iCell))
++         do k = 1, nVertLevels
++            call ebud_layer(k, iCell, ms, me, iq, rho_zz, theta_m, scalars, u, w, zz, zgrid, rdzw, areaCell, &
++                            dcEdge, dvEdge, edgesOnCell, nEdgesOnCell, v)
++            do n = 1, 11
++               call ebud_radd(acc(:,n), v(n)*a)
++            end do
++         end do
++         call ebud_radd(acc(:,12), a)
++         call ebud_rnorm(acc, 12)
++      end do
++      call ebud_rsum(domain, 12, acc, tot)
++      glob(1:9) = tot(1:9)/tot(12)
++      glob(10) = (ebud_pall + ebud_cpall)/tot(12)
++      glob(11) = (ebud_pice + ebud_cpice)/tot(12)
++      glob(12) = tot(12)
++      glob(13) = (ebud_ppe + ebud_cppe)/tot(12)
++      glob(14:15) = tot(10:11)/tot(12)
++   end subroutine ebud_global
++
++   real (kind=8) function ebud_energy(g)
++      real (kind=8), intent(in) :: g(15)
++      ebud_energy = g(2) + g(3) + g(4) + g(5) + ebud_lv0*g(6) - ebud_lf0*(g(8) + g(11)) + g(13)
++   end function ebud_energy
++
++   subroutine ebud_point(domain, tl, ipt, itimestep)
++      type (domain_type), intent(in) :: domain
++      integer, intent(in) :: tl, ipt, itimestep
++      type (mpas_pool_type), pointer :: mesh, diag_physics
++      real (kind=RKIND), dimension(:), pointer :: areaCell, rainncv, snowncv, graupelncv
++      real (kind=RKIND), dimension(:,:), pointer :: zgs
++      integer, pointer :: nCellsSolve
++      real (kind=8) :: glob(15), ptot(3)
++      integer (kind=8) :: pacc(ebud_nd, 3)
++      integer :: iCell
++      if (.not. ebud_have_ref) call ebud_restart_load(domain)
++      if (ipt == 3) then
++         call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', mesh)
++         call mpas_pool_get_dimension(mesh, 'nCellsSolve', nCellsSolve)
++         call mpas_pool_get_array(mesh, 'areaCell', areaCell)
++         call mpas_pool_get_array(mesh, 'zgrid', zgs)
++         nullify(diag_physics, rainncv, snowncv, graupelncv)
++         call mpas_pool_get_subpool(domain % blocklist % structs, 'diag_physics', diag_physics)
++         call mpas_pool_get_array(diag_physics, 'rainncv', rainncv)
++         call mpas_pool_get_array(diag_physics, 'snowncv', snowncv)
++         call mpas_pool_get_array(diag_physics, 'graupelncv', graupelncv)
++         pacc(:,:) = 0_8
++         do iCell = 1, nCellsSolve
++            if (associated(rainncv)) then
++               call ebud_radd(pacc(:,1), dble(rainncv(iCell))*dble(areaCell(iCell)))
++               call ebud_radd(pacc(:,3), dble(gravity)*dble(zgs(1,iCell))*dble(rainncv(iCell))*dble(areaCell(iCell)))
++            end if
++            if (associated(snowncv)) call ebud_radd(pacc(:,2), dble(snowncv(iCell))*dble(areaCell(iCell)))
++            if (associated(graupelncv)) call ebud_radd(pacc(:,2), dble(graupelncv(iCell))*dble(areaCell(iCell)))
++            call ebud_rnorm(pacc, 3)
++         end do
++         call ebud_rsum(domain, 3, pacc, ptot)
++         call ebud_nsum(ebud_pall, ebud_cpall, ptot(1))
++         call ebud_nsum(ebud_pice, ebud_cpice, ptot(2))
++         call ebud_nsum(ebud_ppe, ebud_cppe, ptot(3))
++      end if
++      call ebud_global(domain, tl, glob)
++      if (ipt == 0) then
++         ebud_e0 = ebud_energy(glob)
++         if (.not. ebud_have_ref) ebud_eref = ebud_e0
++         ebud_have_ref = .true.
++      end if
++      if (ipt == 5) call ebud_restart_store(domain)
++      if (ebud_meter_on(domain) .and. domain % dminfo % my_proc_id == 0) &
++         write(0,'(a,i7,i2,14es25.16)') 'EB ', itimestep, ipt, glob(1:11), glob(13:15)
++   end subroutine ebud_point
++
++
++   subroutine efix_ptrs(domain, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++      type (domain_type), intent(in) :: domain
++      real (kind=RKIND), dimension(:,:), pointer :: rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab
++      type (mpas_pool_type), pointer :: diag, tend
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'diag', diag)
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tend)
++      call mpas_pool_get_array(diag, 'rtheta_p', rtheta_p)
++      call mpas_pool_get_array(diag, 'rtheta_base', rtheta_b)
++      call mpas_pool_get_array(diag, 'exner', exner)
++      call mpas_pool_get_array(diag, 'exner_base', exner_b)
++      call mpas_pool_get_array(diag, 'pressure_p', pressure_p)
++      call mpas_pool_get_array(tend, 'rt_diabatic_tend', rt_diab)
++   end subroutine efix_ptrs
++
++   subroutine efix_set_tm(k, iCell, tm_new, dt, rho_zz, theta_m, zz, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++      ! set theta_m from the target T_m at fixed rho_zz; refresh rtheta_p, exner, pressure_p, rt_diabatic_tend
++      integer, intent(in) :: k, iCell
++      real (kind=8), intent(in) :: tm_new
++      real (kind=RKIND), intent(in) :: dt
++      real (kind=RKIND), dimension(:,:), intent(in) :: rho_zz, zz, rtheta_b, exner_b
++      real (kind=RKIND), dimension(:,:), intent(inout) :: theta_m, rtheta_p, exner, pressure_p, rt_diab
++      real (kind=8) :: c, thm_new
++      c = dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))
++      thm_new = (tm_new*c**(-dble(rgas)/dble(cv)))**(dble(cv)/dble(cp))
++      rt_diab(k,iCell) = rt_diab(k,iCell) + real((thm_new - dble(theta_m(k,iCell)))/dble(dt), RKIND)
++      theta_m(k,iCell) = real(thm_new, RKIND)
++      rtheta_p(k,iCell) = rho_zz(k,iCell)*theta_m(k,iCell) - rtheta_b(k,iCell)
++      exner(k,iCell) = (zz(k,iCell)*(rgas/p0)*(rtheta_p(k,iCell)+rtheta_b(k,iCell)))**(rgas/cv)
++      pressure_p(k,iCell) = zz(k,iCell)*rgas*(exner(k,iCell)*rtheta_p(k,iCell) &
++                          + (exner(k,iCell)-exner_b(k,iCell))*rtheta_b(k,iCell))
++   end subroutine efix_set_tm
++
++
++   subroutine etest_dry(domain)
++      ! dry thermal test: remove all moist species at fixed theta_m (time level 1, all cells)
++      type (domain_type), intent(in) :: domain
++      type (mpas_pool_type), pointer :: state
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      integer, pointer :: ms, me
++      logical, pointer :: do_restart
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_do_restart', do_restart)
++      if (do_restart) return
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'state', state)
++      call mpas_pool_get_dimension(state, 'moist_start', ms)
++      call mpas_pool_get_dimension(state, 'moist_end', me)
++      call mpas_pool_get_array(state, 'scalars', scalars, 1)
++      scalars(ms:me,:,:) = 0.0_RKIND
++      call mpas_log_write('etest_dry: moist species zeroed at fixed theta_m')
++   end subroutine etest_dry
++
++   subroutine etest_heat(domain, dt, itimestep)
++      ! dry thermal test, for 8 h: heating P_h W/m2 (domain mean), Gaussian (10 km) x sin(pi z/12 km) per dry mass at the
++      ! domain centre; cooling P_c W/m2, Gaussian (12 km) x sin(pi z/5 km), centred 12 km in +x
++      type (domain_type), intent(in) :: domain
++      real (kind=RKIND), intent(in) :: dt
++      integer, intent(in) :: itimestep
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge, xCell, yCell
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      real (kind=RKIND), dimension(:,:), pointer :: rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab
++      type (mpas_pool_type), pointer :: mesh
++      integer :: nCellsSolve, nVertLevels, ms, me, iq(6), iCell, k, n
++      integer (kind=8) :: acc(ebud_nd, 5)
++      real (kind=8) :: tot(5), xc, yc, zm, dm, amp(2), q, ex, tm, xl(4), xg(4), atot, sh(2)
++      real (kind=8), parameter :: tend = 8.d0*3600.d0
++      real (kind=8), parameter :: r0(2) = (/1.d4, 1.2d4/), htop(2) = (/1.2d4, 5.d3/), xoff(2) = (/0.d0, 1.2d4/)
++      call ebud_ptrs(domain, 2, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                     zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      call efix_ptrs(domain, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++      rt_diab(:,:) = 0.0_RKIND   ! microphysics is off: nothing else resets the lagged diabatic tendency each step
++      if (dble(itimestep)*dble(dt) > tend + 0.5d0*dble(dt)) return
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', mesh)
++      call mpas_pool_get_array(mesh, 'xCell', xCell)
++      call mpas_pool_get_array(mesh, 'yCell', yCell)
++      xl(1) = minval(dble(xCell(1:nCellsSolve))); xl(2) = -maxval(dble(xCell(1:nCellsSolve)))
++      xl(3) = minval(dble(yCell(1:nCellsSolve))); xl(4) = -maxval(dble(yCell(1:nCellsSolve)))
++      do k = 1, 4
++         call mpas_dmpar_min_real(domain % dminfo, xl(k), xg(k))
++      end do
++      xc = 0.5d0*(xg(1) - xg(2)); yc = 0.5d0*(xg(3) - xg(4))
++      acc(:,:) = 0_8
++      do iCell = 1, nCellsSolve
++         do k = 1, nVertLevels
++            zm = 0.5d0*(dble(zgrid(k,iCell)) + dble(zgrid(k+1,iCell)))
++            call etest_shape(dble(xCell(iCell)) - xc, dble(yCell(iCell)) - yc, zm, r0, htop, xoff, sh)
++            do n = 1, 2
++               call ebud_radd(acc(:,n), sh(n)*dble(rho_zz(k,iCell))/dble(rdzw(k))*dble(areaCell(iCell)))
++            end do
++         end do
++         call ebud_radd(acc(:,3), dble(areaCell(iCell)))
++         call ebud_rnorm(acc, 5)
++      end do
++      call ebud_rsum(domain, 5, acc, tot)
++      atot = tot(3)
++      amp(1) = ebud_theat*atot*dble(dt)/tot(1)    ! J per kg of dry mass per unit shape
++      amp(2) = -ebud_tcool*atot*dble(dt)/tot(2)
++      acc(:,:) = 0_8
++      do iCell = 1, nCellsSolve
++         do k = 1, nVertLevels
++            zm = 0.5d0*(dble(zgrid(k,iCell)) + dble(zgrid(k+1,iCell)))
++            call etest_shape(dble(xCell(iCell)) - xc, dble(yCell(iCell)) - yc, zm, r0, htop, xoff, sh)
++            if (sh(1) == 0.d0 .and. sh(2) == 0.d0) cycle
++            dm = dble(rho_zz(k,iCell))/dble(rdzw(k))
++            q = (amp(1)*sh(1) + amp(2)*sh(2))*dm
++            ex = (dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))*dble(theta_m(k,iCell)))**(dble(rgas)/dble(cv))
++            tm = dble(theta_m(k,iCell))*ex
++            call efix_set_tm(k, iCell, tm + q/(dble(cv)*dm), dt, rho_zz, theta_m, zz, rtheta_p, rtheta_b, exner, exner_b, &
++                             pressure_p, rt_diab)
++            call ebud_radd(acc(:,4), amp(1)*sh(1)*dm*dble(areaCell(iCell)))
++            call ebud_radd(acc(:,5), amp(2)*sh(2)*dm*dble(areaCell(iCell)))
++         end do
++         call ebud_rnorm(acc, 5)
++      end do
++      call ebud_rsum(domain, 5, acc, tot)
++      if (domain % dminfo % my_proc_id == 0) write(0,'(a,i7,2es25.16)') 'EH ', itimestep, tot(4)/atot, tot(5)/atot
++   end subroutine etest_heat
++
++   subroutine etest_shape(dx, dy, z, r0, htop, xoff, sh)
++      real (kind=8), intent(in) :: dx, dy, z, r0(2), htop(2), xoff(2)
++      real (kind=8), intent(out) :: sh(2)
++      integer :: n
++      do n = 1, 2
++         sh(n) = 0.d0
++         if (z < htop(n)) sh(n) = exp(-((dx - xoff(n))**2 + dy**2)/r0(n)**2)*sin(acos(-1.d0)*z/htop(n))
++      end do
++   end subroutine etest_shape
++
+ end module atm_time_integration
+-- 
+2.55.0
+

@@ -1,0 +1,76 @@
+From 412ab722806f7a779072f4c166c75e3cb92a79cf Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:47 -0500
+Subject: [PATCH 03/29] Thompson: keep the entry density for mass conversions
+ before sedimentation
+
+Thompson converts hydrometeors to mass densities with rho evaluated at entry,
+which matches the host's layer mass, but recomputed rho from the updated
+(latent-heated) temperature three times before sedimentation and sedimented in
+that frame, so each kilogram falling out removed about 1 + dT/T kilograms of
+host water.
+
+Keep the entry density for mass; use the updated density (rhon) for the fall
+speed and viscosity terms at the first recompute.
+
+Measured (C96 control_p8_ugwpv1, with the mass-basis, C1 and C2 fixes):
+Thompson -0.18 % -> -0.07 % of grid-scale precipitation; total water residual
+-0.04 % -> -0.003 % of precipitation (exact budget).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/MP/Thompson/module_mp_thompson.F90 | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
+index 8bd3c128..637f354c 100644
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -2025,7 +2025,7 @@ module module_mp_thompson
+       real(wp) :: r_frac, g_frac
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+-      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR
++      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+       integer :: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq
+       integer, dimension(5) :: ksed1
+@@ -3390,8 +3390,9 @@ module module_mp_thompson
+          otemp = 1./temp(k)
+          tempc = temp(k) - 273.15
+          qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+-         rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
+-         rhof(k) = SQRT(RHO_NOT/rho(k))
++         ! rho stays the entry density so sedimentation conserves the host's column mass
++         rhon = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
++         rhof(k) = SQRT(RHO_NOT/rhon)
+          rhof2(k) = SQRT(rhof(k))
+          qvs(k) = rslf(pres(k), temp(k))
+          ssatw(k) = qv(k)/qvs(k) - 1.
+@@ -3402,7 +3403,7 @@ module module_mp_thompson
+          else
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+-         vsc2(k) = SQRT(rho(k)/visco(k))
++         vsc2(k) = SQRT(rhon/visco(k))
+          lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+          ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
+@@ -3664,7 +3665,6 @@ module module_mp_thompson
+             endif
+             qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+             temp(k) = t1d(k) + DT*tten(k)
+-            rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
+             qvs(k) = rslf(pres(k), temp(k))
+             ssatw(k) = qv(k)/qvs(k) - 1.
+          endif
+@@ -3747,7 +3747,6 @@ module module_mp_thompson
+             qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+             nr(k) = max(R2, (nr1d(k) + DT*nrten(k))*rho(k))
+             temp(k) = t1d(k) + DT*tten(k)
+-            rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
+          endif
+       enddo
+ #if ( WRF_CHEM == 1 )

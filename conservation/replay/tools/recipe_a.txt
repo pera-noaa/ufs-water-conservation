@@ -1,0 +1,19 @@
+# A.1 fx
+01_FX1 P . 1 $SRC/energy/patches/01_fv3-fv_mapz_consv_te_fixer_weight.diff
+02_SG1 P . 1 $SRC/energy/patches/02_fv3-fv_sg_relax_total_energy.diff
+03_CP1 P . 1 $SRC/energy/patches/03_fv3-atmosphere_state_update_heating_mass.diff
+CMP $E/fx/ufs-weather-model
+# A.2 all_full
+04_R1 P . 1 $SRC/energy/patches/04_ccpp-dcyc2t3_radiative_heating_current_mass.diff
+05_FV2 P UFSATM/fv3/atmos_cubed_sphere 1 $A/01_FV2_fv3_statein_consistent_layer_mass.diff
+06_D1_dspheat_ke P . 1 $A/02_enpbl_04_ccpp-satmedmfvdifq_dspheat_ke.diff
+07_D3A P . 1 $A/03_encnv_D3A.diff
+08_D7 P . 1 $SRC/energy/patches/05_fv3-cpl_ke_heating_option.diff
+09_D3B P . 1 $A/04_encnv_02_D3B.diff
+10_D4 P . 1 $A/05_encnv_03_D4.diff
+11_D4n P . 1 $A/06_encnv_04_D4N.diff
+12_NM12 P UFSATM/ccpp/physics 1 $A/07_NM12_noahmp_combine_melt_out.diff
+13_C1 P . 1 $A/08_encpl_04_cpl_water_energy.diff
+14_K1 P . 1 $A/09_encpl_05_thompson_kirchhoff.diff
+15_S1_export P . 1 $A/10r_encpl_06_rebased_on_encnv.diff
+CMP $E/all_full/ufs-weather-model

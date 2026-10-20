@@ -1,0 +1,52 @@
+From f5278b0a509a4d0cf10af277849498d3553e4215 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:51 -0500
+Subject: [PATCH 5/6] atmos_phys_driver_statein: divide tracers by the
+ thickness used on return
+
+Tracers enter the physics divided by one layer thickness and come back
+multiplied by prsi(k) - prsi(k+1). The running sum drops corrections below
+half an ulp of 1e5 Pa, always with the same sign, so tracer mass drifts.
+
+Divide by the thickness atmosphere_state_update multiplies back by, so
+tracer mass round-trips exactly.
+
+Measured (C96 control_p8_ugwpv1, 24 h): tracer mass +3.07e-15 -> +5.2e-17
+per day; energy-neutral. T rms 0.148 K (a 1e-7 K perturbation gives 0.155).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ driver/UFS/atmosphere.F90 | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/driver/UFS/atmosphere.F90 b/driver/UFS/atmosphere.F90
+index 6bb1dbb..a7934d1 100644
+--- a/driver/UFS/atmosphere.F90
++++ b/driver/UFS/atmosphere.F90
+@@ -2261,8 +2261,9 @@ contains
+            IPD_Statein%prsi(im,k)  = IPD_Statein%prsi(im,k+1) + IPD_Statein%prsl(im,k)
+            IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
+ ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
++! (divide by the thickness atmosphere_state_update multiplies back by, so tracer mass round-trips exactly)
+            IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+-                                                   / IPD_Statein%prsl(im,k)
++                                                   / (IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1))
+          enddo
+        enddo
+      else
+@@ -2276,8 +2277,9 @@ contains
+            IPD_Statein%prsi(im,k+1)  = IPD_Statein%prsi(im,k) + IPD_Statein%prsl(im,k)
+            IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
+ ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
++! (divide by the thickness atmosphere_state_update multiplies back by, so tracer mass round-trips exactly)
+            IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+-                                           / IPD_Statein%prsl(im,k)
++                                           / (IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k))
+          enddo
+        enddo
+      endif
+-- 
+2.31.1
+

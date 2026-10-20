@@ -1,0 +1,34 @@
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -1013,6 +1013,8 @@
+ 
+   real (kind=kind_phys)                                        :: pair   !atm bottom level pressure (pa)
+   real (kind=kind_phys)                                        :: prcp_frozen   !total frozen precipitation [mm/s] ! mb/an : v3.7
++  real (kind=kind_phys)                                        :: fpcv          !frozen fraction of convective precipitation
++  real (kind=kind_phys)                                        :: bdfall0       !snow density before the mix [kg/m3]
+   real (kind=kind_phys), parameter                             :: rho_grpl = 500.0  ! graupel bulk density [kg/m3] ! mb/an : v3.7
+   real (kind=kind_phys), parameter                             :: rho_hail = 917.0  ! hail bulk density [kg/m3]    ! mb/an : v3.7
+ ! --------------------------------------------------------------------------------------------------
+@@ -1092,6 +1094,7 @@
+ 
+      bdfall = min(120.,67.92+51.25*exp((sfctmp-tfrz)/2.59))       !mb/an: change to min  
+      if(opt_snf == 4 .or. opt_snf == 5) then
++        bdfall0 = bdfall
+         prcp_frozen = prcpsnow + prcpgrpl + prcphail
+         if(prcpnonc > 0. .and. prcp_frozen > 0.) then
+           fpice = min(1.0,prcp_frozen/prcpnonc)
+@@ -1103,6 +1106,14 @@
+           fpice = 0.0
+         endif
+ 	
++        ! the microphysics fraction is for grid-scale precipitation; convective precipitation is snow below freezing
++        if(prcpconv + prcpshcv > 0.) then
++          fpcv = 0.0
++          if(sfctmp < tfrz) fpcv = 1.0
++          if(opt_snf == 4 .and. fpcv > 0. .and. fpice > 0.) bdfall = (bdfall*fpice*prcpnonc + &
++                 bdfall0*(prcpconv + prcpshcv)) / (fpice*prcpnonc + prcpconv + prcpshcv)
++          fpice = fpice + (fpcv - fpice)*(prcpconv + prcpshcv)/prcp
++        end if
+      endif
+ 
+      rain   = prcp * (1.-fpice)

@@ -1,0 +1,140 @@
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 01:11:22.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 01:11:30.000000000 -0500
+@@ -1081,6 +1081,7 @@
+     real(kind=kind_phys) :: dt_inner        !< time step for the inner loop in s
+     logical              :: sedi_semi       !< flag for semi Lagrangian sedi of rain
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+@@ -3761,6 +3762,7 @@
+     real(kind=kind_phys) :: dt_inner       = -999.0             !< time step for the inner loop
+     logical              :: sedi_semi      = .false.            !< flag for semi Lagrangian sedi of rain
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+@@ -4304,7 +4306,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff,                   &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat,                   &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5055,6 +5057,7 @@
+     endif
+     Model%sedi_semi        = sedi_semi
+     Model%thompson_kirchhoff = thompson_kirchhoff
++    Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 01:11:22.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 01:11:30.000000000 -0500
+@@ -5224,6 +5224,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[thompson_frame_heat]
++  standard_name = flag_for_thompson_frame_F_heating
++  long_name = flag for Thompson heating from the frame-F latent heat of its net phase change
++  units = flag
++  dimensions = ()
++  type = logical
+ [sedi_semi]
+   standard_name = flag_for_semi_Lagrangian_sedi_rain
+   long_name = flag for semi Lagrangian sedi of rain
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90 b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-18 01:11:24.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-18 01:11:30.000000000 -0500
+@@ -12,6 +12,7 @@
+ 
+       use module_mp_thompson, only : thompson_init, mp_gt_driver, thompson_final, calc_effectRad, tsf
+       use module_mp_thompson, only : naIN0, naIN1, naCCN0, naCCN1, eps
++      use module_mp_thompson, only : Cp_tfh => Cp, lvap0_tfh => lvap0, lfus_tfh => lfus
+       use module_mp_thompson, only : re_qc_min, re_qc_max, re_qi_min, re_qi_max, re_qs_min, re_qs_max
+ 
+       use module_mp_thompson_make_number_concentrations, only: make_IceNumber, make_DropletNumber, make_RainNumber
+@@ -388,7 +389,7 @@
+                               is_initialized, fs_fac_rain, fs_fac_snow, &
+                               ten_q, dspechum, dqc, dqr,           &
+                               dqi, dqs, dqg, dni, dnr, dnc, dnwfa, &
+-                              dnifa, dtgrs, ten_u, ten_v, pflx_mpl, pflx_mpi, errmsg, errflg)
++                              dnifa, dtgrs, ten_u, ten_v, pflx_mpl, pflx_mpi, frame_heat, t_old, errmsg, errflg)
+ 
+          implicit none
+ 
+@@ -486,6 +487,10 @@
+          real(kind=kind_phys), intent(inout), dimension(:,:), optional :: pfi_lsan
+          real(kind=kind_phys), intent(inout), dimension(:,:), optional :: pfl_lsan
+          real(kind=kind_phys), intent(inout) :: pflx_mpl(:,:), pflx_mpi(:,:)
++         logical,                   intent(in   ) :: frame_heat
++         real(kind_phys),           intent(in   ) :: t_old(:,:)
++         real(kind_phys) :: fmass, fdv, fdi, ftt, ftb, fvt, fvb, fit, fib, fqa, fqb, fqreq
++         integer :: fi, fk
+ 
+          ! fall speed adjustment
+          real(kind_phys),           intent(in), optional :: fs_fac_rain, fs_fac_snow
+@@ -995,6 +1000,31 @@
+            pfl_lsan(:,:) = pflls(:,:,1)
+          end if
+ 
++         if (frame_heat) then
++           ! heating from the net phase change of each layer (water budget + exported precipitation fluxes,
++           ! vapour flux = remainder) at FV3's latent heats L(T) for the step-initial T, replacing Thompson's
++           do fi = 1, ncol
++             ftt = 0.0_kind_phys
++             do fk = nlev, 1, -1
++               fmass = (prsi(fi,fk) - prsi(fi,fk+1))/con_g
++               fdv = fmass*(new_spechum(fi,fk) - spechum(fi,fk))
++               fdi = fmass*(new_qi(fi,fk) - qi(fi,fk) + new_qs(fi,fk) - qs(fi,fk) + new_qg(fi,fk) - qg(fi,fk))
++               ftb = ftt - fdv - fdi - fmass*(new_qc(fi,fk) - qc(fi,fk) + new_qr(fi,fk) - qr(fi,fk))
++               fib = pflx_mpi(fi,fk)
++               fit = 0.0_kind_phys
++               if (fk < nlev) fit = pflx_mpi(fi,fk+1)
++               fvb = ftb - pflx_mpl(fi,fk) - fib
++               fvt = ftt
++               if (fk < nlev) fvt = ftt - pflx_mpl(fi,fk+1) - fit
++               fqa = fvt - fvb - fdv                ! vapour condensed or deposited in the layer
++               fqb = fdi - (fit - fib)              ! water frozen (from vapour or liquid) in the layer
++               fqreq = (lvap0_tfh + (1846.0_kind_phys - 4185.5_kind_phys)*(t_old(fi,fk) - 273.15_kind_phys))*fqa &
++                     + (lfus_tfh + (4185.5_kind_phys - 1972.0_kind_phys)*(t_old(fi,fk) - 273.15_kind_phys))*fqb
++               new_tgrs(fi,fk) = tgrs(fi,fk) + fqreq/(Cp_tfh*fmass)
++               ftt = ftb
++             enddo
++           enddo
++         endif
+          dspechum = (new_spechum - spechum)/dtp
+          dqc = (new_qc - qc)/dtp
+          dqr = (new_qr - qr)/dtp
+diff -ruN a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-18 01:11:24.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-18 01:11:30.000000000 -0500
+@@ -1109,6 +1109,21 @@
+   type = real
+   kind = kind_phys
+   intent = inout
++[frame_heat]
++  standard_name = flag_for_thompson_frame_F_heating
++  long_name = flag for Thompson heating from the frame-F latent heat of its net phase change
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[t_old]
++  standard_name = physics_timestep_initial_air_temperature
++  long_name = model layer mean temperature at the start of the physics step
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

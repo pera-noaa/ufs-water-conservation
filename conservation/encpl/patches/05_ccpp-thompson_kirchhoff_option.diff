@@ -1,0 +1,372 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-13 15:39:58.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -1075,6 +1075,7 @@
+     integer              :: thompson_ext_ndiag3d=37 !< number of 3d arrays for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner        !< time step for the inner loop in s
+     logical              :: sedi_semi       !< flag for semi Lagrangian sedi of rain
++    logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+     logical              :: thompson_mp_is_init=.false. !< Local scheme initialization flag
+@@ -3739,6 +3740,7 @@
+     logical              :: ext_diag_thompson = .false.         !< flag for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner       = -999.0             !< time step for the inner loop
+     logical              :: sedi_semi      = .false.            !< flag for semi Lagrangian sedi of rain
++    logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+     real(kind=kind_phys) :: nt_c_o         = 50.e6              !< prescribed cloud liquid water number concentration over ocean
+@@ -4277,7 +4279,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl,                                            &
++                               sedi_semi, decfl, thompson_kirchhoff,                        &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5024,6 +5026,7 @@
+       Model%dt_inner       = Model%dtp
+     endif
+     Model%sedi_semi        = sedi_semi
++    Model%thompson_kirchhoff = thompson_kirchhoff
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+     Model%nt_c_o           = nt_c_o
+@@ -7126,6 +7129,7 @@
+         print *, ' ext_diag_thompson : ', Model%ext_diag_thompson
+         print *, ' dt_inner          : ', Model%dt_inner
+         print *, ' sedi_semi         : ', Model%sedi_semi
++        print *, ' thompson_kirchhoff: ', Model%thompson_kirchhoff
+         print *, ' decfl             : ', Model%decfl
+         print *, ' nt_c_l            : ', Model%nt_c_l
+         print *, ' nt_c_o            : ', Model%nt_c_o
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-13 15:39:58.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 19:28:49.000000000 -0500
+@@ -5184,6 +5184,12 @@
+   dimensions = ()
+   type = real
+   kind = kind_phys
++[thompson_kirchhoff]
++  standard_name = flag_for_thompson_kirchhoff_latent_heat
++  long_name = flag for Thompson latent heats and heat capacity of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
+ [sedi_semi]
+   standard_name = flag_for_semi_Lagrangian_sedi_rain
+   long_name = flag for semi Lagrangian sedi of rain
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-15 10:48:45.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -45,9 +45,9 @@
+                                   nwfa, nifa, tgrs, prsl, phil, area,      &
+                                   aerfld, mpicomm, mpirank, mpiroot,       &
+                                   threads, ext_diag, diag3d,               &
+-                                  is_initialized, errmsg, errflg)
++                                  is_initialized, kirchhoff, errmsg, errflg)
+          use module_mp_thompson, only : PI, T_0, Rv, R, RoverRv, Cp
+-         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus
++         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus, thompson_kirchhoff
+          use module_mp_thompson, only : av_i, av_s, D0s, bv_s, bv_i
+          use module_mp_thompson, only : nt_c_l, nt_c_o, xnc_max, ssati_min, Nt_i_max, rr_min
+          
+@@ -56,6 +56,7 @@
+          ! Interface variables
+          integer,                   intent(in   ) :: ncol
+          integer,                   intent(in   ) :: nlev
++         logical,                   intent(in   ) :: kirchhoff
+          real(kind_phys),           intent(in   ) :: con_pi, con_t0c, con_rv, con_cp, con_rgas, &
+                                                      con_boltz, con_amd, con_amw, con_avgd,     &
+                                                      con_hvap, con_hfus, con_g, con_rd, con_eps
+@@ -132,6 +133,7 @@
+          N_avo = con_avgd
+          lvap0 = con_hvap
+          lfus = con_hfus
++         thompson_kirchhoff = kirchhoff
+          
+          if (present(con_nt_c_l)) nt_c_l = con_nt_c_l
+          if (present(con_nt_c_o)) nt_c_o = con_nt_c_o
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-15 10:48:45.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-17 19:28:49.000000000 -0500
+@@ -440,6 +440,13 @@
+   dimensions = ()
+   type = logical
+   intent = inout
++[kirchhoff]
++  standard_name = flag_for_thompson_kirchhoff_latent_heat
++  long_name = flag for Thompson latent heats and heat capacity of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-15 10:48:45.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-17 19:28:49.000000000 -0500
+@@ -215,6 +215,9 @@
+    real(wp)                     :: lvap0        !set in mp_thompson_init from host model
+    real(wp)                     :: lfus         !set in mp_thompson_init from host model
+    real(wp),            private :: olfus        !set in thompson_init
++!..Latent heat slopes and moist heat capacity factor; thompson_kirchhoff: those of the host's (FV3) frame
++   logical                      :: thompson_kirchhoff = .false.
++   real(wp),            private :: dlv = 2106.0 - 4218.0, dls = 0., dlf = 0., cpq = 0.887
+ 
+ !..Ice initiates with this mass (kg), corresponding diameter calc.
+ !..Min diameters and mass of cloud, rain, snow, and graupel (m, kg).
+@@ -477,6 +480,13 @@
+          
+          lsub = lvap0 + lfus
+          olfus = 1./lfus
++         if (thompson_kirchhoff) then
++            ! FV3 heat capacities: cp_vap 1846, c_liq 4185.5, c_ice 1972
++            dlv = 1846. - 4185.5
++            dls = 1846. - 1972.
++            dlf = 4185.5 - 1972.
++            cpq = 1.
++         endif
+ 
+ ! Set module variable is_aerosol_aware/merra2_aerosol_aware
+          is_aerosol_aware = is_aerosol_aware_in
+@@ -2277,7 +2287,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qc1d(k)
+-            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
++            t1d(k) = t1d(k) - (lvap0 + dlv*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+             rc(k) = R1
+@@ -2307,7 +2317,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qi1d(k)
+-            t1d(k) = t1d(k) - lsub*qi1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
++            t1d(k) = t1d(k) - ls_t(t1d(k))*qi1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+             ri(k) = R1
+@@ -2339,7 +2349,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qr1d(k)
+-            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
++            t1d(k) = t1d(k) - (lvap0 + dlv*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+             rr(k) = R1
+@@ -2353,7 +2363,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qs1d(k)
+-            t1d(k) = t1d(k) - lsub*qs1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
++            t1d(k) = t1d(k) - ls_t(t1d(k))*qs1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+             L_qs(k) = .false.
+@@ -2365,7 +2375,7 @@
+          else
+             ! at or below R1: to vapour with its latent heat, not deleted
+             qv1d(k) = qv1d(k) + qg1d(k)
+-            t1d(k) = t1d(k) - lsub*qg1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
++            t1d(k) = t1d(k) - ls_t(t1d(k))*qg1d(k)/(Cp*(1.+cpq*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             rg(k) = R1
+             L_qg(k) = .false.
+@@ -2411,9 +2421,9 @@
+          else
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+-         ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
++         ocp(k) = 1./(Cp*(1.+cpq*qv(k)))
+          vsc2(k) = SQRT(rho(k)/visco(k))
+-         lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
++         lvap(k) = lvap0 + dlv*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+       enddo
+ 
+@@ -3241,7 +3251,7 @@
+ !+---+-----------------------------------------------------------------+
+       do k = kts, kte
+          orho = 1./rho(k)
+-         lfus2 = lsub - lvap(k)
++         lfus2 = ls_t(temp(k)) - lvap(k)
+ 
+ !>  - Aerosol number tendency
+          if (is_aerosol_aware) then
+@@ -3394,7 +3404,7 @@
+ !>  - Temperature tendency
+          if (temp(k).lt.T_0) then
+             tten(k) = tten(k) &
+-                     + ( lsub*ocp(k)*(pri_inu(k) + pri_ide(k) &
++                     + ( ls_t(temp(k))*ocp(k)*(pri_inu(k) + pri_ide(k) &
+                                        + prs_ide(k) + prs_sde(k) &
+                                        + prg_gde(k) + pri_iha(k)) &
+                         + lfus2*ocp(k)*(pri_wfz(k) + pri_rfz(k) &
+@@ -3405,9 +3415,9 @@
+                         )*orho * (1-IFDRY)
+          else
+             tten(k) = tten(k) &
+-                     + ( lfus*ocp(k)*(-prr_sml(k) - prr_gml(k) &
++                     + ( lf_t(temp(k))*ocp(k)*(-prr_sml(k) - prr_gml(k) &
+                                        - prr_rcg(k) - prr_rcs(k)) &
+-                        + lsub*ocp(k)*(prs_sde(k) + prg_gde(k)) &
++                        + ls_t(temp(k))*ocp(k)*(prs_sde(k) + prg_gde(k)) &
+                         )*orho * (1-IFDRY)
+          endif
+ 
+@@ -3435,9 +3445,9 @@
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+          vsc2(k) = SQRT(rhon/visco(k))
+-         lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
++         lvap(k) = lvap0 + dlv*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+-         ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
++         ocp(k) = 1./(Cp*(1.+cpq*qv(k)))
+          lvt2(k)=lvap(k)*lvap(k)*ocp(k)*oRv*otemp*otemp
+          if (is_aerosol_aware)                                                 &
+            nwfa(k) = max(11.1E6*rho(k), (nwfa1d(k) + nwfaten(k)*DT)*rho(k))
+@@ -3720,9 +3730,9 @@
+                visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+             endif
+             vsc2(k) = SQRT(rho(k)/visco(k))
+-            lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
++            lvap(k) = lvap0 + dlv*tempc
+             tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+-            ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
++            ocp(k) = 1./(Cp*(1.+cpq*qv(k)))
+ 
+             rvs = rho(k)*qvs(k)
+             rvs_p = rvs*otemp*(lvap(k)*otemp*oRv - 1.)
+@@ -4261,14 +4271,14 @@
+                ncten(k) = ncten(k) + ni1d(k)*odt
+                qiten(k) = qiten(k) - xri*odt
+                niten(k) = -ni1d(k)*odt
+-               tten(k) = tten(k) - lfus*ocp(k)*xri*odt*(1-IFDRY)
++               tten(k) = tten(k) - lf_t(temp(k))*ocp(k)*xri*odt*(1-IFDRY)
+       !diag
+-               !txri1(k) = lfus*ocp(k)*xri*odt*(1-IFDRY)
++               !txri1(k) = lf_t(temp(k))*ocp(k)*xri*odt*(1-IFDRY)
+             endif
+ 
+             xrc = max(0.0, qc1d(k) + qcten(k)*DT)
+             if ( (temp(k).lt. HGFR) .and. (xrc.gt. 0.0) ) then
+-               lfus2 = lsub - lvap(k)
++               lfus2 = ls_t(temp(k)) - lvap(k)
+                xnc = nc1d(k) + ncten(k)*DT
+                qiten(k) = qiten(k) + xrc*odt
+                niten(k) = niten(k) + xnc*odt
+@@ -4295,7 +4305,7 @@
+          if (xcl .le. R1) then
+             qiten(k) = qiten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
+-            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++            tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qr1d(k) + qrten(k)*DT
+          if (xcl .le. R1) then
+@@ -4307,13 +4317,13 @@
+          if (xcl .le. R1) then
+             qsten(k) = qsten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
+-            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++            tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+          xcl = qg1d(k) + qgten(k)*DT
+          if (xcl .le. R1) then
+             qgten(k) = qgten(k) - xcl*odt
+             qvten(k) = qvten(k) + xcl*odt
+-            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++            tten(k) = tten(k) - ls_t(temp(k))*ocp(k)*xcl*odt*(1-IFDRY)
+          endif
+       enddo
+ !+---+-----------------------------------------------------------------+
+@@ -4398,7 +4408,7 @@
+             if (xcnd .gt. 0.) then
+                frc = min(1._wp, (1.E-10 - qv1d(k))/xcnd)
+                t1d(k) = t1d(k) - frc*ocp(k)*(1-IFDRY)                           &
+-                      * (lvap(k)*(qc1d(k)+qr1d(k)) + lsub*(qi1d(k)+qs1d(k)+qg1d(k)))
++                      * (lvap(k)*(qc1d(k)+qr1d(k)) + ls_t(t1d(k))*(qi1d(k)+qs1d(k)+qg1d(k)))
+                qv1d(k) = qv1d(k) + frc*xcnd
+                qc1d(k) = qc1d(k)*(1.-frc)
+                nc1d(k) = nc1d(k)*(1.-frc)
+@@ -4442,31 +4452,31 @@
+                prw_vcde1(k) = -1*prw_vcd(k)*dt
+             endif
+ !heating/cooling diagnostics
+-            tpri_inu1(k) = pri_inu(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++            tpri_inu1(k) = pri_inu(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+ 
+             if(pri_ide(k).gt.0)then
+-               tpri_ide1_d(k) = pri_ide(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++               tpri_ide1_d(k) = pri_ide(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             else
+-               tpri_ide1_s(k) = -pri_ide(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++               tpri_ide1_s(k) = -pri_ide(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+ 
+             if(temp(k).lt.T_0)then
+-              tprs_ide1(k) = prs_ide(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++              tprs_ide1(k) = prs_ide(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+ 
+             if(prs_sde(k).gt.0)then
+-               tprs_sde1_d(k) = prs_sde(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++               tprs_sde1_d(k) = prs_sde(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             else
+-               tprs_sde1_s(k) = -prs_sde(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++               tprs_sde1_s(k) = -prs_sde(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+ 
+             if(prg_gde(k).gt.0)then
+-              tprg_gde1_d(k) = prg_gde(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++              tprg_gde1_d(k) = prg_gde(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             else
+-              tprg_gde1_s(k) = -prg_gde(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++              tprg_gde1_s(k) = -prg_gde(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+ 
+-            tpri_iha1(k) = pri_iha(k)*lsub*ocp(k)*orho * (1-IFDRY)*DT
++            tpri_iha1(k) = pri_iha(k)*ls_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             tpri_wfz1(k) = pri_wfz(k)*lfus2*ocp(k)*orho * (1-IFDRY)*DT
+             tpri_rfz1(k) = pri_rfz(k)*lfus2*ocp(k)*orho * (1-IFDRY)*DT
+             tprg_rfz1(k) = prg_rfz(k)*lfus2*ocp(k)*orho * (1-IFDRY)*DT
+@@ -4491,15 +4501,15 @@
+             endif
+ 
+ ! cooling terms
+-            tprr_sml1(k) = prr_sml(k)*lfus*ocp(k)*orho * (1-IFDRY)*DT
+-            tprr_gml1(k) = prr_gml(k)*lfus*ocp(k)*orho * (1-IFDRY)*DT
++            tprr_sml1(k) = prr_sml(k)*lf_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
++            tprr_gml1(k) = prr_gml(k)*lf_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+ 
+             if(temp(k).ge.T_0)then
+-               tprr_rcg1(k) = -prr_rcg(k)*lfus*ocp(k)*orho * (1-IFDRY)*DT
++               tprr_rcg1(k) = -prr_rcg(k)*lf_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+          
+             if(temp(k).ge.T_0)then
+-               tprr_rcs1(k) = -prr_rcs(k)*lfus*ocp(k)*orho * (1-IFDRY)*DT
++               tprr_rcs1(k) = -prr_rcs(k)*lf_t(temp(k))*ocp(k)*orho * (1-IFDRY)*DT
+             endif
+          
+             tprv_rev1(k) = lvap(k)*ocp(k)*prv_rev(k)*(1-IFDRY)*DT
+@@ -6674,5 +6684,17 @@
+ 
+ !+---+-----------------------------------------------------------------+
+ !+---+-----------------------------------------------------------------+
++   elemental real(wp) function ls_t(t)
++      !< latent heat of sublimation applied to T (lsub unless thompson_kirchhoff)
++      real(wp), intent(in) :: t
++      ls_t = lsub + dls*(t - 273.15)
++   end function ls_t
++
++   elemental real(wp) function lf_t(t)
++      !< latent heat of melting applied to T (lfus unless thompson_kirchhoff)
++      real(wp), intent(in) :: t
++      lf_t = lfus + dlf*(t - 273.15)
++   end function lf_t
++
+ end module module_mp_thompson
+ !+---+-----------------------------------------------------------------+

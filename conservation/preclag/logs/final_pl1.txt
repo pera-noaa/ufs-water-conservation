@@ -1,0 +1,171 @@
+g_off (pl1, final12 switches, carry off) job 10156492
+m_on (mpl1, ALLC) job 10156493
+rs (ALLC) 10156543,10156544
+rsL (ALLC, 4x6) 10156576,10156577
+m_off (mpl1, final12 switches) job 10156592
+gA_off (pl1, defaults) job 10156598
+=== m_on
+sfc_precip_t1_carry = .true.
+# m_on/out: 119 steps; W m-2:  r_P   r_F   S_cross   gap=r_F-S_cross   sum|gap|
+1->2 interst_1..composites_pre     +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+2->3 radiation                     +3.478853e-13 +3.166408e-13 +0.000000e+00 +3.166408e-13 1.664e-09
+3->4 surface loop                  +1.137622e-01 +1.137622e-01 +0.000000e+00 +1.137622e-01 6.170e-01
+4->5 PBL                           +2.011440e-04 -5.030526e-01 -5.030526e-01 +2.586647e-14 1.679e-09
+5->6 GWD                           +3.766159e-13 +3.765127e-13 -3.566272e-16 +3.768693e-13 1.602e-09
+6->7 photochem                     +1.436427e-05 +2.057880e-05 -5.389153e-07 +2.111771e-05 2.112e-05
+7->8 SAMF deep                     +1.617243e-01 +1.258916e+00 +1.258916e+00 +4.123641e-14 3.332e-11
+8->9 SAMF shallow                  -1.233096e-01 +3.420866e-02 +3.420866e-02 -7.339378e-15 7.364e-11
+9->10 interst_4                    +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+10->11 Thompson                    -2.520028e-02 +8.875306e-01 +8.875306e-01 +1.545428e-12 5.734e-10
+11->12 post                        +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+ALL physics                        +1.271921e-01 +1.791385e+00 +1.677602e+00 +1.137833e-01 6.170e-01
+# m_on/out: 119 steps, frame F, W m-2
+E_F(end) - E_F(start)                                              +5.176063e+00
+F_F = F_P + DEF (rad + SH + water boundary enthalpy)               +5.064032e+00
+RESIDUAL                                                           +1.120311e-01
+ dycore: fixer window                                              +1.228395e-10
+ dycore: other (fv_sg heat; its KE in coupling)                    +4.126287e-03
+ physics: sum of scheme residuals r_P (physics frame)              +1.271921e-01
+ coupling in frame F: E_F(6)-E_F(4) - dE_P - DEF                   -1.928722e-02
+   S_rem: physics latent heats vs Kirchhoff L(T)                   -2.002954e-02
+   KE: write + update (KD+KW) - physics dK                         -2.241821e-02
+   thermodynamic remainder (R_thermo) = coupling - S_rem - KE      +2.316052e-02
+   applied C1 heating (encpl meter)                                -5.765435e-01
+declared: surface hand-off heating (segment 3: ensfc2 LW1 + EV1, booked surface flux) +1.137622e-01
+declared: h2ophys chemical water source S_chem = hvap*dWv          +1.436427e-05
+declared: PH1 snow leaves as ice at T1 (in F_F with --ep1)         -1.745430e-03
+RESIDUAL net of the declared terms                                 -1.116870e-11
+hand-off lag (not in atmosphere budget): c_w P(N)(T1(N+1)-T1(N)), all surfaces +0.000000e+00
+  of which land (frland-weighted)                                  +0.000000e+00
+  of which sea ice ((1-frland) fice-weighted)                      +0.000000e+00
+stock lag c P(N)(T1(N+1)-T1(N)) (diagnostic: what T1(N+1) booking would give) -1.210383e-02
+PH1 swap csnow (c_l - c_i)(T1 - T0) (diagnostic)                   +0.000000e+00
+# note: RESIDUAL = dycore + r_P + coupling_F; r_P + S_rem is the scheme-vs-Kirchhoff remainder
+# EML: 119 steps; unmatched columns (no previous step or remapped): {1: 55296}
+# EML: surface-side capacity c P (tprcp, srflag) vs the atmosphere's: sum|d| / sum = 7.178e-12
+dyc: fixer window total te0->after fix (TE, 7->9)          +1.522698e-10
+dyc: fixer intended (consv*sum(te0-te))                    -3.040051e-01
+10->11 Thompson+MP_post                  +1.2614e+00 -8.2775e+00 +9.1441e+00 +3.9477e-01 +0.0000e+00 | -1.106e-05 +1.2866e+00 3.7557e-01 -2.040e-20 | r=dE-F -2.520028e-02 | dE* -1.1015e+01 gap -1.2276e+01
+ALL physics 1->12                        +1.4643e+00 -6.3988e+00 +1.0684e+01 -4.0610e-02 -2.7806e+00 | +4.200e-06 +1.3371e+00 8.8441e-01 +5.746e-12 | r=dE-F +1.271921e-01 | dE* +7.1117e+00 gap +5.6474e+00
+ dycore: fixer window (7->9)                               +1.105556e-10
+=== m_off
+# m_off/out: 119 steps; W m-2:  r_P   r_F   S_cross   gap=r_F-S_cross   sum|gap|
+1->2 interst_1..composites_pre     +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+2->3 radiation                     +3.598814e-13 +4.047620e-13 +0.000000e+00 +4.047620e-13 1.664e-09
+3->4 surface loop                  +1.135885e-01 +1.135885e-01 +0.000000e+00 +1.135885e-01 6.168e-01
+4->5 PBL                           +1.708679e-04 -5.031157e-01 -5.031157e-01 -8.441280e-13 1.680e-09
+5->6 GWD                           -3.965610e-14 -3.975774e-14 -3.657247e-16 -3.939202e-14 1.601e-09
+6->7 photochem                     +1.436427e-05 +2.057880e-05 -5.389167e-07 +2.111771e-05 2.112e-05
+7->8 SAMF deep                     +1.618836e-01 +1.261447e+00 +1.261447e+00 -3.336400e-14 3.339e-11
+8->9 SAMF shallow                  -1.230247e-01 +3.414745e-02 +3.414745e-02 -2.463641e-14 7.374e-11
+9->10 interst_4                    +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+10->11 Thompson                    -2.526837e-02 +8.870191e-01 +8.870191e-01 +1.627901e-12 5.737e-10
+11->12 post                        +0.000000e+00 +0.000000e+00 +0.000000e+00 +0.000000e+00 0.000e+00
+ALL physics                        +1.273643e-01 +1.793107e+00 +1.679497e+00 +1.136096e-01 6.168e-01
+# m_off/out: 119 steps, frame F, W m-2
+E_F(end) - E_F(start)                                              +5.134861e+00
+F_F = F_P + DEF (rad + SH + water boundary enthalpy)               +5.023003e+00
+RESIDUAL                                                           +1.118575e-01
+ dycore: fixer window                                              -2.456790e-11
+ dycore: other (fv_sg heat; its KE in coupling)                    +4.120073e-03
+ physics: sum of scheme residuals r_P (physics frame)              +1.273643e-01
+ coupling in frame F: E_F(6)-E_F(4) - dE_P - DEF                   -1.962680e-02
+   S_rem: physics latent heats vs Kirchhoff L(T)                   -2.037161e-02
+   KE: write + update (KD+KW) - physics dK                         -2.247940e-02
+   thermodynamic remainder (R_thermo) = coupling - S_rem - KE      +2.322420e-02
+   applied C1 heating (encpl meter)                                -5.798669e-01
+declared: surface hand-off heating (segment 3: ensfc2 LW1 + EV1, booked surface flux) +1.135885e-01
+declared: h2ophys chemical water source S_chem = hvap*dWv          +1.436427e-05
+declared: PH1 snow leaves as ice at T1 (in F_F with --ep1)         -1.745349e-03
+RESIDUAL net of the declared terms                                 +4.047167e-11
+hand-off lag (not in atmosphere budget): c_w P(N)(T1(N+1)-T1(N)), all surfaces -1.210640e-02
+  of which land (frland-weighted)                                  -2.409847e-03
+  of which sea ice ((1-frland) fice-weighted)                      +2.274750e-05
+stock lag c P(N)(T1(N+1)-T1(N)) (diagnostic: what T1(N+1) booking would give) -1.210640e-02
+PH1 swap csnow (c_l - c_i)(T1 - T0) (diagnostic)                   +0.000000e+00
+# note: RESIDUAL = dycore + r_P + coupling_F; r_P + S_rem is the scheme-vs-Kirchhoff remainder
+# EML: 119 steps; unmatched columns (no previous step or remapped): {1: 55296}
+# EML: surface-side capacity c P (tprcp, srflag) vs the atmosphere's: sum|d| / sum = 7.221e-12
+dyc: fixer window total te0->after fix (TE, 7->9)          -6.090792e-11
+dyc: fixer intended (consv*sum(te0-te))                    -3.037539e-01
+10->11 Thompson+MP_post                  +1.2616e+00 -8.3269e+00 +9.1927e+00 +3.9578e-01 +0.0000e+00 | -1.105e-05 +1.2869e+00 3.7563e-01 -1.643e-20 | r=dE-F -2.526837e-02 | dE* -1.1005e+01 gap -1.2267e+01
+ALL physics 1->12                        +1.4421e+00 -6.3853e+00 +1.0649e+01 -4.0338e-02 -2.7816e+00 | +4.185e-06 +1.3147e+00 8.8452e-01 +5.746e-12 | r=dE-F +1.273643e-01 | dE* +7.0724e+00 gap +5.6303e+00
+ dycore: fixer window (7->9)                               -7.370371e-11
+== gates
+switch-off-vs-full12 atmf000: 0 of 18 variables differ
+switch-off-vs-full12 atmf024: 0 of 18 variables differ
+switch-off-vs-full12 sfcf024: 0 of 194 variables differ
+switch-off-vs-full12 RESTART/20210323.060000.fv_core.res: 0 of 9 variables differ
+switch-off-vs-full12 RESTART/20210323.060000.fv_tracer.res: 0 of 10 variables differ
+switch-off-vs-full12 RESTART/20210323.060000.sfc_data: 0 of 105 variables differ
+switch-off-vs-full12 RESTART/20210323.060000.phy_data: 0 of 24 variables differ
+default-off-vs-full12 atmf000: 0 of 18 variables differ
+default-off-vs-full12 atmf024: 0 of 18 variables differ
+default-off-vs-full12 sfcf024: 0 of 194 variables differ
+default-off-vs-full12 RESTART/20210323.060000.fv_core.res: 0 of 9 variables differ
+default-off-vs-full12 RESTART/20210323.060000.fv_tracer.res: 0 of 10 variables differ
+default-off-vs-full12 RESTART/20210323.060000.sfc_data: 0 of 105 variables differ
+default-off-vs-full12 RESTART/20210323.060000.phy_data: 0 of 24 variables differ
+restart atmf024: 0 of 18 variables differ
+restart sfcf024: 0 of 194 variables differ
+restart RESTART/20210323.060000.fv_core.res: 0 of 9 variables differ
+restart RESTART/20210323.060000.fv_tracer.res: 0 of 10 variables differ
+restart RESTART/20210323.060000.sfc_data: 0 of 105 variables differ
+restart RESTART/20210323.060000.phy_data: 0 of 25 variables differ
+decomposition atmf024: 0 of 18 variables differ
+decomposition sfcf024: 0 of 194 variables differ
+decomposition RESTART/20210323.060000.fv_core.res: 0 of 9 variables differ
+decomposition RESTART/20210323.060000.fv_tracer.res: 0 of 10 variables differ
+decomposition RESTART/20210323.060000.sfc_data: 0 of 105 variables differ
+decomposition RESTART/20210323.060000.phy_data: 0 of 25 variables differ
+decomp+restart atmf024: 0 of 18 variables differ
+decomp+restart sfcf024: 0 of 194 variables differ
+decomp+restart RESTART/20210323.060000.fv_core.res: 0 of 9 variables differ
+decomp+restart RESTART/20210323.060000.fv_tracer.res: 0 of 10 variables differ
+decomp+restart RESTART/20210323.060000.sfc_data: 0 of 105 variables differ
+decomp+restart RESTART/20210323.060000.phy_data: 0 of 25 variables differ
+meters-passive atmf024: 0 of 18 variables differ
+meters-passive sfcf024: 0 of 194 variables differ
+meters-passive-off atmf024: 0 of 18 variables differ
+meters-passive-off sfcf024: 0 of 194 variables differ
+./final_pl1.sh: line 41: ncdump: command not found
+./final_pl1.sh: line 41: ncdump: command not found
+./final_pl1.sh: line 41: ncdump: command not found
+phy_data variables: rs_S 0 (sfc_precip_t1: 0), g_off 0
+== 24 h impact: carry on (rs_S) vs off (full12 all-on rs12_S); noise ctl64 vs ctlc999
+f24 tmp        max|d| 1.156e+01  rms 1.385e-01  mean d -6.311e-05
+f24 tmpsfc     max|d| 1.057e+01  rms 2.593e-01  mean d -3.590e-04
+f24 prate_ave  max|d| 1.548e-04  rms 5.818e-06  mean d -1.154e-08
+f24 lhtfl_ave  max|d| 1.184e+02  rms 2.920e+00  mean d +1.189e-02
+f24 shtfl_ave  max|d| 9.607e+01  rms 2.017e+00  mean d +2.886e-02
+f24 pressfc    max|d| 1.154e+02  rms 7.464e+00  mean d +2.557e-02
+-- noise
+f24 tmp        max|d| 6.296e+00  rms 1.490e-01  mean d -1.505e-04
+f24 tmpsfc     max|d| 1.753e+01  rms 2.806e-01  mean d -1.592e-03
+f24 prate_ave  max|d| 3.127e-04  rms 7.350e-06  mean d -1.409e-08
+f24 lhtfl_ave  max|d| 1.264e+02  rms 3.239e+00  mean d -2.567e-02
+f24 shtfl_ave  max|d| 7.401e+01  rms 1.978e+00  mean d -2.123e-02
+f24 pressfc    max|d| 1.227e+02  rms 8.410e+00  mean d -2.355e-02
+== land 0-24 h (imp24.py): carry on vs off / noise ctlc999 vs ctl64
+evcw_ave -0.02% (f24 -0.06) | sbsno_ave +0.02% (f24 +0.06) | lhtfl_ave +0.06% (f24 +0.25) | tmp2m -0.001K (f24 -0.001) | spfh2m -0.00% (f24 -0.01)
+evcw_ave -0.03% (f24 -0.50) | sbsno_ave +0.05% (f24 +0.09) | lhtfl_ave -0.04% (f24 -0.21) | tmp2m -0.001K (f24 -0.003) | spfh2m -0.00% (f24 -0.02)
+== surface fields (sfcimp.py): carry on vs off / noise
+tmp2m      land -1.146e-03/2.529e-01 | ice -1.813e-03/7.705e-02 | water -3.150e-05/9.287e-02
+lhtfl_ave  land +7.421e-02/4.261e+00 | ice -6.835e-03/4.291e-01 | water -1.430e-02/2.184e+00
+shtfl_ave  land +8.357e-02/3.600e+00 | ice -2.266e-02/8.021e-01 | water +7.748e-03/6.081e-01
+tmpsfc     land -1.312e-03/4.719e-01 | ice -1.534e-03/1.135e-01 | water +1.203e-04/4.755e-02
+soilt1     land +5.523e-04/1.721e-01 | ice +0.000e+00/0.000e+00 | water +0.000e+00/0.000e+00
+weasd      land -1.875e-04/5.077e-02 | ice -4.294e-04/2.092e-02 | water +0.000e+00/0.000e+00
+snod       land -3.031e-06/4.154e-04 | ice -1.301e-06/6.339e-05 | water +0.000e+00/0.000e+00
+icetk      land +2.095e-07/2.934e-05 | ice +1.417e-06/8.211e-05 | water +0.000e+00/0.000e+00
+tisfc      land +1.035e-03/3.179e-01 | ice -4.028e-04/1.553e-01 | water +1.203e-04/4.755e-02
+tmp2m      land -2.785e-03/2.381e-01 | ice -2.200e-03/1.068e-01 | water +4.778e-04/9.889e-02
+lhtfl_ave  land -6.374e-02/4.301e+00 | ice +1.209e-02/4.116e-01 | water -1.108e-02/2.749e+00
+shtfl_ave  land -5.866e-02/3.453e+00 | ice -6.454e-03/8.923e-01 | water -5.690e-03/7.635e-01
+tmpsfc     land -4.917e-03/5.082e-01 | ice -4.338e-03/1.938e-01 | water +7.695e-06/5.062e-02
+soilt1     land -3.442e-03/1.800e-01 | ice +0.000e+00/0.000e+00 | water +0.000e+00/0.000e+00
+weasd      land -1.119e-04/5.391e-02 | ice -9.369e-05/4.782e-02 | water +0.000e+00/0.000e+00
+snod       land +4.321e-06/4.433e-04 | ice -2.837e-07/1.449e-04 | water +0.000e+00/0.000e+00
+icetk      land -2.699e-07/2.377e-05 | ice +2.066e-06/5.632e-05 | water +0.000e+00/0.000e+00
+tisfc      land -4.593e-04/3.236e-01 | ice -5.248e-03/2.448e-01 | water +7.695e-06/5.062e-02
+FINAL_PL1 DONE

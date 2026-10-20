@@ -1,0 +1,11 @@
+--- a/cmake/IntelMixed.cmake
++++ b/cmake/IntelMixed.cmake
+@@ -33,7 +33,7 @@
+       set(FAST "-fast-transcendentals")
+     endif()
+     if(AVX2)
+-        set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -march=core-avx2")
++        set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -march=core-avx2 -no-fma")
+         set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=core-avx2")
+     elseif(SIMDMULTIARCH)
+         set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -axSSE4.2,CORE-AVX2")

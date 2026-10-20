@@ -1,0 +1,33 @@
+diff -ru a/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90 a4/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90	2026-10-17 22:57:42
++++ a4/UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90	2026-10-18 02:00:23
+@@ -583,6 +583,7 @@
+       real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+       real :: gx(bd%is:bd%ie+1,bd%js:bd%je  )
+       real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< work Y-dir flux array
++      real :: dpm(bd%isd:bd%ied,bd%jsd:bd%jed) !< inline_q: delp before this update, for the tracer damping fluxes
+       logical :: fill_c
+ 
+       real :: dt2, dt4, dt5, dt6
+@@ -1025,6 +1026,12 @@
+ #endif
+ 
+      if ( inline_q ) then
++! tracer damping mass: pre-update delp everywhere, so a PE-boundary face flux is the same on both PEs
++        do j=jsd,jed
++           do i=isd,ied
++              dpm(i,j) = delp(i,j)
++           enddo
++        enddo
+         do j=js,je
+            do i=is,ie
+                 wk(i,j) = delp(i,j)
+@@ -1040,7 +1047,7 @@
+         do iq=1,nq
+            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+-                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
++                         mfx=fx, mfy=fy, mass=dpm, nord=nord_t, damp_c=damp_t)
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &

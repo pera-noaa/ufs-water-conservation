@@ -1,0 +1,42 @@
+From e075e1893ab372538a14fed4bb1f5df16ed7e14e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:53 -0500
+Subject: [PATCH 09/12] Noah-MP phasechange: keep the heat of a melted-out snow
+ layer
+
+When a snow layer melts out, its leftover heat (heatr) goes to the layer
+below as melt. If that layer is below freezing the heat is deleted.
+
+Warm the layer below instead when it is not melting.
+
+Not triggered in the C96 March test case.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 7eaa43d8..4f2ddadd 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -6847,8 +6847,12 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                if (mliq(j)*mice(j)>0.) stc(j) = tfrz
+                if (mice(j) == 0.) then         ! barlage
+                   stc(j) = tfrz                ! barlage
+-                  hm(j+1) = hm(j+1) + heatr    ! barlage
+-                  xm(j+1) = hm(j+1)*dt/hfus    ! barlage
++                  if (imelt(j+1) > 0) then
++                    hm(j+1) = hm(j+1) + heatr    ! barlage
++                    xm(j+1) = hm(j+1)*dt/hfus    ! barlage
++                  else
++                    stc(j+1) = stc(j+1) + fact(j+1)*heatr  ! layer below not melting: warm it
++                  endif
+                endif 
+             end if
+          endif
+-- 
+2.31.1
+

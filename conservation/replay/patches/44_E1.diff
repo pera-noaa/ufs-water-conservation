@@ -1,0 +1,256 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1268,6 +1268,7 @@
+     logical              :: hurr_pbl        !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg       !< flag for canopy heat storage parameterization
+     logical              :: lseaspray       !< flag for sea spray parameterization
++    integer              :: nst_spray_opt   !< sea spray time integration: 0 explicit, 1 backward Euler with the lowest layer
+     logical              :: cnvcld
+     logical              :: xr_cnvcld       !< flag for adding suspended convective clouds to Xu-Randall cloud fraction
+     logical              :: random_clds     !< flag controls whether clouds are random
+@@ -3958,6 +3959,7 @@
+     logical              :: hurr_pbl       = .false.                  !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg      = .false.                  !< flag for canopy heat storage parameterization
+     logical              :: lseaspray      = .false.                  !< flag for sea spray parameterization
++    integer              :: nst_spray_opt  = 0
+     logical              :: cnvcld         = .false.
+     logical              :: xr_cnvcld      = .true.                   !< flag for including suspended convective clouds in Xu-Randall cloud fraction
+     logical              :: random_clds    = .false.                  !< flag controls whether clouds are random
+@@ -4398,7 +4400,7 @@
+                                betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+                                pdfcld, shcnvcw, redrag,                                     &
+                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
+-                               shinhong, do_ysu, dspheat, dspheat_ke, pbl_kirchhoff, lheatstrg, lseaspray, cnvcld,     &
++                               shinhong, do_ysu, dspheat, dspheat_ke, pbl_kirchhoff, lheatstrg, lseaspray, nst_spray_opt, cnvcld,     &
+                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
+                                isatmedmf, conv_cf_opt, do_deep, jcap, cscale,               &
+                                cs_parm, flgmin, cgwf, ccwf, cdmbgwd, alpha_fd,              &
+@@ -5375,6 +5377,7 @@
+     Model%hurr_pbl          = hurr_pbl
+     Model%lheatstrg         = lheatstrg
+     Model%lseaspray         = lseaspray
++    Model%nst_spray_opt     = nst_spray_opt
+     Model%cnvcld            = cnvcld
+     Model%xr_cnvcld         = xr_cnvcld
+     Model%random_clds       = random_clds
+@@ -7389,6 +7392,7 @@
+       print *, ' sa3dtke           : ', Model%sa3dtke
+       print *, ' lheatstrg         : ', Model%lheatstrg
+       print *, ' lseaspray         : ', Model%lseaspray
++      print *, ' nst_spray_opt     : ', Model%nst_spray_opt
+       print *, ' cnvcld            : ', Model%cnvcld
+       print *, ' random_clds       : ', Model%random_clds
+       print *, ' shal_cnv          : ', Model%shal_cnv
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -6047,6 +6047,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[nst_spray_opt]
++  standard_name = control_for_sea_spray_time_integration
++  long_name = sea spray: 0 explicit, 1 backward Euler with the lowest layer
++  units = index
++  dimensions = ()
++  type = integer
+ [lseaspray]
+   standard_name = flag_for_sea_spray
+   long_name = flag for sea spray parameterization
+--- a/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
++++ b/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
+@@ -28,6 +28,7 @@
+        ( im, hvap, cp, hfus, jcal, eps, epsm1, rvrdm1, rd, rhw0,  &  ! --- inputs:
+        pi, tgice, sbc, ps, u1, v1, usfco, vsfco, use_oceanuv, t1, &
+        q1, tref, cm, ch, lseaspray, fm, fm10,                     &
++       nst_spray_opt, prsi, con_g,                                 &
+        prsl1, prslki, prsik1, prslk1, wet, use_lake_model, xlon,  &
+        sinlat, stress,                                            &
+        sfcemis, dlwflx, sfcnsw, rain, timestep, kdt, solhr,xcosz, &
+@@ -184,6 +185,9 @@
+ 
+     ! For sea spray effect
+     logical, intent(in) :: lseaspray
++    integer, intent(in) :: nst_spray_opt   ! 0 explicit, 1 backward Euler with the lowest layer
++    real (kind=kind_phys), dimension(:,:), intent(in) :: prsi
++    real (kind=kind_phys), intent(in) :: con_g
+     !
+     logical, dimension(:), intent(in) :: flag_iter, flag_guess, wet
+     integer, dimension(:), intent(in) :: use_lake_model
+@@ -244,6 +248,7 @@
+     real (kind=kind_phys), parameter :: alps=0.75,bets=0.75,gams=0.15, &
+          ws10cr=30., conlf=7.2e-9, consf=6.4e-8
+     real (kind=kind_phys) :: windrel
++    real (kind=kind_phys) :: ca, cb, dqs, at, aq, a11, a12, a21, a22, r1, r2, det, dts, dqv
+     !
+     !======================================================================================================
+     ! Initialize CCPP error handling variables
+@@ -656,9 +661,32 @@
+           bb1 = 1. / tem
+           evaps = conlf * (ws10**5.4) * ru10 * bb1
+           evaps = evaps * rho_a(i) * hvap * (qss1 - q0(i))
++          if (nst_spray_opt == 1) then
++             ! backward Euler: spray fluxes of the lowest layer's end-of-step state under the spray alone
++             ca = conlf * (ws10**5.4) * ru10 * bb1 * rho_a(i) * hvap   ! W m-2 per unit saturation deficit
++             cb = consf * (ws10**3.4) * ru10 * rho_a(i) * cp           ! W m-2 K-1
++             tem = fpvs(t1(i) + 0.05_kp)
++             dqs = eps * tem / (prsl1(i) + epsm1 * tem)
++             tem = fpvs(t1(i) - 0.05_kp)
++             dqs = (dqs - eps * tem / (prsl1(i) + epsm1 * tem)) * 10._kp   ! d qs / d t1
++             at = timestep * con_g / (cp * (prsi(i,1) - prsi(i,2)))
++             aq = timestep * con_g / (hvap * (prsi(i,1) - prsi(i,2)))
++             ptem = alps - gams
++             a11 = one + at * (bets * cb + ptem * ca * dqs)
++             a12 = - at * ptem * ca
++             a21 = - aq * alps * ca * dqs
++             a22 = one + aq * alps * ca
++             r1 = at * (bets * cb * (tskin(i) - t1(i)) - ptem * ca * (qss1 - q0(i)))
++             r2 = aq * alps * ca * (qss1 - q0(i))
++             det = a11 * a22 - a12 * a21
++             dts = (r1 * a22 - a12 * r2) / det
++             dqv = (a11 * r2 - a21 * r1) / det
++             evaps = ca * (qss1 + dqs * dts - q0(i) - dqv)
++          endif
+           evap(i) = evap(i) + alps * evaps
+           hflxs = consf * (ws10**3.4) * ru10
+           hflxs = hflxs * rho_a(i) * cp * (tskin(i) - t1(i))
++          if (nst_spray_opt == 1) hflxs = cb * (tskin(i) - t1(i) - dts)
+           ptem = alps - gams
+           hflx(i) = hflx(i) + bets * hflxs - ptem * evaps
+        endif
+--- a/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.meta
++++ b/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.meta
+@@ -204,6 +204,29 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[nst_spray_opt]
++  standard_name = control_for_sea_spray_time_integration
++  long_name = sea spray: 0 explicit, 1 backward Euler with the lowest layer
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [fm]
+   standard_name = Monin_Obukhov_similarity_function_for_momentum_over_water
+   long_name = Monin-Obukhov similarity function for momentum over water
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.F
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.F
+@@ -25,6 +25,7 @@
+ !  ---  inputs:
+      &     ( im, hvap, cp, rd, eps, epsm1, rvrdm1, ps, u1, v1, t1, q1,  &
+      &       tskin, cm, ch, lseaspray, fm, fm10,                        &
++     &       nst_spray_opt, prsi, con_g, timestep,                       &
+      &       usfco, vsfco, use_oceanuv,                                 &
+      &       prsl1, prslki, wet, use_lake_model, wind,                  &,  ! --- inputs
+      &       flag_iter, use_med_flux, dqsfc_med, dtsfc_med,             &
+@@ -120,6 +121,9 @@
+ 
+ ! For sea spray effect
+       logical, intent(in) :: lseaspray
++      integer, intent(in) :: nst_spray_opt
++      real (kind=kind_phys), dimension(:,:), intent(in) :: prsi
++      real (kind=kind_phys), intent(in) :: con_g, timestep
+ !
+       logical, dimension(:), intent(in) :: flag_iter, wet
+       integer, dimension(:), intent(in) :: use_lake_model
+@@ -153,6 +157,8 @@
+ !
+       real (kind=kind_phys) :: f10m, u10m, v10m, ws10, ru10, qss1,
+      &                         bb1, hflxs, evaps, ptem
++      real (kind=kind_phys) :: ca, cb, dqs, at, aq, a11, a12, a21, a22,  &
++     &                         r1, r2, det, dts, dqv, tes
+ !
+ !     real (kind=kind_phys), parameter :: alps=0.5, bets=0.5, gams=0.1,
+ !     real (kind=kind_phys), parameter :: alps=0.5, bets=0.5, gams=0.0,
+@@ -252,9 +258,35 @@
+           bb1 = 1. / tem
+           evaps = conlf * (ws10**5.4) * ru10 * bb1
+           evaps = evaps * rho(i) * hvap * (qss1 - q0(i))
++          if (nst_spray_opt == 1) then
++!  backward Euler: spray fluxes of the lowest layer's end-of-step
++!  state under the spray alone
++            ca = conlf * (ws10**5.4) * ru10 * bb1 * rho(i) * hvap
++            cb = consf * (ws10**3.4) * ru10 * rho(i) * cp
++            tes = fpvs(t1(i) + 0.05_kind_phys)
++            dqs = eps * tes / (prsl1(i) + epsm1 * tes)
++            tes = fpvs(t1(i) - 0.05_kind_phys)
++            dqs = (dqs - eps * tes / (prsl1(i) + epsm1 * tes))           &
++     &          * 10.0_kind_phys
++            at = timestep * con_g / (cp * (prsi(i,1) - prsi(i,2)))
++            aq = timestep * con_g / (hvap * (prsi(i,1) - prsi(i,2)))
++            ptem = alps - gams
++            a11 = 1.0_kind_phys + at * (bets * cb + ptem * ca * dqs)
++            a12 = - at * ptem * ca
++            a21 = - aq * alps * ca * dqs
++            a22 = 1.0_kind_phys + aq * alps * ca
++            r1 = at * (bets*cb*(tskin(i) - t1(i))                       &
++     &               - ptem*ca*(qss1 - q0(i)))
++            r2 = aq * alps * ca * (qss1 - q0(i))
++            det = a11 * a22 - a12 * a21
++            dts = (r1 * a22 - a12 * r2) / det
++            dqv = (a11 * r2 - a21 * r1) / det
++            evaps = ca * (qss1 + dqs * dts - q0(i) - dqv)
++          endif
+           evap(i) = evap(i) + alps * evaps
+           hflxs = consf * (ws10**3.4) * ru10
+           hflxs = hflxs * rho(i) * cp * (tskin(i) - t1(i))
++          if (nst_spray_opt == 1) hflxs = cb * (tskin(i) - t1(i) - dts)
+           ptem = alps - gams
+           hflx(i) = hflx(i) + bets * hflxs - ptem * evaps
+         endif
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.meta
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.meta
+@@ -156,6 +156,37 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[nst_spray_opt]
++  standard_name = control_for_sea_spray_time_integration
++  long_name = sea spray: 0 explicit, 1 backward Euler with the lowest layer
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[timestep]
++  standard_name = timestep_for_physics
++  long_name = physics timestep
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [fm]
+   standard_name = Monin_Obukhov_similarity_function_for_momentum_over_water
+   long_name = Monin-Obukhov similarity function for momentum over water

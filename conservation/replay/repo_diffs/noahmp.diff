@@ -1,0 +1,62 @@
+--- a/src/module_sf_noahmplsm.F90
++++ b/src/module_sf_noahmplsm.F90
+@@ -13,8 +13,10 @@
+ 
+   public  :: noahmp_options
+   public  :: noahmp_sflx
++  public  :: noahmp_options_fwet
+   public  :: sfcdif4
+   public  :: psi_init
++  integer, save :: opt_fwt = 0        ! canopy wetted fraction rule (noahmp_options_fwet)
+ 
+ 
+   private :: atm
+@@ -411,6 +413,32 @@
+ 
+ 
+ contains
++
++  !> canopy wetted fraction rule (gfs_physics_nml noahmp_fwet_opt); 0 = stock: any ice sets fwet from the ice alone
++  subroutine noahmp_options_fwet(fwt)
++    integer, intent(in) :: fwt
++    opt_fwt = fwt
++  end subroutine noahmp_options_fwet
++
++  !> fill fraction of a canopy holding both phases, before the 0.667 power (opt_fwt 1-3)
++  pure function canopy_wetfrac(canliq, canice, maxliq, maxsno) result(fw)
++    real (kind=kind_phys), intent(in) :: canliq, canice, maxliq, maxsno
++    real (kind=kind_phys) :: fw, wl, wi, fl, fi
++    wl = max(0.,canliq)
++    wi = max(0.,canice)
++    fl = min(wl / max(maxliq,1.e-06), 1.)
++    fi = min(wi / max(maxsno,1.e-06), 1.)
++    select case (opt_fwt)
++    case (1)       ! each phase's fill fraction weighted by its share of the canopy water
++      fw = 0.
++      if (wl + wi > 0.) fw = (wl*fl + wi*fi) / (wl + wi)
++    case (2)       ! the larger fill fraction
++      fw = max(fl, fi)
++    case default   ! 3: the phase with more mass (NCAR Noah-MP v5 CanopyHydrologyMod)
++      fw = fl
++      if (wi > 0. .and. wi >= wl) fw = fi
++    end select
++  end function canopy_wetfrac
+ !
+ !== begin noahmp_sflx ==============================================================================
+ 
+@@ -1386,6 +1414,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! total canopy water
+@@ -7343,6 +7372,7 @@
+       else
+            fwet = max(0.,canliq) / max(maxliq,1.e-06)
+       endif
++      if (opt_fwt /= 0) fwet = canopy_wetfrac(canliq, canice, maxliq, maxsno)  ! trace ice does not hide the liquid
+       fwet = min(fwet, 1.) ** 0.667
+ 
+ ! phase change

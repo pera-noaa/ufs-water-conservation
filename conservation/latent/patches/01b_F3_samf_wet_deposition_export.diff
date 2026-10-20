@@ -1,0 +1,182 @@
+diff -ruN a2/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 23:32:24
+@@ -2049,6 +2049,7 @@
+     real (kind=kind_phys), pointer :: psmean (:)     => null()   !< surface pressure (kPa)
+     real (kind=kind_phys), pointer :: cnvprcp(:)     => null()   !< accumulated convective precipitation (kg/m2)
+     real (kind=kind_phys), pointer :: cnvprcpb(:,:)  => null()   !< accumulated convective precipitation in bucket (kg/m2)
++    real (kind=kind_phys), pointer :: cnv_wetdep(:,:) => null()  !< accumulated SAMF wet deposition of chemical tracers in bucket (kg/m2)
+     real (kind=kind_phys), pointer :: spfhmin(:)     => null()   !< minimum specific humidity
+     real (kind=kind_phys), pointer :: spfhmax(:)     => null()   !< maximum specific humidity
+     real (kind=kind_phys), pointer :: u10mmax(:)     => null()   !< maximum u-wind
+@@ -8214,6 +8215,7 @@
+     allocate (Diag%psmean  (IM))
+     allocate (Diag%cnvprcp (IM))
+     allocate (Diag%cnvprcpb(IM,ndb))
++    allocate (Diag%cnv_wetdep(IM,Model%ntchm))
+     allocate (Diag%spfhmin (IM))
+     allocate (Diag%spfhmax (IM))
+     allocate (Diag%u10mmax (IM))
+@@ -8647,6 +8649,7 @@
+ 
+     Diag%totprcpb   = zero
+     Diag%cnvprcpb   = zero
++    Diag%cnv_wetdep = zero
+     Diag%toticeb    = zero
+     Diag%totsnwb    = zero
+     Diag%totgrpb    = zero
+diff -ruN a2/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 23:32:24
+@@ -9557,6 +9557,13 @@
+   dimensions = (horizontal_dimension,number_of_diagnostic_buckets)
+   type = real
+   kind = kind_phys
++[cnv_wetdep]
++  standard_name = cumulative_convective_wet_deposition_of_chemical_tracers_in_bucket
++  long_name = cumulative convective (SAMF) wet deposition of chemical tracers in bucket
++  units = kg m-2
++  dimensions = (horizontal_dimension,number_of_chemical_tracers)
++  type = real
++  kind = kind_phys
+ [spfhmin]
+   standard_name = minimum_specific_humidity_at_2m
+   long_name = minimum specific humidity at 2m height
+diff -ruN a2/UFSATM/ccpp/driver/GFS_diagnostics.F90 b/UFSATM/ccpp/driver/GFS_diagnostics.F90
+--- a/UFSATM/ccpp/driver/GFS_diagnostics.F90	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/driver/GFS_diagnostics.F90	2026-10-17 23:32:24
+@@ -1286,6 +1286,16 @@
+     ExtDiag(idx)%intpl_method = 'bilinear'
+     ExtDiag(idx)%data%var2 => IntDiag%cnvprcpb(:,1)
+ 
++    do num = 1, Model%ntchm
++      idx = idx + 1
++      ExtDiag(idx)%axes = 2
++      ExtDiag(idx)%name = 'cnv_wetdep_'//trim(Model%tracer_names(Model%ntchs+num-1))
++      ExtDiag(idx)%desc = 'bucket SAMF wet deposition of '//trim(Model%tracer_names(Model%ntchs+num-1))
++      ExtDiag(idx)%unit = 'kg/m**2'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var2 => IntDiag%cnv_wetdep(:,num)
++    enddo
++
+     idx = idx + 1
+     ExtDiag(idx)%axes = 2
+     ExtDiag(idx)%name = 'cnvprcp'
+diff -ruN a2/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:32:24
+@@ -79,6 +79,7 @@
+      &    eps,epsm1,fv,grav,hvap,rd,rv,                                 
+      &    t0c,delt,ntk,ntr,delp, ten_t, ten_u, ten_v, ten_q,            
+      &    prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,      
++     &    cnv_wetdep,
+      &    hwrf_samfdeep,progsigma,progomega,cldwrk,rn,kbot,ktop,kcnv,   
+      &    islimsk,garea,dot,ncloud,hpbl,ud_mf,dd_mf,dt_mf,cnvw,cnvc,    
+      &    QLCN, QICN, w_upi, cf_upi, CNV_MFD,                           
+@@ -103,6 +104,8 @@
+       real(kind=kind_phys), intent(in) :: psp(:), delp(:,:),            
+      &   prslp(:,:),  garea(:), hpbl(:), dot(:,:), phil(:,:) 
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      real(kind=kind_phys), dimension(:,:), intent(inout) :: cnv_wetdep
++      real(kind=conv_wp) wdsum
+       logical, intent(in)  :: first_time_step,restart,hwrf_samfdeep,    
+      &     progsigma,progomega,do_mynnedmf,sigmab_coldstart
+       real(kind=kind_phys), intent(in) :: nthresh,betadcu,betamcu,
+@@ -3939,6 +3942,20 @@
+       endif
+       endif ! (.not.hwrf_samfdeep)
+ 
++!  column wet deposition of chemical tracers into the bucket (kg m-2)
++      if (do_aerosols) then
++        do n = 1, ntc
++          do i = 1, im
++            wdsum = 0.0_conv_wp
++            do k = 1, km
++              wdsum = wdsum + wet_dep(i,k,n)
++            enddo
++            cnv_wetdep(i,n) = cnv_wetdep(i,n)
++     &                      + real(wdsum, kind=kind_phys) / grav
++          enddo
++        enddo
++      endif
++!
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+diff -ruN a2/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 23:32:24
+@@ -370,6 +370,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[cnv_wetdep]
++  standard_name = cumulative_convective_wet_deposition_of_chemical_tracers_in_bucket
++  long_name = cumulative convective (SAMF) wet deposition of chemical tracers in bucket
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,number_of_chemical_tracers)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [hwrf_samfdeep]
+   standard_name = flag_for_hurricane_specific_code_in_scale_aware_mass_flux_deep_convection
+   long_name = flag for hwrf samfdeepcnv scheme 
+diff -ruN a2/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:32:24
+@@ -56,6 +56,7 @@
+      &     t0c,delt,ntk,ntr,delp,first_time_step,restart,               & 
+      &     tmf,qmicro,progsigma,progomega,                              &
+      &     prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,     &
++     &     cnv_wetdep,                                                  &
+      &     rn,kbot,ktop,kcnv,islimsk,garea,cscale,ten_t, ten_u, ten_v,  &
+      &     ten_q, dot,ncloud,hpbl,ud_mf,dt_mf,cnvw,cnvc,                &
+      &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+@@ -82,6 +83,8 @@
+      &     omegain(:,:)
+ !
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      real(kind=kind_phys), dimension(:,:), intent(inout) :: cnv_wetdep
++      real(kind=conv_wp) wdsum
+       integer, intent(inout)  :: kcnv(:)
+       ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+       real(kind=kind_phys), intent(inout) :: tkeh(:,:)
+@@ -2763,6 +2766,20 @@
+       endif
+       endif
+ !!
++!  column wet deposition of chemical tracers into the bucket (kg m-2)
++      if (do_aerosols) then
++        do n = 1, ntc
++          do i = 1, im
++            wdsum = 0.0_conv_wp
++            do k = 1, km
++              wdsum = wdsum + wet_dep(i,k,n)
++            enddo
++            cnv_wetdep(i,n) = cnv_wetdep(i,n)
++     &                      + real(wdsum, kind=kind_phys) / grav
++          enddo
++        enddo
++      endif
++!
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_u = real((new_u1 - real(u1, kind=conv_wp)) / real(delt,
+diff -ruN a2/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 23:32:24
+@@ -370,6 +370,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[cnv_wetdep]
++  standard_name = cumulative_convective_wet_deposition_of_chemical_tracers_in_bucket
++  long_name = cumulative convective (SAMF) wet deposition of chemical tracers in bucket
++  units = kg m-2
++  dimensions = (horizontal_loop_extent,number_of_chemical_tracers)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [rn]
+   standard_name = lwe_thickness_of_shallow_convective_precipitation_amount
+   long_name = shallow convective rainfall amount on physics timestep

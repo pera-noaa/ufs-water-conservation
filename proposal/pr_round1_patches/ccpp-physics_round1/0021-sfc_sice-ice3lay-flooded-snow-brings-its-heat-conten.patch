@@ -1,0 +1,53 @@
+From 6412d2b62429874e01e595f30838bea35a02d7de Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:53 -0500
+Subject: [PATCH 21/29] sfc_sice ice3lay: flooded snow brings its heat content
+
+Snow flooded into the ice becomes ice at the layers' temperatures, although
+its heat content is -li per kg.
+
+Add the flooded snow's enthalpy to both layers and solve for their
+temperatures.
+
+Measured (C96 control_p8_ugwpv1, 24 h): -7.87e-3 -> -1.15e-13 W/m2. With
+the once-per-step fix: ice thickness rms 1.7e-3 m.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/SeaIce/CICE/sfc_sice.f | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/physics/SFC_Models/SeaIce/CICE/sfc_sice.f b/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+index d4bc5df6..cc01cb44 100644
+--- a/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ b/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -591,6 +591,7 @@
+       real (kind=kind_phys) :: dt2, dt4, dt6, h1, h2, dh, wrk, wrk1,    &
+      &                         dt2i, hdi, hsni, ai, bi, a1, b1, a10, b10&
+      &,                        c1, ip, k12, k32, tsf, f1, tmelt, bmelt
++      real (kind=kind_phys) :: hold, efl, bfl
+ 
+       integer :: i
+ !
+@@ -609,7 +610,19 @@
+           if (hice(i) < hdi) then
+             snowd(i) = snowd(i) + hice(i) - hdi
+             hsni     = (hdi - hice(i)) * dsdi
++            hold     = hice(i)
+             hice (i) = hice(i) + hsni
++!           flooded snow (heat content -li) joins both layers
++            efl = min(stsice(i,2)-t0c, tfi0)
++            efl = (hold*(ci*(efl-tfi)-li) - hsni*li) / hice(i)
++            stsice(i,2) = tfi + (efl+li)/ci + t0c
++            bfl = min(stsice(i,1)-t0c, tfi0)
++            efl = (hold*(ci*(bfl-tfi)-li*(one-tfi/bfl)) - hsni*li)
++     &          / hice(i)
++            bfl = efl + ci*tfi + li
++            stsice(i,1) = (bfl - sqrt(bfl*bfl
++     &                  - 4.0_kind_phys*ci*li*tfi))
++     &                  / (ci+ci) + t0c
+           endif
+ 
+           snof(i)     = snof(i) * dwds

@@ -1,0 +1,472 @@
+--- a/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:01:17
++++ b/physics/CONV/SAMF/samfdeepcnv.f	2026-10-18 00:39:47
+@@ -298,6 +298,10 @@
+      &                     flxtvd(im,0:km-1)
+       real(kind=conv_wp) rrkp, phkp
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
++      real(kind=conv_wp) trfsc(ntr), trwl(km), trpw(km,ntr), trcm
++      logical trdo(ntr), trupd(ntr), trdry(ntr), tranyd
++      integer nsub
++      real(kind=conv_wp), parameter :: trcmax = 0.5_conv_wp
+ !
+       logical do_aerosols, totflg, cnvflg(im), asqecflg(im), flg(im)
+ !
+@@ -3427,7 +3431,78 @@
+         enddo
+       enddo
+ !
++!
++! tracers: transport in nsub sub-steps so that the donor-cell Courant
++! number of the compensating flux stays <= trcmax (explicit TVD update)
++!
+       if (.not.hwrf_samfdeep) then
++        do n = 1, ntr
++          trfsc(n) = 0.0_conv_wp
++          trupd(n) = .true.
++          trdry(n) = .false.
++        enddo
++        if (do_aerosols) then
++          do n = itc-2+ntc, ntr
++            trupd(n) = .false.
++          enddo
++          do n = 1, ntc
++            trfsc(n+itc-3) = real(fscav(n), kind=conv_wp)
++            trdry(n+itc-3) = .false.
++          enddo
++          if (ntk > 2) then
++            trfsc(ntk-2) = 0.0_conv_wp
++            trupd(ntk-2) = .true.
++            trdry(ntk-2) = .false.
++          endif
++        endif
++        do i = 1, im
++          if (cnvflg(i)) then
++            trcm = 0.0_conv_wp
++            do k = 1, ktcon(i)-1
++              tem = 0.0_conv_wp
++              if(k >= kb(i)) tem = eta(i,k)
++              if(k <= jmin(i)) tem = tem - edto(i) * etad(i,k)
++              kk = k
++              if(tem > 0.0_conv_wp) kk = k + 1
++              trcm = max(trcm, abs(tem) * xmb(i) * dt2
++     &          * real(grav, kind=conv_wp) / (1000.0_conv_wp*del(i,kk)))
++            enddo
++            nsub = max(1, ceiling(trcm / trcmax))
++            tranyd = .false.
++            do n = 1, ntr
++              trdo(n) = trdry(n) .or. nsub > 1
++              tranyd = tranyd .or. trdo(n)
++            enddo
++            if (tranyd) then
++              do k = 1, km
++                trwl(k) = 1.0_conv_wp - real(q(i,k), kind=conv_wp)
++              enddo
++              call samfdeep_trsub(km,ntr,nsub,kb(i),jmin(i),ktcon(i),
++     &          kmax(i),eta(i,:),etad(i,:),edto(i),xlamue(i,:),
++     &          xlamdet(i),zi(i,:),del(i,:),xmb(i),dt2,
++     &          real(grav, kind=conv_wp),cq,trdo,trupd,trdry,trfsc,
++     &          c0t(i,:),trwl,ctr(i,:,:),trpw)
++              do n = 1, ntr
++                if (trdo(n)) then
++                  do k = 1, km
++                    dellae(i,k,n) = 0.0_conv_wp
++                  enddo
++                endif
++              enddo
++              if (do_aerosols) then
++                do n = 1, ntc
++                  if (trdo(n+itc-3)) then
++                    do k = 1, km
++                      chem_pw(i,k,n) = trpw(k,n+itc-3)
++                    enddo
++                  endif
++                enddo
++              endif
++            endif
++          endif
++        enddo
++      endif
++      if (.not.hwrf_samfdeep) then
+        indx = ntk - 2
+        do n = 1, ntr
+ !
+@@ -3952,6 +4027,173 @@
+ 
+       return
+       end subroutine samfdeepcnv_run
++
++!> Tracer transport of samfdeepcnv for one column in nsub equal
++!! sub-steps, mass fluxes held: every sub-step recomputes interface,
++!! updraft and downdraft tracer values and the TVD compensating flux.
++!! trdry tracers are moved as c = q/wl with each interface flux
++!! scaled by the interface dry fraction (wl = 1 - initial qv).
++      subroutine samfdeep_trsub(km,ntr,nsub,kb,jmin,ktcon,kmax,
++     &   eta,etad,edto,xlamue,xlamdet,zi,del,xmb,dt2,grav,cq,
++     &   trdo,trupd,trdry,trfsc,c0t,wl,ctr,trpw)
++      implicit none
++      integer, intent(in) :: km,ntr,nsub,kb,jmin,ktcon,kmax
++      real(kind=conv_wp), intent(in) :: eta(km),etad(km),edto,
++     &   xlamue(km),xlamdet,zi(km),del(km),xmb,dt2,grav,cq,
++     &   trfsc(ntr),c0t(km),wl(km)
++      logical, intent(in) :: trdo(ntr),trupd(ntr),trdry(ntr)
++      real(kind=conv_wp), intent(inout) :: ctr(km,ntr)
++      real(kind=conv_wp), intent(out) :: trpw(km,ntr)
++      real(kind=conv_wp) c(km),cto(km),eck(km),erk(km),ecd(km),
++     &   dl(km),flx(0:km),ed(0:km),wf(km),wc(km),tem,tem1,tem2,
++     &   ptem1,ptem2,rrkp,phkp,aup,adw,dz,dp,factor,chc,dts,rns
++      integer n,it,k,km1
++      km1 = km - 1
++      rns = 1.0_conv_wp / real(nsub, kind=conv_wp)
++      dts = dt2 * rns
++      trpw = 0.0_conv_wp
++      do n = 1, ntr
++        if (.not. trdo(n)) cycle
++        do k = 1, km
++          wc(k) = 1.0_conv_wp
++          wf(k) = 1.0_conv_wp
++        enddo
++        if (trdry(n)) then
++          do k = 1, kmax
++            wc(k) = wl(k)
++          enddo
++          do k = 1, min(kmax, km1)
++            wf(k) = 0.5_conv_wp * (wl(k) + wl(k+1))
++          enddo
++        endif
++        do it = 1, nsub
++          do k = 1, km
++            c(k) = 0.0_conv_wp
++            eck(k) = 0.0_conv_wp
++            erk(k) = 0.0_conv_wp
++            ecd(k) = 0.0_conv_wp
++            dl(k) = 0.0_conv_wp
++          enddo
++          do k = 1, kmax
++            c(k) = ctr(k,n) / wc(k)
++            cto(k) = c(k)
++          enddo
++          do k = 1, km1
++            if (k <= kmax-1) cto(k) = 0.5_conv_wp * (c(k) + c(k+1))
++          enddo
++! updraft (and scavenging)
++          eck(kb) = cto(kb)
++          erk(kb) = eck(kb)
++          if (trupd(n)) then
++            do k = kb+1, min(kmax-1, km1)
++              dz = zi(k) - zi(k-1)
++              tem = 0.25_conv_wp * (xlamue(k)+xlamue(k-1)) * dz
++              tem = cq * tem
++              factor = 1.0_conv_wp + tem
++              eck(k) = ((1.0_conv_wp-tem)*eck(k-1)+tem*
++     &                 (cto(k)+cto(k-1)))/factor
++              erk(k) = eck(k)
++              if (trfsc(n) /= 0.0_conv_wp) then
++                chc = trfsc(n) * eck(k)
++                tem = chc / (1.0_conv_wp + c0t(k) * dz)
++                trpw(k,n) = trpw(k,n) + c0t(k) * dz * tem
++     &                    * eta(k) * wf(k) * rns
++                eck(k) = tem + eck(k) - chc
++              endif
++            enddo
++          endif
++! downdraft
++          ecd(jmin) = cto(jmin)
++          do k = jmin-1, 1, -1
++            dz = zi(k+1) - zi(k)
++            tem = 0.5_conv_wp * xlamdet * dz
++            tem = cq * tem
++            factor = 1.0_conv_wp + tem
++            ecd(k) = ((1.0_conv_wp-tem)*ecd(k+1)+tem*
++     &              (cto(k)+cto(k+1)))/factor
++          enddo
++! up/downdraft exchange per unit cloud-base mass flux
++          dp = 1000.0_conv_wp * del(1)
++          dl(1) = edto * etad(1) * ecd(1) * wf(1) * grav / dp
++          do k = 2, km1
++            if (k < ktcon) then
++              aup = 1.0_conv_wp
++              if(k <= kb) aup = 0.0_conv_wp
++              adw = 1.0_conv_wp
++              if(k > jmin) adw = 0.0_conv_wp
++              dp = 1000.0_conv_wp * del(k)
++              tem1 = -eta(k) * erk(k) * wf(k)
++              tem2 = -eta(k-1) * eck(k-1) * wf(k-1)
++              ptem1 = -etad(k) * ecd(k) * wf(k)
++              ptem2 = -etad(k-1) * ecd(k-1) * wf(k-1)
++              dl(k) = dl(k) + (aup*(tem1-tem2)-adw*
++     &                edto*(ptem1-ptem2))*grav/dp
++            endif
++          enddo
++          dp = 1000.0_conv_wp * del(ktcon)
++          dl(ktcon) = eta(ktcon-1) * eck(ktcon-1) * wf(ktcon-1)
++     &              * grav / dp
++! compensating subsidence/uplift, TVD (cloud-base faces as SA1)
++          do k = 0, km
++            ed(k) = 0.0_conv_wp
++            flx(k) = 0.0_conv_wp
++          enddo
++          do k = 1, km1
++            if (k <= ktcon) ed(k) = c(k) - c(k+1)
++          enddo
++          if (c(1) >= 0.0_conv_wp) then
++            ed(0) = max(0.0_conv_wp,2.0_conv_wp*c(1)-c(2))-c(1)
++          else
++            ed(0) = min(0.0_conv_wp,2.0_conv_wp*c(1)-c(2))-c(1)
++          endif
++          do k = 1, km1
++            if (k < ktcon) then
++              tem = 0.0_conv_wp
++              if(k >= kb) tem = eta(k)
++              if(k <= jmin) tem = tem - edto * etad(k)
++              if(tem > 0.0_conv_wp) then
++                rrkp = 0.0_conv_wp
++                if(abs(ed(k)) > 1.e-22_conv_wp) rrkp = ed(k+1)/ed(k)
++                phkp = (rrkp+abs(rrkp)) / (1.0_conv_wp+abs(rrkp))
++                tem1 = c(k+1) + phkp*(cto(k)-c(k+1))
++                flx(k) = tem * tem1
++              elseif(tem < 0.0_conv_wp) then
++                rrkp = 0.0_conv_wp
++                if(abs(ed(k)) > 1.e-22_conv_wp) rrkp = ed(k-1)/ed(k)
++                phkp = (rrkp+abs(rrkp)) / (1.0_conv_wp+abs(rrkp))
++                tem1 = c(k) + phkp*(cto(k)-c(k))
++                flx(k) = tem * tem1
++              else
++                tem1 = cto(k)
++                flx(k) = 0.0_conv_wp
++              endif
++              if(k == kb) flx(k) = flx(k) + eta(k) * (cto(k) - tem1)
++              if(k == jmin) flx(k) = flx(k)
++     &          - edto * etad(k) * (cto(k) - tem1)
++              flx(k) = flx(k) * wf(k)
++              if(k == jmin) then
++                dp = 1000.0_conv_wp * del(k+1)
++                dl(k+1) = dl(k+1) - edto * etad(k) * ecd(k) * wf(k)
++     &                  * grav / dp
++              endif
++              if(k == kb) then
++                dp = 1000.0_conv_wp * del(k)
++                dl(k) = dl(k) - eta(k) * eck(k) * wf(k) * grav / dp
++              endif
++            endif
++          enddo
++          do k = 1, km1
++            if (k <= ktcon) then
++              dp = 1000.0_conv_wp * del(k)
++              dl(k) = dl(k) + (flx(k) - flx(k-1)) * grav / dp
++            endif
++          enddo
++          do k = 1, min(ktcon, kmax)
++            ctr(k,n) = ctr(k,n) + dl(k) * xmb * dts
++          enddo
++        enddo
++      enddo
++      end subroutine samfdeep_trsub
+ 
+ !> @}
+ 
+--- a/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:01:17
++++ b/physics/CONV/SAMF/samfshalcnv.f	2026-10-18 00:39:47
+@@ -255,6 +255,10 @@
+      &                     flxtvd(im,km-1)
+       real(kind=conv_wp) rrkp, phkp
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
++      real(kind=conv_wp) trfsc(ntr), trwl(km), trpw(km,ntr), trcm
++      logical trdo(ntr), trupd(ntr), trdry(ntr), tranyd
++      integer nsub
++      real(kind=conv_wp), parameter :: trcmax = 0.5_conv_wp
+ !
+       logical do_aerosols, totflg, cnvflg(im), flg(im)
+ !
+@@ -2363,6 +2367,71 @@
+         enddo
+       enddo
+ !
++!
++! tracers: transport in nsub sub-steps so that the donor-cell Courant
++! number of the compensating flux stays <= trcmax (explicit TVD update)
++!
++      if (.not.hwrf_samfshal) then
++        do n = 1, ntr
++          trfsc(n) = 0.0_conv_wp
++          trupd(n) = .true.
++          trdry(n) = .false.
++        enddo
++        if (do_aerosols) then
++          do n = itc-2+ntc, ntr
++            trupd(n) = .false.
++          enddo
++          do n = 1, ntc
++            trfsc(n+itc-3) = escav * real(fscav(n), kind=conv_wp)
++            trdry(n+itc-3) = .false.
++          enddo
++          if (ntk > 2) then
++            trfsc(ntk-2) = 0.0_conv_wp
++            trupd(ntk-2) = .true.
++            trdry(ntk-2) = .false.
++          endif
++        endif
++        do i = 1, im
++          if (cnvflg(i)) then
++            trcm = 0.0_conv_wp
++            do k = kb(i), ktcon(i)-1
++              trcm = max(trcm, eta(i,k) * xmb(i) * dt2
++     &          * real(grav, kind=conv_wp)/(1000.0_conv_wp*del(i,k+1)))
++            enddo
++            nsub = max(1, ceiling(trcm / trcmax))
++            tranyd = .false.
++            do n = 1, ntr
++              trdo(n) = trdry(n) .or. nsub > 1
++              tranyd = tranyd .or. trdo(n)
++            enddo
++            if (tranyd) then
++              do k = 1, km
++                trwl(k) = 1.0_conv_wp - real(q(i,k), kind=conv_wp)
++              enddo
++              call samfshal_trsub(km,ntr,nsub,kb(i),ktcon(i),kmax(i),
++     &          eta(i,:),xlamue(i,:),zi(i,:),del(i,:),xmb(i),dt2,
++     &          real(grav, kind=conv_wp),cq,trdo,trupd,trdry,trfsc,
++     &          c0t(i,:),trwl,ctr(i,:,:),trpw)
++              do n = 1, ntr
++                if (trdo(n)) then
++                  do k = 1, km
++                    dellae(i,k,n) = 0.0_conv_wp
++                  enddo
++                endif
++              enddo
++              if (do_aerosols) then
++                do n = 1, ntc
++                  if (trdo(n+itc-3)) then
++                    do k = 1, km
++                      chem_pw(i,k,n) = trpw(k,n+itc-3)
++                    enddo
++                  endif
++                enddo
++              endif
++            endif
++          endif
++        enddo
++      endif
+       if (.not.hwrf_samfshal) then
+ !
+       indx = ntk - 2
+@@ -2776,5 +2845,120 @@
+ 
+       return
+       end subroutine samfshalcnv_run
++
++!> Tracer transport of samfshalcnv for one column in nsub equal
++!! sub-steps (as samfdeep_trsub, without downdraft).
++      subroutine samfshal_trsub(km,ntr,nsub,kb,ktcon,kmax,
++     &   eta,xlamue,zi,del,xmb,dt2,grav,cq,
++     &   trdo,trupd,trdry,trfsc,c0t,wl,ctr,trpw)
++      implicit none
++      integer, intent(in) :: km,ntr,nsub,kb,ktcon,kmax
++      real(kind=conv_wp), intent(in) :: eta(km),
++     &   xlamue(km),zi(km),del(km),xmb,dt2,grav,cq,
++     &   trfsc(ntr),c0t(km),wl(km)
++      logical, intent(in) :: trdo(ntr),trupd(ntr),trdry(ntr)
++      real(kind=conv_wp), intent(inout) :: ctr(km,ntr)
++      real(kind=conv_wp), intent(out) :: trpw(km,ntr)
++      real(kind=conv_wp) c(km),cto(km),eck(km),erk(km),
++     &   dl(km),flx(0:km),ed(0:km),wf(km),wc(km),tem,tem1,tem2,
++     &   rrkp,phkp,dz,dp,factor,chc,dts,rns
++      integer n,it,k,km1
++      km1 = km - 1
++      rns = 1.0_conv_wp / real(nsub, kind=conv_wp)
++      dts = dt2 * rns
++      trpw = 0.0_conv_wp
++      do n = 1, ntr
++        if (.not. trdo(n)) cycle
++        do k = 1, km
++          wc(k) = 1.0_conv_wp
++          wf(k) = 1.0_conv_wp
++        enddo
++        if (trdry(n)) then
++          do k = 1, kmax
++            wc(k) = wl(k)
++          enddo
++          do k = 1, min(kmax, km1)
++            wf(k) = 0.5_conv_wp * (wl(k) + wl(k+1))
++          enddo
++        endif
++        do it = 1, nsub
++          do k = 1, km
++            c(k) = 0.0_conv_wp
++            eck(k) = 0.0_conv_wp
++            erk(k) = 0.0_conv_wp
++            dl(k) = 0.0_conv_wp
++          enddo
++          do k = 1, kmax
++            c(k) = ctr(k,n) / wc(k)
++            cto(k) = c(k)
++          enddo
++          do k = 1, km1
++            if (k <= kmax-1) cto(k) = 0.5_conv_wp * (c(k) + c(k+1))
++          enddo
++          eck(kb) = cto(kb)
++          erk(kb) = eck(kb)
++          if (trupd(n)) then
++            do k = kb+1, min(kmax-1, km1)
++              dz = zi(k) - zi(k-1)
++              tem = 0.25_conv_wp * (xlamue(k)+xlamue(k-1)) * dz
++              tem = cq * tem
++              factor = 1.0_conv_wp + tem
++              eck(k) = ((1.0_conv_wp-tem)*eck(k-1)+tem*
++     &                 (cto(k)+cto(k-1)))/factor
++              erk(k) = eck(k)
++              if (trfsc(n) /= 0.0_conv_wp) then
++                chc = trfsc(n) * eck(k)
++                tem = chc / (1.0_conv_wp + c0t(k) * dz)
++                trpw(k,n) = trpw(k,n) + c0t(k) * dz * tem
++     &                    * eta(k) * wf(k) * rns
++                eck(k) = tem + eck(k) - chc
++              endif
++            enddo
++          endif
++          do k = 2, km1
++            if (k > kb .and. k < ktcon) then
++              dp = 1000.0_conv_wp * del(k)
++              tem1 = -eta(k) * erk(k) * wf(k)
++              tem2 = -eta(k-1) * eck(k-1) * wf(k-1)
++              dl(k) = dl(k) + (tem1-tem2) * grav / dp
++            endif
++          enddo
++          dp = 1000.0_conv_wp * del(ktcon)
++          dl(ktcon) = eta(ktcon-1) * eck(ktcon-1) * wf(ktcon-1)
++     &              * grav / dp
++          do k = 0, km
++            ed(k) = 0.0_conv_wp
++            flx(k) = 0.0_conv_wp
++          enddo
++          do k = 1, km1
++            if (k <= ktcon) ed(k) = c(k) - c(k+1)
++          enddo
++          do k = 1, km1
++            if (k >= kb .and. k < ktcon) then
++              if(eta(k) > 0.0_conv_wp) then
++                rrkp = 0.0_conv_wp
++                if(abs(ed(k)) > 1.e-22_conv_wp) rrkp = ed(k+1)/ed(k)
++                phkp = (rrkp+abs(rrkp)) / (1.0_conv_wp+abs(rrkp))
++                tem1 = c(k+1) + phkp*(cto(k)-c(k+1))
++                flx(k) = eta(k) * tem1
++                if(k == kb) flx(k) = eta(k) * cto(k)
++                flx(k) = flx(k) * wf(k)
++              endif
++            endif
++          enddo
++          do k = 2, km1
++            if (k > kb .and. k <= ktcon) then
++              dp = 1000.0_conv_wp * del(k)
++              dl(k) = dl(k) + (flx(k) - flx(k-1)) * grav / dp
++            endif
++          enddo
++          do k = 1, km
++            if (k > kb .and. k <= ktcon) then
++              ctr(k,n) = ctr(k,n) + dl(k) * xmb * dts
++            endif
++          enddo
++        enddo
++      enddo
++      end subroutine samfshal_trsub
+ !> @}
+       end module samfshalcnv

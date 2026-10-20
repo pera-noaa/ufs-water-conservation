@@ -1,0 +1,179 @@
+--- a/UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.F90
++++ b/UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.F90
+@@ -58,7 +58,7 @@
+ !>\section gen_gf_driver Grell-Freitas Cumulus Scheme Driver General Algorithm
+       subroutine cu_gf_driver_run(ntracer,garea,im,km,dt,flag_init,flag_restart, gf_coldstart, &
+                cactiv,cactiv_m,g,cp,xlv,r_v,forcet,forceqv_spechum,phil,raincv, &
+-               qv_spechum,t,cld1d,us,vs,t2di,w,qv2di_spechum,p2di,psuri,        &
++               qv_spechum,t,cld1d,us,vs,t2di,w,qv2di_spechum,p2di,prsi,psuri,   &
+                hbot,htop,kcnv,xland,hfx2,qfx2,aod_gf,cliw,clcw,                 &
+                pbl,ud_mf,dd_mf,dt_mf,cnvw_moist,cnvc,imfshalcnv,                &
+                flag_for_scnv_generic_tend,flag_for_dcnv_generic_tend,           &
+@@ -68,7 +68,8 @@
+                dfi_radar_max_intervals,ldiag3d,qci_conv,do_cap_suppress,        &
+                maxupmf,maxMF,do_mynnedmf,ichoice_in,ichoicem_in,ichoice_s_in,   &
+                spp_cu_deep,spp_wts_cu_deep,nchem,chem3d,fscav,wetdpc_deep,      &
+-               do_smoke_transport,kdt,ten_t,ten_u,ten_v,ten_q,dcliw,dclcw,errmsg,errflg)
++               do_smoke_transport,kdt,ten_t,ten_u,ten_v,ten_q,dcliw,dclcw,      &
++               gf_closure,errmsg,errflg)
+ !-------------------------------------------------------------
+       implicit none
+       integer, parameter :: maxiens=1
+@@ -87,6 +88,7 @@
+       real(kind=kind_phys) :: spp_wts_cu_deep_tmp
+ 
+       logical, intent(in) :: do_cap_suppress, do_smoke_transport
++      logical, intent(in) :: gf_closure  ! water closure: GF's increments on its own basis, raincv = water removed
+       real(kind=kind_phys), parameter :: aodc0=0.14
+       real(kind=kind_phys), parameter :: aodreturn=30.
+       real(kind=kind_phys) :: dts,fpi,fp
+@@ -140,8 +142,8 @@
+    real(kind=kind_phys), dimension (:,:), intent(out), optional :: ud_mf
+    real(kind=kind_phys), dimension (:),   intent(out) :: raincv,cld1d
+    real(kind=kind_phys), dimension (:),   intent(out), optional :: maxupmf
+-   real(kind=kind_phys), dimension (:,:), intent(in)  :: t2di,p2di
+-!$acc declare copyin(hfx2,qfx2,psuri,t2di,p2di)
++   real(kind=kind_phys), dimension (:,:), intent(in)  :: t2di,p2di,prsi
++!$acc declare copyin(hfx2,qfx2,psuri,t2di,p2di,prsi)
+ !$acc declare copyout(ud_mf,dd_mf,dt_mf,raincv,cld1d)
+    ! Specific humidity from FV3
+    real(kind=kind_phys), dimension (:,:), intent(in) :: qv2di_spechum
+@@ -1066,7 +1068,12 @@
+ ! Scale dry mixing ratios for water wapor and cloud water to specific humidy / moist mixing ratios
+ !
+ !$acc kernels
+-        new_qv_spechum = qv/(1.0_kind_phys+qv)
++        if (gf_closure) then
++           ! GF budgets its increments with the host's total layer mass: apply them as specific-ratio increments
++           new_qv_spechum = qv_spechum + (qv - qv_spechum/(1.0_kind_phys-qv_spechum))
++        else
++           new_qv_spechum = qv/(1.0_kind_phys+qv)
++        endif
+         cnvw_moist = cnvw/(1.0_kind_phys+qv)
+ !$acc end kernels
+         do i=its,ite
+@@ -1074,6 +1081,7 @@
+             ten_q(i,k,ntqv) = (new_qv_spechum(i,k) - qv_spechum(i,k))/dt
+           end do
+         end do
++        if (gf_closure) call gf_column_water(im, km, dt, g, prsi, ten_q(:,:,ntqv), dcliw, dclcw, raincv)
+ !
+ ! Diagnostic tendency updates
+ !
+@@ -1194,4 +1202,35 @@
+         endif
+    end subroutine cu_gf_driver_run
+ !>@}
++
++!> Water closure (gf_closure): raincv is the water GF's applied tendencies remove from the column (host layer
++!! mass). Where they would add water instead, the positive increments are reduced in proportion to zero net.
++      subroutine gf_column_water(im, km, dt, g, prsi, tqv, dcliw, dclcw, raincv)
++      integer, intent(in) :: im, km
++      real(kind=kind_phys), intent(in) :: dt, g, prsi(:,:)
++      real(kind=kind_phys), intent(inout) :: tqv(:,:), dcliw(:,:), dclcw(:,:)
++      real(kind=kind_phys), intent(out) :: raincv(:)
++      real(kind=kind_phys) :: m, dw, pos, f
++      integer :: i, k
++      do i = 1, im
++        dw = 0.
++        pos = 0.
++        do k = 1, km
++          m = (prsi(i,k) - prsi(i,k+1))/g
++          dw = dw + (tqv(i,k) + dcliw(i,k) + dclcw(i,k))*m
++          pos = pos + (max(tqv(i,k), 0.) + max(dcliw(i,k), 0.) + max(dclcw(i,k), 0.))*m
++        enddo
++        if (dw > 0. .and. pos > 0.) then
++          f = 1. - dw/pos
++          dw = 0.
++          do k = 1, km
++            if (tqv(i,k) > 0.) tqv(i,k) = tqv(i,k)*f
++            if (dcliw(i,k) > 0.) dcliw(i,k) = dcliw(i,k)*f
++            if (dclcw(i,k) > 0.) dclcw(i,k) = dclcw(i,k)*f
++            dw = dw + (tqv(i,k) + dcliw(i,k) + dclcw(i,k))*(prsi(i,k) - prsi(i,k+1))/g
++          enddo
++        endif
++        raincv(i) = max(0., -dw*dt*0.001)
++      enddo
++      end subroutine gf_column_water
+ end module cu_gf_driver
+--- a/UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.meta
++++ b/UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.meta
+@@ -272,6 +272,14 @@
+   long_name = mean layer pressure
+   units = Pa
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
+   type = real
+   kind = kind_phys
+   intent = in
+@@ -725,6 +733,13 @@
+   type = real
+   kind = kind_phys
+   intent = out
++[gf_closure]
++  standard_name = flag_for_grell_freitas_water_closure
++  long_name = flag for GF water closure
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1089,6 +1089,7 @@
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: gf_closure      !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+     logical              :: thompson_mp_is_init=.false. !< Local scheme initialization flag
+@@ -3791,6 +3792,7 @@
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: gf_closure = .false. !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+     real(kind=kind_phys) :: nt_c_o         = 50.e6              !< prescribed cloud liquid water number concentration over ocean
+@@ -4341,7 +4343,7 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat,                   &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, gf_closure,                   &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5097,6 +5099,7 @@
+     Model%thompson_kirchhoff = thompson_kirchhoff
+     Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
++    Model%gf_closure = gf_closure
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+     Model%nt_c_o           = nt_c_o
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -5254,6 +5254,12 @@
+   dimensions = ()
+   type = real
+   kind = kind_phys
++[gf_closure]
++  standard_name = flag_for_grell_freitas_water_closure
++  long_name = GF water closure: increments on GF's own basis, raincv from the applied tendencies
++  units = flag
++  dimensions = ()
++  type = logical
+ [samf_kirchhoff]
+   standard_name = flag_for_samf_kirchhoff_latent_heat
+   long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame

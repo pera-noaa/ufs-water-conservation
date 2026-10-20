@@ -1,0 +1,49 @@
+From aaeb252609cadd6f66b746856cd7369a38788d82 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 19:55:05 -0600
+Subject: [PATCH 2/3] TEMPO: semi-Lagrangian sedimentation falls back to
+ piecewise constant on a negative edge
+
+semilagrangian_sedimentation reconstructs each arrival cell as linear
+between the edge values qmi and qpi, with the PLM safeguard of Juang and
+Hong (2010), eq. (A4): fall back to piecewise constant where either edge
+value is negative. TEMPO tested qpi(k) > 0 where the paper, and Thompson's
+copy of the scheme, test qpi(k) < 0. It therefore fell back to constant in
+every cell with a positive upper edge, which is nearly all of them, and kept
+the linear profile only where the upper edge is negative or zero; the
+negative values were then raised to the floor by max(xr, limit), which
+creates water. In a unit test of the routine alone (a rain layer with a
+sharp top), each call created 3.0-3.5e-4 of the precipitation; with the test
+corrected, or with no floor, it conserves to 1e-16.
+
+This changes the scheme's behaviour, not only its water budget: with
+semi_sedi_flag (sedi_semi = .true., as UFS runs TEMPO) rain and graupel
+sedimentation go from effectively piecewise constant to piecewise linear, as
+the scheme was published.
+
+In TEMPO's 59-level test column with semi-Lagrangian sedimentation (closure
+as in the previous commit, gfortran, 20 s x 180 / 60 s x 60): 1.8e-3 /
+2.7e-3 before, 1.3e-7 / 4.4e-8 after, as with standard sedimentation.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_mp_tempo_main.F90 | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/module_mp_tempo_main.F90 b/src/module_mp_tempo_main.F90
+index aa15cd3..389b53c 100644
+--- a/src/module_mp_tempo_main.F90
++++ b/src/module_mp_tempo_main.F90
+@@ -1704,7 +1704,8 @@ module module_mp_tempo_main
+       else
+         qpi(k)=qa(k)+0.5_wp*(dip+dim)*dza(k)
+         qmi(k)=2._wp*qa(k)-qpi(k)
+-        if(qpi(k) > 0._wp .or. qmi(k) < 0._wp) then
++        ! fall back to piecewise constant if either edge value is negative
++        if(qpi(k) < 0._wp .or. qmi(k) < 0._wp) then
+           qpi(k) = qa(k)
+           qmi(k) = qa(k)
+         endif
+-- 
+2.55.0
+

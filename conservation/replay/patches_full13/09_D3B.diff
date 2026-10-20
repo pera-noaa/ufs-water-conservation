@@ -1,0 +1,228 @@
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 20:33:17.000000000 -0500
+@@ -1204,6 +1204,7 @@
+     logical              :: do_gsl_drag_ls_bl    !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     !< flag for GSL drag (turbulent orog form drag only)
++    logical              :: samf_cmt_heat        !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           !< flag for version 1 ugwp GWD
+     logical              :: do_ugwp_v1_orog_only !< flag for version 1 ugwp GWD (orographic drag only)
+@@ -3850,6 +3851,7 @@
+     logical              :: do_gsl_drag_ls_bl    = .false.      !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       = .false.      !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     = .false.      !< flag for GSL drag (turbulent orog form drag only)
++    logical              :: samf_cmt_heat        = .false.      !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       = .false.      !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           = .false.      !< flag for version 1 ugwp GWD
+     logical              :: do_ugwp_v1_orog_only = .false.      !< flag for version 1 ugwp GWD (orographic drag only)
+@@ -4316,6 +4318,7 @@
+                                do_ugwp_v0_nst_only,                                         &
+                                do_gsl_drag_ls_bl, do_gsl_drag_ss, do_gsl_drag_tofd,         &
+                                do_gwd_opt_psl, do_ngw_ec,                                   &
++                               samf_cmt_heat,                                               &
+                                do_ugwp_v1, do_ugwp_v1_orog_only,  do_ugwp_v1_w_gsldrag,     &
+                                ugwp_seq_update, var_ric, coef_ric_l, coef_ric_s, hurr_pbl,  &
+                                do_myjsfc, do_myjpbl,                                        &
+@@ -5351,6 +5354,7 @@
+     Model%do_gsl_drag_ls_bl    = do_gsl_drag_ls_bl
+     Model%do_gsl_drag_ss       = do_gsl_drag_ss
+     Model%do_gsl_drag_tofd     = do_gsl_drag_tofd
++    Model%samf_cmt_heat        = samf_cmt_heat
+     Model%do_gwd_opt_psl       = do_gwd_opt_psl
+     Model%do_ngw_ec            = do_ngw_ec
+     Model%do_ugwp_v1           = do_ugwp_v1
+@@ -7323,6 +7327,7 @@
+       print *, ' do_gsl_drag_ls_bl    : ', Model%do_gsl_drag_ls_bl
+       print *, ' do_gsl_drag_ss       : ', Model%do_gsl_drag_ss
+       print *, ' do_gsl_drag_tofd     : ', Model%do_gsl_drag_tofd
++      print *, ' samf_cmt_heat        : ', Model%samf_cmt_heat
+       print *, ' do_gwd_opt_psl       : ', Model%do_gwd_opt_psl
+       print *, ' do_ugwp_v1           : ', Model%do_ugwp_v1
+       print *, ' do_ngw_ec            : ', Model%do_ngw_ec
+diff -ru a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -8091,6 +8091,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[samf_cmt_heat]
++  standard_name = flag_for_convective_momentum_transport_dissipation_heating
++  long_name = flag for SAMF convective momentum transport dissipative heating
++  units = flag
++  dimensions = ()
++  type = logical
+ [do_gwd_opt_psl]
+   standard_name = do_gsl_drag_suite_with_psl_gwd_option
+   long_name = flag to activate PSL drag suite - mesoscale GWD and blocking
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:33:17.000000000 -0500
+@@ -87,7 +87,7 @@
+      &    do_ca, ca_closure, ca_entr, ca_trigger, nthresh,ca_deep,      
+      &    rainevap,sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,   
+      &    betascu,lbb1,lbb2,lbb3,dt_decay,maxMF,do_mynnedmf,            
+-     &    sigmab_coldstart,cat_adj_deep,                                
++     &    sigmab_coldstart,cat_adj_deep,samf_cmt_heat,                  
+      &    errmsg,errflg)
+ !
+       use machine , only : kind_phys
+@@ -97,6 +97,8 @@
+       real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
++      logical, intent(in)  :: samf_cmt_heat
++      real(kind=conv_wp) :: cmtu, cmtv, cmtq(km)
+       integer, intent(in)  :: islimsk(:)
+       real(kind=kind_phys), intent(in) :: cliq, cp, cvap, eps,          
+      &   epsm1, fv, grav, hvap, rd, rv, t0c
+@@ -3943,6 +3945,45 @@
+       endif
+       endif ! (.not.hwrf_samfdeep)
+ 
++!> - CMT dissipative heating (samf_cmt_heat), Boville-Bretherton interface form: momentum moved
++!!   across each interface x time-centred shear, half to each adjacent layer; column total = -d(KE)
++      if (samf_cmt_heat) then
++        do i = 1, im
++          if (cnvflg(i)) then
++            cmtu = 0.0_conv_wp
++            cmtv = 0.0_conv_wp
++            do k = 1, km
++              cmtq(k) = 0.0_conv_wp
++            enddo
++            do k = km, 2, -1
++              cmtu = cmtu - real(delp(i,k), kind=conv_wp)
++     &             * (new_u1(i,k) - real(u1(i,k), kind=conv_wp))
++              cmtv = cmtv - real(delp(i,k), kind=conv_wp)
++     &             * (new_v1(i,k) - real(v1(i,k), kind=conv_wp))
++              tem = 0.5_conv_wp * (cmtu * (new_u1(i,k)
++     &            + real(u1(i,k), kind=conv_wp) - new_u1(i,k-1)
++     &            - real(u1(i,k-1), kind=conv_wp))
++     &            + cmtv * (new_v1(i,k)
++     &            + real(v1(i,k), kind=conv_wp) - new_v1(i,k-1)
++     &            - real(v1(i,k-1), kind=conv_wp)))
++              cmtq(k)   = cmtq(k)   + 0.5_conv_wp * tem
++              cmtq(k-1) = cmtq(k-1) + 0.5_conv_wp * tem
++            enddo
++            cmtu = cmtu - real(delp(i,1), kind=conv_wp)
++     &           * (new_u1(i,1) - real(u1(i,1), kind=conv_wp))
++            cmtv = cmtv - real(delp(i,1), kind=conv_wp)
++     &           * (new_v1(i,1) - real(v1(i,1), kind=conv_wp))
++            cmtq(1) = cmtq(1) + 0.5_conv_wp * (cmtu * (new_u1(i,1)
++     &              + real(u1(i,1), kind=conv_wp)) + cmtv
++     &              * (new_v1(i,1) + real(v1(i,1), kind=conv_wp)))
++            do k = 1, km
++              new_t1(i,k) = new_t1(i,k) + cmtq(k)
++     &          / (real(cp, kind=conv_wp)
++     &          * real(delp(i,k), kind=conv_wp))
++            enddo
++          endif
++        enddo
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -858,6 +858,13 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[samf_cmt_heat]
++  standard_name = flag_for_convective_momentum_transport_dissipation_heating
++  long_name = flag for SAMF convective momentum transport dissipative heating
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:33:17.000000000 -0500
+@@ -60,7 +60,8 @@
+      &     ten_q, dot,ncloud,hpbl,ud_mf,dt_mf,cnvw,cnvc,                &
+      &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+      &     sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,betascu,   &
+-     &     lbb1,lbb2,lbb3,dt_decay,cat_adj_shal,errmsg,errflg)
++     &     lbb1,lbb2,lbb3,dt_decay,cat_adj_shal,samf_cmt_heat,
++     &     errmsg,errflg)
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+@@ -69,6 +70,8 @@
+       real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
++      logical, intent(in)  :: samf_cmt_heat
++      real(kind=conv_wp) :: cmtu, cmtv, cmtq(km)
+       integer, intent(in)  :: islimsk(:)
+       real(kind=kind_phys), intent(in) :: cliq, cp, cvap,               &
+      &   eps, epsm1, fv, grav, hvap, rd, rv, t0c, betascu, betadcu,     &
+@@ -2767,6 +2770,45 @@
+       endif
+       endif
+ !!
++!> - CMT dissipative heating (samf_cmt_heat), Boville-Bretherton interface form: momentum moved
++!!   across each interface x time-centred shear, half to each adjacent layer; column total = -d(KE)
++      if (samf_cmt_heat) then
++        do i = 1, im
++          if (cnvflg(i)) then
++            cmtu = 0.0_conv_wp
++            cmtv = 0.0_conv_wp
++            do k = 1, km
++              cmtq(k) = 0.0_conv_wp
++            enddo
++            do k = km, 2, -1
++              cmtu = cmtu - real(delp(i,k), kind=conv_wp)
++     &             * (new_u1(i,k) - real(u1(i,k), kind=conv_wp))
++              cmtv = cmtv - real(delp(i,k), kind=conv_wp)
++     &             * (new_v1(i,k) - real(v1(i,k), kind=conv_wp))
++              tem = 0.5_conv_wp * (cmtu * (new_u1(i,k)
++     &            + real(u1(i,k), kind=conv_wp) - new_u1(i,k-1)
++     &            - real(u1(i,k-1), kind=conv_wp))
++     &            + cmtv * (new_v1(i,k)
++     &            + real(v1(i,k), kind=conv_wp) - new_v1(i,k-1)
++     &            - real(v1(i,k-1), kind=conv_wp)))
++              cmtq(k)   = cmtq(k)   + 0.5_conv_wp * tem
++              cmtq(k-1) = cmtq(k-1) + 0.5_conv_wp * tem
++            enddo
++            cmtu = cmtu - real(delp(i,1), kind=conv_wp)
++     &           * (new_u1(i,1) - real(u1(i,1), kind=conv_wp))
++            cmtv = cmtv - real(delp(i,1), kind=conv_wp)
++     &           * (new_v1(i,1) - real(v1(i,1), kind=conv_wp))
++            cmtq(1) = cmtq(1) + 0.5_conv_wp * (cmtu * (new_u1(i,1)
++     &              + real(u1(i,1), kind=conv_wp)) + cmtv
++     &              * (new_v1(i,1) + real(v1(i,1), kind=conv_wp)))
++            do k = 1, km
++              new_t1(i,k) = new_t1(i,k) + cmtq(k)
++     &          / (real(cp, kind=conv_wp)
++     &          * real(delp(i,k), kind=conv_wp))
++            enddo
++          endif
++        enddo
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_u = real((new_u1 - real(u1, kind=conv_wp)) / real(delt,
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 20:33:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-17 20:33:17.000000000 -0500
+@@ -646,6 +646,13 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[samf_cmt_heat]
++  standard_name = flag_for_convective_momentum_transport_dissipation_heating
++  long_name = flag for SAMF convective momentum transport dissipative heating
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

@@ -1,0 +1,114 @@
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -1992,6 +1992,7 @@
+ 
+       real(dp), parameter:: zeroD0 = 0.0
+       real(wp) :: dtcfl, rainsfc, graulsfc
++      real(wp) :: xdef, xavl, xcnd, frc
+       integer :: niter 
+ 
+       real(wp), dimension(kts:kte) :: temp, pres, qv, pfll, pfil, pdummy
+@@ -2033,6 +2034,7 @@
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+       real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
++      real(wp) :: xcl
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+       integer :: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq
+       integer, dimension(5) :: ksed1
+@@ -4250,10 +4252,43 @@
+ 
+ !+---+-----------------------------------------------------------------+
+ !> - All tendencies computed, apply and pass back final values to parent.
++      ! condensate the final clip would delete is exchanged with vapour (with its latent heat) instead
++      do k = kts, kte
++         xcl = qc1d(k) + qcten(k)*DT
++         if (xcl .le. R1) then
++            qcten(k) = qcten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qi1d(k) + qiten(k)*DT
++         if (xcl .le. R1) then
++            qiten(k) = qiten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qr1d(k) + qrten(k)*DT
++         if (xcl .le. R1) then
++            qrten(k) = qrten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qs1d(k) + qsten(k)*DT
++         if (xcl .le. R1) then
++            qsten(k) = qsten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qg1d(k) + qgten(k)*DT
++         if (xcl .le. R1) then
++            qgten(k) = qgten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++      enddo
+ !+---+-----------------------------------------------------------------+
+       do k = kts, kte
+          t1d(k)  = t1d(k) + tten(k)*DT
+-         qv1d(k) = max(1.E-10, qv1d(k) + qvten(k)*DT)
++         qv1d(k) = qv1d(k) + qvten(k)*DT
+          qc1d(k) = qc1d(k) + qcten(k)*DT
+          nc1d(k) = max(2./rho(k), min(nc1d(k) + ncten(k)*DT, Nt_c_max))
+          if (is_aerosol_aware) then
+@@ -4322,7 +4357,50 @@
+          if (qs1d(k) .le. R1) qs1d(k) = 0.0
+          qg1d(k) = qg1d(k) + qgten(k)*DT
+          if (qg1d(k) .le. R1) qg1d(k) = 0.0
++      enddo
++
++!..Vapour left below the floor is refilled, not created: first from the layer's
++!.. condensate, with its latent heat, then from the column's other vapour.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) then
++            xcnd = qc1d(k) + qr1d(k) + qi1d(k) + qs1d(k) + qg1d(k)
++            if (xcnd .gt. 0.) then
++               frc = min(1._wp, (1.E-10 - qv1d(k))/xcnd)
++               t1d(k) = t1d(k) - frc*ocp(k)*(1-IFDRY)                           &
++                      * (lvap(k)*(qc1d(k)+qr1d(k)) + lsub*(qi1d(k)+qs1d(k)+qg1d(k)))
++               qv1d(k) = qv1d(k) + frc*xcnd
++               qc1d(k) = qc1d(k)*(1.-frc)
++               nc1d(k) = nc1d(k)*(1.-frc)
++               qr1d(k) = qr1d(k)*(1.-frc)
++               nr1d(k) = nr1d(k)*(1.-frc)
++               qi1d(k) = qi1d(k)*(1.-frc)
++               ni1d(k) = ni1d(k)*(1.-frc)
++               qs1d(k) = qs1d(k)*(1.-frc)
++               qg1d(k) = qg1d(k)*(1.-frc)
++            endif
++         endif
+       enddo
++      xdef = 0.
++      xavl = 0.
++      do k = kts, kte
++         xdef = xdef + max(1.E-10 - qv1d(k), 0._wp)*rho(k)*dzq(k)
++         xavl = xavl + max(qv1d(k) - 1.E-10, 0._wp)*rho(k)*dzq(k)
++      enddo
++      if (xdef .gt. 0. .and. xavl .gt. 0.) then
++         frc = min(1._wp, xdef/xavl)
++         xcnd = min(1._wp, xavl/xdef)
++         do k = kts, kte
++            if (qv1d(k) .lt. 1.E-10) then
++               qv1d(k) = qv1d(k) + (1.E-10 - qv1d(k))*xcnd
++            else
++               qv1d(k) = qv1d(k) - (qv1d(k) - 1.E-10)*frc
++            endif
++         enddo
++      endif
++!..Only a column with no vapour to spare is still floored.
++      do k = kts, kte
++         qv1d(k) = max(1.E-10, qv1d(k))
++      enddo
+ 
+ ! Diagnostics
+       calculate_extended_diagnostics: if (ext_diag) then

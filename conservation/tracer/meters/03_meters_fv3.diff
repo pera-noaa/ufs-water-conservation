@@ -1,0 +1,294 @@
+--- a/model/fv_dynamics.F90
++++ b/model/fv_dynamics.F90
+@@ -149,6 +149,7 @@
+    use field_manager_mod,   only: MODEL_ATMOS
+    use tracer_manager_mod,  only: get_tracer_index
+    use fv_sg_mod,           only: neg_adj3, neg_adj2, neg_adj4
++   use tm_meter,            only: tm_dyn_rec
+    use fv_nesting_mod,      only: setup_nested_grid_BCs
+    use fv_regional_mod,     only: regional_boundary_update, set_regional_BCs
+    use fv_regional_mod,     only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
+@@ -694,6 +695,7 @@
+       if ( flagstruct%trdm2 > 1.e-4 ) then
+          call start_group_halo_update(i_pack(13), dp1, domain)
+       endif
++      call tm_dyn_rec(2+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
+ 
+       if ( n_map==k_split ) GFDL_interstitial%last_step = .true.
+ 
+@@ -756,6 +758,7 @@
+          endif
+        endif
+                                              call timing_off('tracer_2d')
++      call tm_dyn_rec(3+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
+     
+ #ifdef FILL2D
+      if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
+@@ -815,6 +818,7 @@
+                      flagstruct%moist_phys, grav_var)
+      
+                                                   call timing_off('Remapping')
++      call tm_dyn_rec(4+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
+ 
+      if ( flagstruct%molecular_diffusion ) then
+ ! do thermosphere adjustment if it is turned on and at GFDL_interstitial%last_step.
+@@ -946,6 +950,7 @@
+      endif
+   endif
+ 
++  call tm_dyn_rec(8, isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
+   if( nwat == 6 ) then
+      if (cld_amt > 0) then
+       call neg_adj3(is, ie, js, je, ng, npz,        &
+@@ -980,6 +985,7 @@
+      endif
+   endif
+ 
++  call tm_dyn_rec(9, isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
+   if( nwat == 5 ) then
+      if (cld_amt > 0) then
+       call neg_adj2(is, ie, js, je, ng, npz,        &
+--- a/driver/UFS/atmosphere.F90
++++ b/driver/UFS/atmosphere.F90
+@@ -211,6 +211,8 @@
+ use fv_mp_mod,          only: is_master, tile_fine
+ use fv_sg_mod,          only: fv_subgrid_z
+ use fv_update_phys_mod, only: fv_update_phys
++use tm_meter,          only: tm_dyn_rec, tm_phys_mass, tm_pt_zero, tm_pt_add, tm_pts, tm_acc, tm_np, tm_nslot, tm_neu, tm_iu, tm_umax, tm_cfl, &
++                              tm_iud, tm_icnv, tm_dr, tm_drs, tm_dry_phys, tm_osc, tm_cflh
+ use fv_io_mod,          only: fv_io_register_nudge_restart
+ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
+@@ -664,6 +666,8 @@
+    logical :: used
+    real    :: rdt
+    type(time_type) :: atmos_time
++   logical, save :: tm_first = .true.
++   integer :: tm_k, tm_j, tm_i
+ 
+ !---- Call FV dynamics -----
+ 
+@@ -693,6 +697,22 @@
+                            isd, ied, jsd, jed )
+    endif
+ 
++   tm_iud = max(get_tracer_index(MODEL_ATMOS, 'pt_udry'), 0); tm_icnv = max(get_tracer_index(MODEL_ATMOS, 'pt_cnv'), 0)
++   tm_iu = max(get_tracer_index(MODEL_ATMOS, 'pt_umoist'), 0)
++   if (tm_first) then   ! TEST HOOK: exact uniform test tracers after the IC remap
++     do tm_k = 1, npz
++       do tm_j = jsc, jec
++         do tm_i = isc, iec
++           if (tm_iud > 0) Atm(n)%q(tm_i,tm_j,tm_k,tm_iud) = 1.d-6*(1.d0 - sum(Atm(n)%q(tm_i,tm_j,tm_k,1:Atm(n)%flagstruct%nwat)))
++           if (tm_iu > 0) Atm(n)%q(tm_i,tm_j,tm_k,tm_iu) = 1.d-6
++         enddo
++       enddo
++     enddo
++     if (tm_iud > 0) call mpp_update_domains(Atm(n)%q(:,:,:,tm_iud), Atm(n)%domain)
++     if (tm_iu > 0) call mpp_update_domains(Atm(n)%q(:,:,:,tm_iu), Atm(n)%domain)
++     tm_first = .false.
++   endif
++   call tm_dyn_rec(1, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
+    do psc=1,abs(p_split)
+       p_step = psc
+                     call timing_on('fv_dynamics')
+@@ -730,6 +750,7 @@
+     endif
+ 
+     enddo !p_split
++    call tm_dyn_rec(10, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
+     if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+         Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+         if(Atm(n)%flagstruct%nf_omega>0)   then
+@@ -809,6 +830,7 @@
+ ! zero out t_dt for use as an accumulator
+     t_dt = 0.
+ 
++   call tm_dyn_rec(11, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
+    call mpp_clock_end (id_subgridz)
+ 
+  end subroutine atmosphere_dynamics
+@@ -1538,6 +1560,8 @@
+    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
+    real psum, qsum, psumb, qsumb, betad
+    character(len=32) :: tracer_name
++   real(8), allocatable :: tm_bs(:,:,:,:), tm_ar(:), tm_bd(:,:,:)
++   integer :: tm_b
+    Time_prev = Time
+    Time_next = Time + Time_step_atmos
+    rdt = 1.d0 / dt_atmos
+@@ -1549,6 +1573,15 @@
+ 
+    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+ 
++   call tm_dyn_rec(12, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   allocate(tm_bs(2,0:nq+1,4,Atm_block%nblks), tm_ar(IPD_control%chunk_end(Atm_block%nblks)), tm_bd(3,4,Atm_block%nblks))
++   tm_bd = 0.d0
++   do nb = 1, Atm_block%nblks
++     do ix = 1, Atm_block%blksz(nb)
++       tm_ar(IPD_control%chunk_begin(nb)+ix-1) = Atm(n)%gridstruct%area_64(Atm_block%index(nb)%ii(ix),Atm_block%index(nb)%jj(ix))
++     enddo
++   enddo
++
+    if (IAU_Data%in_interval) then
+       if (IAU_Data%drymassfixer) then
+          ! global mean total pressure and water before IAU
+@@ -1614,15 +1647,21 @@
+ #ifdef MULTI_GASES
+ !$OMP                      num_gas,                                                      &
+ #endif
+-!$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
+-!$OMP             private (nb, blen, i, j, k, k1, ix, im, q0, qwat, qt, tracer_name)
++!$OMP                      snowwat, graupel, nq_adv, flip_vc, tm_bs, tm_ar, tm_bd, tm_iud)   &
++!$OMP             private (nb, blen, i, j, k, k1, ix, im, q0, qwat, qt, tracer_name, tm_b)
+    do nb = 1,Atm_block%nblks
+ 
+ !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
+ !     This call may be commented out if RAS or other positivity-preserving CPS is used.
+      blen = Atm_block%blksz(nb)
++     call tm_phys_mass(blen, npz, nq, IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,1,nb))
++     if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,1,nb))
++     call tm_phys_mass(blen, npz, nq, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,2,nb))
++     if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,2,nb))
+      if (Atm(n)%flagstruct%fill_gfs) call fill_gfs(blen, npz, IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), &
+                                                    IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), 1.e-9_kind_phys)
++     call tm_phys_mass(blen, npz, nq, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,3,nb))
++     if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,3,nb))
+ 
+ !LMH 28sep18: If the name of a tracer ends in 'nopbl' then do NOT update it;
+      !override this by setting Stateout%gq0(:,:,iq) to the input value
+@@ -1633,6 +1672,8 @@
+                IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,iq)
+         endif
+      enddo
++     call tm_phys_mass(blen, npz, nq, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,4,nb))
++     if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,4,nb))
+ 
+ 
+      do k = 1, npz
+@@ -1700,6 +1741,21 @@
+      enddo
+ 
+    enddo  ! nb-loop
++   do tm_b = 1, 4
++     call tm_pt_zero(12+tm_b)
++     do nb = 1, Atm_block%nblks
++       call tm_pt_add(12+tm_b, nq, tm_bs(:,:,tm_b,nb))
++     enddo
++   enddo
++   do tm_b = 1, 4
++     tm_dr(:,12+tm_b) = 0.d0
++     do nb = 1, Atm_block%nblks
++       tm_dr(1:2,12+tm_b) = tm_dr(1:2,12+tm_b) + tm_bd(1:2,tm_b,nb)
++       tm_dr(3,12+tm_b) = max(tm_dr(3,12+tm_b), tm_bd(3,tm_b,nb))
++     enddo
++   enddo
++   deallocate(tm_bs, tm_ar, tm_bd)
++   call tm_dyn_rec(17, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
+ 
+ ! dry mass fixer in IAU interval following
+ ! https://onlinelibrary.wiley.com/doi/full/10.1111/j.1600-0870.2007.00299.x
+@@ -1769,6 +1825,8 @@
+                          Atm(n)%phys_diag, Atm(n)%nudge_diag )
+        call timing_off('FV_UPDATE_PHYS')
+    call mpp_clock_end (id_dynam)
++   call tm_dyn_rec(18, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   call tm_report(Atm(n), nq)
+ 
+ !--- nesting update after updating atmospheric variables with
+ !--- physics tendencies
+@@ -1799,6 +1857,95 @@
+ 
+  end subroutine atmosphere_state_update
+ 
++ !> tracer-mass meter report (diagnostic builds only): gather rank Neumaier pairs, sum on root in PE order
++ subroutine tm_report(A, nq)
++   use mpp_mod, only: mpp_gather, mpp_npes, mpp_pe, mpp_root_pe, mpp_min, mpp_max, mpp_sum
++   type(fv_atmos_type), intent(in) :: A
++   integer, intent(in) :: nq
++   integer, save :: tm_step = 0
++   integer :: nv, r, ip, m, iu, im, nw, i, j, k, off
++   real(8), allocatable :: sb(:), rb(:)
++   real(8) :: s(2), v(0:nq+1), vl(0:nq+1), u(4), qd, um(4, tm_nslot), tm_t8(8)
++   tm_step = tm_step + 1
++   nv = 2*(nq+2)*(tm_np + tm_nslot)
++   allocate(sb(nv), rb(nv*mpp_npes()))
++   sb(1:2*(nq+2)*tm_np) = reshape(tm_pts(:, 0:nq+1, :), (/2*(nq+2)*tm_np/))
++   sb(2*(nq+2)*tm_np+1:nv) = reshape(tm_acc(:, 0:nq+1, :), (/2*(nq+2)*tm_nslot/))
++   rb = 0.d0
++   call mpp_gather(sb, rb)
++   if (mpp_pe() == mpp_root_pe()) then
++     do ip = 1, tm_np + tm_nslot
++       do m = 0, nq+1
++         s = 0.d0
++         off = ((ip-1)*(nq+2) + m)*2
++         do r = 0, mpp_npes()-1
++           call tm_neu(s, rb(r*nv + off + 1))
++           call tm_neu(s, rb(r*nv + off + 2))
++         enddo
++         v(m) = s(1) + s(2); vl(m) = s(2) - (v(m) - s(1))
++       enddo
++       if (ip <= tm_np) then
++         if (ip <= 18) write(*,'(a,i5,i4,128es26.17e3)') 'TM ', tm_step, ip, (v(m), vl(m), m=0,nq+1)
++       else
++         if (ip - tm_np <= 3) write(*,'(a,i5,i4,128es26.17e3)') 'TP ', tm_step, ip - tm_np, (v(m), vl(m), m=0,nq+1)
++       endif
++     enddo
++   endif
++   deallocate(sb, rb)
++   iu = get_tracer_index(MODEL_ATMOS, 'pt_udry'); im = get_tracer_index(MODEL_ATMOS, 'pt_umoist')
++   tm_iu = max(im, 0)
++   um = tm_umax
++   do ip = 1, 3
++     qd = um(1,ip); call mpp_max(um(1,ip)); if (qd /= um(1,ip)) um(2,ip) = 0.d0
++     call mpp_max(um(2,ip)); call mpp_sum(um(3,ip)); call mpp_sum(um(4,ip))
++   enddo
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,3(es12.4,f6.0,2es12.4))') 'TQ ', tm_step, um(:,1:3)
++   tm_umax = 0.d0
++   qd = tm_cfl(1); call mpp_max(tm_cfl(1)); if (qd /= tm_cfl(1)) tm_cfl(2) = 0.d0
++   call mpp_max(tm_cfl(2)); call mpp_sum(tm_cfl(3)); call mpp_sum(tm_cfl(4))
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,es12.4,f6.0,2f10.0)') 'TC ', tm_step, tm_cfl
++   tm_cfl = 0.d0
++   call mpp_sum(tm_cflh, 7)
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,7f10.0)') 'TH ', tm_step, tm_cflh
++   tm_cflh = 0.d0
++   do ip = 1, 18
++     call mpp_sum(tm_dr(1:2,ip), 2); call mpp_max(tm_dr(3,ip))
++   enddo
++   if (mpp_pe() == mpp_root_pe()) then
++     do ip = 1, 18
++       write(*,'(a,i5,i4,3es24.15)') 'TD ', tm_step, ip, tm_dr(:,ip)
++     enddo
++   endif
++   do ip = 1, 3
++     call mpp_sum(tm_drs(1,ip)); call mpp_max(tm_drs(2,ip))
++   enddo
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,6es24.15)') 'TS ', tm_step, tm_drs(:,1:3)
++   tm_drs = 0.d0
++   tm_t8 = reshape(tm_osc(1:2,:), (/8/)); call mpp_sum(tm_t8, 8); tm_osc(1:2,:) = reshape(tm_t8, (/2,4/))
++   do ip = 1, 4
++     call mpp_max(tm_osc(3,ip))
++   enddo
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,12es12.4)') 'TO ', tm_step, tm_osc
++   tm_osc = 0.d0
++   nw = A%flagstruct%nwat
++   u = (/ huge(1.d0), -huge(1.d0), huge(1.d0), -huge(1.d0) /)
++   do k = 1, A%npz
++     do j = jsc, jec
++       do i = isc, iec
++         if (iu > 0) then
++           qd = A%q(i,j,k,iu)/(1.d0 - sum(A%q(i,j,k,1:nw)))
++           u(1) = min(u(1), qd); u(2) = max(u(2), qd)
++         endif
++         if (im > 0) then
++           u(3) = min(u(3), A%q(i,j,k,im)); u(4) = max(u(4), A%q(i,j,k,im))
++         endif
++       enddo
++     enddo
++   enddo
++   call mpp_min(u(1)); call mpp_max(u(2)); call mpp_min(u(3)); call mpp_max(u(4))
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i5,4es26.17e3)') 'TU ', tm_step, u
++ end subroutine tm_report
++
+ 
+ !>@brief The subroutine 'adiabatic_init' is an optional step during initialization
+ !! to pre-condition a solution via backward-forward steps with capability for various

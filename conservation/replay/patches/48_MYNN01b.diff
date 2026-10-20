@@ -1,0 +1,29 @@
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+@@ -5012,11 +5012,6 @@
+          Dqs(k) =0.
+       ENDDO
+     ENDIF
+-
+-    !ensure non-negative moist species
+-    CALL moisture_check(kte, delt, rho(kts:kte)*dz(kts:kte), exner, & ! layer mass the solver conserves
+-                        sqv2, sqc2, sqi2, sqs2, thl,   &
+-                        dqv, dqc, dqi, dqs, dth        )
+ 
+     !=====================
+     ! OZONE TENDENCY CHECK
+@@ -5051,6 +5046,14 @@
+       ENDDO
+     ENDIF
+ 
++    ! after Dth: moisture_check gets a scratch theta (theta-l is not changed by a vapour/condensate exchange);
++    ! its dth increment carries the latent heat of every fill (liquid, ice, snow) once
++    x(kts:kte) = thl(kts:kte)
++    !ensure non-negative moist species
++    CALL moisture_check(kte, delt, rho(kts:kte)*dz(kts:kte), exner, & ! layer mass the solver conserves
++                        sqv2, sqc2, sqi2, sqs2, x,     &
++                        dqv, dqc, dqi, dqs, dth        )
++
+     !===================
+     ! AEROSOL TENDENCIES
+     !===================

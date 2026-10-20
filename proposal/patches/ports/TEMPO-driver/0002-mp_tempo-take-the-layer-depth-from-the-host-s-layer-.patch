@@ -1,0 +1,108 @@
+From b965c6ef9176fb2f3412d79d2a0bf22d952ea7ba Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 18:02:09 -0600
+Subject: [PATCH 2/2] mp_tempo: take the layer depth from the host's layer mass
+
+dz came from phii, which get_phi_fv3 computes before deep and shallow
+convection heat the column, so TEMPO's rho*dz differed slightly from the
+host's layer mass and sedimentation moved host water by the wrong amount
+(ufs-community/ccpp-physics fix M4, for mp_thompson). Pass the interface
+pressure and set dz = dp*(1-spechum)/(g*rho), with rho exactly as TEMPO
+computes it (its own rdry, roverrv and min_qv), so TEMPO's rho*dz is the
+host's dry-air mass whatever its gas constants. Adds prsi to mp_tempo.meta
+(air_pressure_at_interface, already provided by UFSATM and SCM).
+
+dz is computed inside the inner loop (do it = 1, ndt) from the current
+new_tgrs and qv: tempo_main recomputes rho from the state it is given at
+every call, so a dz computed once before the loop matches the host's mass
+only for the first inner step when dt_inner < dtp. Checked with the real
+tempo_run (TEMPO 2856696) on TEMPO's 59-level test column, 4 inner steps
+of 150 s: max |rho*dz - dp*(1-q)/g| / (dp*(1-q)/g) is 4e-16 at every inner
+step, against 4.7e-3 at steps 2-4 with dz computed before the loop.
+
+Not measured on its own in UFS. In UFS (C96 control_p8_ugwpv1_tempo, 24 h),
+with an earlier version of this change (dz before the inner loop) and all
+the other water fixes, the whole model's water residual is 0.00 % of
+precipitation per 6 h after spin-up.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ physics/MP/TEMPO/mp_tempo.F90  | 14 +++++++++-----
+ physics/MP/TEMPO/mp_tempo.meta |  8 ++++++++
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/physics/MP/TEMPO/mp_tempo.F90 b/physics/MP/TEMPO/mp_tempo.F90
+index e493c314..1bb3a0c9 100644
+--- a/physics/MP/TEMPO/mp_tempo.F90
++++ b/physics/MP/TEMPO/mp_tempo.F90
+@@ -11,7 +11,7 @@ module mp_tempo
+ 
+       !physical constants that are set from the host
+       use module_mp_tempo_params, only : pi, lvap0, lfus, lsub, rv, rdry, cp, t0, r_uni, rho_w
+-      use module_mp_tempo_params, only : roverrv, eps, naccn0, naccn1, nain0, nain1
++      use module_mp_tempo_params, only : roverrv, eps, naccn0, naccn1, nain0, nain1, min_qv
+       use module_mp_tempo_params, only : initialize_parameters
+       use module_mp_tempo_cfgs, only : ty_tempo_cfgs
+       use module_mp_tempo_driver, only : tempo_init, tempo_run, ty_tempo_driver_diags, tempo_aerosol_surface_emissions
+@@ -250,7 +250,7 @@ module mp_tempo
+         spechum, qc, qr, qi, qs, qg, ni, nr, &
+         nc, nwfa, nifa, nwfa2d, nifa2d, ng, volg, &
+         con_g, first_time_step, &
+-        tgrs, prsl, phii, omega, &
++        tgrs, prsl, prsi, phii, omega, &
+         is_aerosol_aware, is_hail_aware, &
+         prcp, rain, graupel, ice, snow, sr, refl_10cm, &
+         do_radar_ref, &
+@@ -297,6 +297,7 @@ module mp_tempo
+          ! State variables and timestep information
+          real(kind_phys),           intent(in   ) :: tgrs(:,:)
+          real(kind_phys),           intent(in   ) :: prsl(:,:)
++         real(kind_phys),           intent(in   ) :: prsi(:,:)
+          real(kind_phys),           intent(in   ) :: phii(:,:)
+          real(kind_phys),           intent(in   ) :: omega(:,:)
+          real(kind_phys),           intent(in   ) :: dtp
+@@ -456,9 +457,6 @@ module mp_tempo
+            end if
+          end if
+ 
+-         !> - Layer width in m from geopotential in m2 s-2
+-         dz = (phii(:,2:nlev+1) - phii(:,1:nlev)) / con_g
+-
+          ! Set internal dimensions
+          ids = 1
+          ims = 1
+@@ -482,6 +480,12 @@ module mp_tempo
+          ! handle dt_inner < dtp
+          do it = 1, ndt
+ 
++            !> - Layer width in m from the host's layer mass, with rho as TEMPO computes it from the current state,
++            !! so that TEMPO's rho*dz is exactly the host's dry air at every inner step; geopotential predates
++            !! convection
++            dz = (prsi(:,1:nlev) - prsi(:,2:nlev+1)) * (1.0_kind_phys - spechum) * rdry * new_tgrs &
++                 * (max(min_qv, qv) + roverrv) / (con_g * roverrv * prsl)
++
+             !> - Density of air in kg m-3
+             rho = roverrv*prsl/(rdry*new_tgrs*(qv+roverrv))
+ 
+diff --git a/physics/MP/TEMPO/mp_tempo.meta b/physics/MP/TEMPO/mp_tempo.meta
+index fd2b27ff..65f3d05e 100644
+--- a/physics/MP/TEMPO/mp_tempo.meta
++++ b/physics/MP/TEMPO/mp_tempo.meta
+@@ -476,6 +476,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [phii]
+   standard_name = geopotential_at_interface
+   long_name = geopotential at model layer interfaces
+-- 
+2.55.0
+

@@ -1,0 +1,260 @@
+From c2efeb8683b33884a9d765aa5ce8db5c96e39441 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Sat, 17 Oct 2026 19:04:46 -0600
+Subject: [PATCH 12/13] Layer-local microphysics energy coupling (option,
+ default stock)
+
+config_mp_energy_coupling ('stock' | 'layer', Thompson only). With
+'layer', each layer's T_m after Thompson is set from its pre-microphysics
+value and its own changes, at constant volume and with the latent heats
+of the energy the dynamics conserves: -LV0 d(qv dm) + LF0 (d(qice dm) -
+net ice sedimentation into the layer), plus the frictional heating of
+falling water (the potential energy sedimentation releases inside the
+layer: g (zmid - zbot) for what leaves through the bottom, g (ztop -
+zmid) for what enters through the top; Pauluis et al. 2000) and the
+kinetic energy falling water carries between layers. The column change of
+E plus the precipitation term is then zero exactly when the column's
+water closes; with the meter on, EF lines report it as a gate.
+
+Physics change. In the 24-h supercell Thompson's own heating is 7.3 %
+smaller than the energy-consistent one, 6.4 points of it the missing
+frictional heating (2.75 % of gross condensation heating); the storm is
+stronger (peak w +10 %, colder cold pool), precipitation unchanged within
+noise. With 'stock' the forecast is bit-identical to the previous commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/core_atmosphere/Registry.xml              |   5 +
+ .../dynamics/mpas_atm_time_integration.F      | 151 ++++++++++++++++++
+ 2 files changed, 156 insertions(+)
+
+diff --git a/src/core_atmosphere/Registry.xml b/src/core_atmosphere/Registry.xml
+index 53a722d..e2c46b1 100644
+--- a/src/core_atmosphere/Registry.xml
++++ b/src/core_atmosphere/Registry.xml
+@@ -241,6 +241,11 @@
+                      description="Write per-step global dry-mass, water and energy budgets (EB lines) to the standard error of rank 0"
+                      possible_values=".true. or .false."/>
+ 
++                <nml_option name="config_mp_energy_coupling" type="character" default_value="stock" in_defaults="false"
++                     units="-"
++                     description="Temperature update from microphysics: stock (the scheme's own), or layer (each layer's temperature from its own phase changes and the frictional heating of falling water, at constant volume with the energy the dynamics conserves; mp_thompson only)"
++                     possible_values="stock or layer"/>
++
+                 <nml_option name="config_energy_test_heating" type="real" default_value="0.0" in_defaults="false"
+                      units="W m^{-2}"
+                      description="Energy meter test (microphysics off): domain-mean power of a prescribed 8-h heat source at the domain centre; 0 = off"
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index 6cfcd79..2e9692c 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -122,6 +122,8 @@ module atm_time_integration
+    real (kind=8), save :: ebud_theat = 0.d0, ebud_tcool = 0.d0
+    real (kind=8), parameter :: ebud_lv0 = 2.5d6 - 461.6d0*273.15d0 - 717.5d0*(461.6d0/287.0d0)*273.15d0
+    real (kind=8), parameter :: ebud_lf0 = 3.34d5
++   real (kind=RKIND), dimension(:,:), allocatable, save :: ef_thm0
++   real (kind=RKIND), dimension(:,:,:), allocatable, save :: ef_q0
+ 
+    contains
+ 
+@@ -2867,6 +2869,7 @@ module atm_time_integration
+       !$acc update device(scalars_2, rthdynten)
+       MPAS_ACC_TIMER_STOP('atm_srk3: physics ACC_data_xfer')
+       if (ebud_active(domain)) call ebud_point(domain, 2, 2, itimestep)
++      if (ebud_layer_on(domain)) call efix_save(domain)
+       !call microphysics schemes:
+       if (trim(config_microp_scheme) /= 'off')  then
+         call pre_microphysics( block % configs, state, diag, 2)
+@@ -2882,6 +2885,7 @@ module atm_time_integration
+       end if
+       if (ebud_active(domain)) then
+          call ebud_point(domain, 2, 3, itimestep)
++         if (ebud_layer_on(domain)) call efix_layer(domain, dt, itimestep)
+          if (ebud_sw(4)) call etest_heat(domain, dt, itimestep)
+          call ebud_point(domain, 2, 4, itimestep)
+          call ebud_point(domain, 2, 5, itimestep)
+@@ -9296,6 +9300,7 @@ module atm_time_integration
+       character (len=StrKIND), pointer :: cp
+       if (ebud_cfg_done) return
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_meter', lp); ebud_sw(1) = lp
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_mp_energy_coupling', cp); ebud_sw(2) = (trim(cp) == 'layer')
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_heating', rp); ebud_theat = dble(rp)
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_cooling', rp); ebud_tcool = dble(rp)
+       ebud_sw(4) = (ebud_theat > 0.d0 .or. ebud_tcool > 0.d0)
+@@ -9305,6 +9310,11 @@ module atm_time_integration
+          if (trim(cp) /= 'off' .or. ebud_sw(2) .or. .not. ebud_sw(1)) call mpas_log_write( &
+             'config_energy_test_heating needs config_microp_scheme = off, stock coupling and the meter', messageType=MPAS_LOG_CRIT)
+       end if
++      if (ebud_sw(2)) then
++         call mpas_pool_get_config(domain % blocklist % configs, 'config_microp_scheme', cp)
++         if (trim(cp) /= 'mp_thompson') call mpas_log_write('config_mp_energy_coupling = ''layer'' needs mp_thompson', &
++                                                           messageType=MPAS_LOG_CRIT)
++      end if
+       ebud_cfg_done = .true.
+    end subroutine ebud_cfg
+ 
+@@ -9313,6 +9323,11 @@ module atm_time_integration
+       call ebud_cfg(domain); ebud_meter_on = ebud_sw(1)
+    end function ebud_meter_on
+ 
++   logical function ebud_layer_on(domain)
++      type (domain_type), intent(in) :: domain
++      call ebud_cfg(domain); ebud_layer_on = ebud_sw(2)
++   end function ebud_layer_on
++
+    logical function ebud_active(domain)
+       type (domain_type), intent(in) :: domain
+       call ebud_cfg(domain); ebud_active = any(ebud_sw)
+@@ -9575,6 +9590,22 @@ module atm_time_integration
+    end subroutine ebud_point
+ 
+ 
++   subroutine efix_save(domain)
++      type (domain_type), intent(in) :: domain
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      integer :: nCellsSolve, nVertLevels, ms, me, iq(6)
++      call ebud_ptrs(domain, 2, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                     zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      if (allocated(ef_thm0)) deallocate(ef_thm0, ef_q0)
++      allocate(ef_thm0(nVertLevels,nCellsSolve), ef_q0(size(scalars,1),nVertLevels,nCellsSolve))
++      ef_thm0(:,:) = theta_m(:,1:nCellsSolve)
++      ef_q0(:,:,:) = scalars(:,:,1:nCellsSolve)
++   end subroutine efix_save
++
+    subroutine efix_ptrs(domain, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
+       type (domain_type), intent(in) :: domain
+       real (kind=RKIND), dimension(:,:), pointer :: rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab
+@@ -9608,6 +9639,126 @@ module atm_time_integration
+    end subroutine efix_set_tm
+ 
+ 
++   subroutine efix_layer(domain, dt, itimestep)
++      use module_mp_thompson, only : ebud_sed
++      type (domain_type), intent(in) :: domain
++      real (kind=RKIND), intent(in) :: dt
++      integer, intent(in) :: itimestep
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge, snowncv, graupelncv, rainncv
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      real (kind=RKIND), dimension(:,:), pointer :: rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab
++      type (mpas_pool_type), pointer :: diag_physics
++      integer :: nCellsSolve, nVertLevels, ms, me, iq(6), iCell, k, n, j
++      real (kind=8) :: v(11), dm, qv0, qv1, qi0, qi1, tm0, tm1, ex, zm, kk(201), fin, fout, q, hpe, hke, lvap, lfus
++      real (kind=8) :: eb, cb, ea, ca, rcol, loc(14), tot(14)
++      real (kind=RKIND) :: thm1(200)
++      call ebud_ptrs(domain, 2, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                     zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      call efix_ptrs(domain, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++      if (nVertLevels > 200) call mpas_log_write('efix_layer: nVertLevels > 200', messageType=MPAS_LOG_CRIT)
++      if (.not. allocated(ebud_sed)) call mpas_log_write('efix_layer: no Thompson sedimentation export', messageType=MPAS_LOG_CRIT)
++      nullify(diag_physics, snowncv, graupelncv, rainncv)
++      call mpas_pool_get_subpool(domain % blocklist % structs, 'diag_physics', diag_physics)
++      call mpas_pool_get_array(diag_physics, 'snowncv', snowncv)
++      call mpas_pool_get_array(diag_physics, 'graupelncv', graupelncv)
++      call mpas_pool_get_array(diag_physics, 'rainncv', rainncv)
++      ! loc: 1 sum|Rcol| 2 max|Rcol| 3 dIE_scheme 4 dIE_E 5 Lvap 6 Lfus 7 Hpe 8 Hke 9 sum Lvap*T (Lvap>0 layers) 10 sum|dIE diff|
++      loc(:) = 0.d0
++      do iCell = 1, nCellsSolve
++         ! E before (saved state) for the gate
++         eb = 0.d0; cb = 0.d0
++         thm1(1:nVertLevels) = theta_m(:,iCell)
++         theta_m(:,iCell) = ef_thm0(:,iCell)
++         call efix_swap(scalars, iCell)
++         do k = 1, nVertLevels
++            call ebud_layer(k, iCell, ms, me, iq, rho_zz, theta_m, scalars, u, w, zz, zgrid, rdzw, areaCell, &
++                            dcEdge, dvEdge, edgesOnCell, nEdgesOnCell, v)
++            call ebud_nsum(eb, cb, v(2) + v(3) + v(4) + v(5) + ebud_lv0*v(6) - ebud_lf0*v(8))
++            kk(k) = (v(4) + v(5))/(v(1)*(1.d0 + v(9)/v(1)))   ! specific K of the layer (same in both states)
++         end do
++         kk(nVertLevels+1) = 0.d0
++         call efix_swap(scalars, iCell)
++         theta_m(:,iCell) = thm1(1:nVertLevels)
++         do k = 1, nVertLevels
++            dm = dble(rho_zz(k,iCell))/dble(rdzw(k))
++            qv0 = dble(ef_q0(iq(1),k,iCell)); qv1 = dble(scalars(iq(1),k,iCell))
++            qi0 = 0.d0; qi1 = 0.d0
++            do n = 4, 6
++               if (iq(n) > 0) then
++                  qi0 = qi0 + dble(ef_q0(iq(n),k,iCell)); qi1 = qi1 + dble(scalars(iq(n),k,iCell))
++               end if
++            end do
++            ex = (dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))*dble(ef_thm0(k,iCell)))**(dble(rgas)/dble(cv))
++            tm0 = dble(ef_thm0(k,iCell))*ex
++            ex = (dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))*dble(theta_m(k,iCell)))**(dble(rgas)/dble(cv))
++            tm1 = dble(theta_m(k,iCell))*ex
++            zm = 0.5d0*(dble(zgrid(k,iCell)) + dble(zgrid(k+1,iCell)))
++            fin = dble(ebud_sed(iCell,k,1)) + dble(ebud_sed(iCell,k,3))
++            fout = dble(ebud_sed(iCell,k,2)) + dble(ebud_sed(iCell,k,4))
++            lvap = -ebud_lv0*(qv1 - qv0)*dm
++            lfus = ebud_lf0*((qi1 - qi0)*dm - (dble(ebud_sed(iCell,k,3)) - dble(ebud_sed(iCell,k,4))))
++            hpe = dble(gravity)*((zm - dble(zgrid(k,iCell)))*fout + (dble(zgrid(k+1,iCell)) - zm)*fin)
++            hke = (kk(k+1) - kk(k))*fin
++            if (k == 1) hke = hke + kk(1)*fout
++            q = lvap + lfus + hpe + hke
++            loc(3) = loc(3) + dble(cv)*(tm1 - tm0)*dm*dble(areaCell(iCell))
++            loc(4) = loc(4) + q*dble(areaCell(iCell))
++            loc(5) = loc(5) + lvap*dble(areaCell(iCell))
++            loc(6) = loc(6) + lfus*dble(areaCell(iCell))
++            loc(7) = loc(7) + hpe*dble(areaCell(iCell))
++            loc(8) = loc(8) + hke*dble(areaCell(iCell))
++            if (lvap > 0.d0) then
++               loc(9) = loc(9) + lvap*(tm0/(1.d0 + dble(rv)/dble(rgas)*qv0))*dble(areaCell(iCell))
++               loc(11) = loc(11) + lvap*dble(areaCell(iCell))
++            end if
++            if (hke < 0.d0) then
++               loc(12) = loc(12) + hke*dble(areaCell(iCell))
++               loc(13) = loc(13) + 1.d0
++            end if
++            loc(10) = loc(10) + abs(dble(cv)*(tm1 - tm0)*dm - q)*dble(areaCell(iCell))
++            loc(14) = loc(14) + fout*dble(areaCell(iCell))   ! falling mass crossing the layer bottom
++            call efix_set_tm(k, iCell, tm0 + q/(dble(cv)*dm), dt, &
++                             rho_zz, theta_m, zz, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++         end do
++         ! gate: column change of E plus the ice-precipitation term
++         ea = 0.d0; ca = 0.d0
++         do k = 1, nVertLevels
++            call ebud_layer(k, iCell, ms, me, iq, rho_zz, theta_m, scalars, u, w, zz, zgrid, rdzw, areaCell, &
++                            dcEdge, dvEdge, edgesOnCell, nEdgesOnCell, v)
++            call ebud_nsum(ea, ca, v(2) + v(3) + v(4) + v(5) + ebud_lv0*v(6) - ebud_lf0*v(8))
++         end do
++         rcol = (ea + ca) - (eb + cb)
++         if (associated(snowncv)) rcol = rcol - ebud_lf0*dble(snowncv(iCell))
++         if (associated(graupelncv)) rcol = rcol - ebud_lf0*dble(graupelncv(iCell))
++         if (associated(rainncv)) rcol = rcol + dble(gravity)*dble(zgrid(1,iCell))*dble(rainncv(iCell))
++         loc(1) = loc(1) + abs(rcol)*dble(areaCell(iCell))
++         loc(2) = max(loc(2), abs(rcol))
++      end do
++      tot(:) = 0.d0
++      call mpas_dmpar_sum_real_array(domain % dminfo, 14, loc, tot)
++      call mpas_dmpar_max_real(domain % dminfo, loc(2), tot(2))
++      ex = 0.d0
++      do iCell = 1, nCellsSolve
++         ex = ex + dble(areaCell(iCell))
++      end do
++      call mpas_dmpar_sum_real(domain % dminfo, ex, zm)
++      if (ebud_meter_on(domain) .and. domain % dminfo % my_proc_id == 0) write(0,'(a,i7,14es16.7)') 'EF ', itimestep, tot(1)/zm, tot(2), &
++         tot(3:8)/zm, tot(9)/max(tot(11),1.d-30), tot(10)/zm, tot(12)/zm, tot(13), tot(11)/zm, tot(14)/zm
++   end subroutine efix_layer
++
++   subroutine efix_swap(scalars, iCell)
++      ! exchange the current and saved scalars of one column
++      real (kind=RKIND), dimension(:,:,:), intent(inout) :: scalars
++      integer, intent(in) :: iCell
++      real (kind=RKIND), dimension(size(scalars,1),size(scalars,2)) :: tmp
++      tmp(:,:) = scalars(:,:,iCell)
++      scalars(:,:,iCell) = ef_q0(:,:,iCell)
++      ef_q0(:,:,iCell) = tmp(:,:)
++   end subroutine efix_swap
++
+    subroutine etest_dry(domain)
+       ! dry thermal test: remove all moist species at fixed theta_m (time level 1, all cells)
+       type (domain_type), intent(in) :: domain
+-- 
+2.55.0
+

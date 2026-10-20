@@ -1,0 +1,46 @@
+From ab1a4e850278de6649d2b8abda390bcae27e6dde Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:48 -0500
+Subject: [PATCH 01/12] noahmpdrv: hand the atmosphere the water Noah-MP
+ removed, not latent heat / con_hvap
+
+evap was latent_heat_total/density/con_hvap (2.5e6 J/kg), while Noah-MP
+removes the water with its own hvap = 2.5104e6 and, over frozen surfaces,
+hsub = 2.844e6. The atmosphere therefore received 0.4 % more water than
+unfrozen land lost and 14 % more over snow and frozen ground.
+
+Use the water flux Noah-MP itself computes, (ecan+etran+edir)/density, as the
+WRF, HRLDAS, MPAS and LIS Noah-MP drivers do (QFX). Noah-MP's latent heat flux
+is unchanged. The host's latent-heat output, rho*con_hvap*evap, now follows
+the water: up to 12 % lower where sublimation dominates, -4.2 % over
+snow-covered land in a 24-h C96 forecast.
+
+Measured with in-model meters (C96 control_p8_ugwpv1): the atmosphere gained
++0.07 to +0.10 % of global precipitation more water than the land lost; with
+the fix the two agree to machine precision. Note this lowers the water flux
+over frozen surfaces by up to 12 %. See also NCAR/ccpp-physics#582.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+index 5506fc34..bd9468e3 100644
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -1523,7 +1523,8 @@ end subroutine noahmpdrv_timestep_init
+ !  --- change units for output
+ !
+       hflx(i) = hflx(i) / density / con_cp
+-      evap(i) = evap(i) / density / con_hvap
++      ! the water Noah-MP removed (its own hvap/hsub), not latent heat / con_hvap
++      evap(i) = (ecan(i) + etran(i) + edir(i)) / density
+ 
+ !
+ !  --- calculate potential evaporation using noah code
+-- 
+2.31.1
+

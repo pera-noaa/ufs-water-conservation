@@ -1,0 +1,29 @@
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -945,6 +945,8 @@
+     end if
+ 
+     if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+     end if
+@@ -2047,6 +2049,8 @@
+ 
+      fsno = 0.
+      if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++       ! the truncated snow goes to the top soil layer as ice
++       if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+        snowh = 0.0
+        sneqv = 0.0
+      end if
+@@ -8178,6 +8182,8 @@
+    end if
+ 
+    if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) sice(1) = sice(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+    end if

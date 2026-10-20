@@ -1,0 +1,855 @@
+--- a/ccpp/CMakeLists.txt
++++ b/ccpp/CMakeLists.txt
+@@ -441,12 +441,22 @@
+   set(SAMF_FORTRAN_FILES)
+ 
+   foreach(NAME IN LISTS SAMF_NAMES)
+-    set(TMP_LIST ${SCHEME_FORTRAN_FILES})
++    set(TMP_LIST ${SCHEME_FORTRAN_FILES} ${CAPGEN_DEPENDENCIES})
+     list(FILTER TMP_LIST INCLUDE REGEX ".*${NAME}$")
+     list(APPEND SAMF_FORTRAN_FILES ${TMP_LIST})
+   endforeach()
+ 
+   if(SAMF_FORTRAN_FILES)
++    list(REMOVE_DUPLICATES SAMF_FORTRAN_FILES)
++    list(LENGTH SAMF_FORTRAN_FILES N_SAMF_FOUND)
++    list(LENGTH SAMF_NAMES N_SAMF_NAMES)
++    if(NOT N_SAMF_FOUND EQUAL N_SAMF_NAMES)
++      message(FATAL_ERROR "SAMFCNV_32BIT: found ${N_SAMF_FOUND} of ${N_SAMF_NAMES} SAMF files: ${SAMF_FORTRAN_FILES}")
++    endif()
++    message(STATUS "SAMFCNV_32BIT files: ${SAMF_FORTRAN_FILES}")
++  endif()
++
++  if(SAMF_FORTRAN_FILES)
+     if(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+       set_property(SOURCE ${SAMF_FORTRAN_FILES} APPEND PROPERTY COMPILE_OPTIONS "-real-size;32;-DSAMFCNV_USE_SP")
+     elseif(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
+--- a/ccpp/data/CCPP_typedefs.F90
++++ b/ccpp/data/CCPP_typedefs.F90
+@@ -40,6 +40,7 @@
+ 
+     real (kind=kind_phys), pointer      :: adjsfculw_land(:)  => null()  !<
+     real (kind=kind_phys), pointer      :: adjsfculw_ice(:)   => null()  !<
++    real (kind=kind_phys), pointer      :: hflx_evap_enth(:)  => null()  !< land evaporation enthalpy heating
+     real (kind=kind_phys), pointer      :: adjsfculw_water(:) => null()  !<
+     real (kind=kind_phys), pointer      :: adjnirbmd(:)       => null()  !<
+     real (kind=kind_phys), pointer      :: adjnirbmu(:)       => null()  !<
+@@ -501,6 +502,7 @@
+     ! Allocate arrays
+     allocate (Interstitial%adjsfculw_land  (ixs:ixe))
+     allocate (Interstitial%adjsfculw_ice   (ixs:ixe))
++    allocate (Interstitial%hflx_evap_enth  (ixs:ixe))
+     allocate (Interstitial%adjsfculw_water (ixs:ixe))
+     allocate (Interstitial%adjnirbmd       (ixs:ixe))
+     allocate (Interstitial%adjnirbmu       (ixs:ixe))
+@@ -858,6 +860,7 @@
+     ! Allocate arrays
+     deallocate (Interstitial%adjsfculw_land)
+     deallocate (Interstitial%adjsfculw_ice)
++    deallocate (Interstitial%hflx_evap_enth)
+     deallocate (Interstitial%adjsfculw_water)
+     deallocate (Interstitial%adjnirbmd)
+     deallocate (Interstitial%adjnirbmu)
+@@ -1413,6 +1416,7 @@
+     !
+     Interstitial%adjsfculw_land  = clear_val
+     Interstitial%adjsfculw_ice   = clear_val
++    Interstitial%hflx_evap_enth  = clear_val
+     Interstitial%adjsfculw_water = clear_val
+     Interstitial%adjnirbmd       = clear_val
+     Interstitial%adjnirbmu       = clear_val
+--- a/ccpp/data/CCPP_typedefs.meta
++++ b/ccpp/data/CCPP_typedefs.meta
+@@ -42,6 +42,13 @@
+   dimensions = (horizontal_dimension)
+   type = real
+   kind = kind_phys
++[hflx_evap_enth]
++  standard_name = lowest_layer_heating_by_land_evaporation_enthalpy
++  long_name = land evaporation enthalpy not carried by the vapour (frame F), per land area
++  units = W m-2
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [adjnirbmd]
+   standard_name = surface_downwelling_direct_near_infrared_shortwave_flux
+   long_name = surface downwelling beam near-infrared shortwave flux at current time
+--- a/ccpp/data/GFS_typedefs.F90
++++ b/ccpp/data/GFS_typedefs.F90
+@@ -201,6 +201,13 @@
+     !-- Convection
+     real (kind=kind_phys), pointer :: ten_u_conv(:,:)  => null()  !< Zonal-wind tendency due to convection scheme
+     real (kind=kind_phys), pointer :: ten_v_conv(:,:)  => null()  !< Meridional-wind tendency ...
++    !-- precipitation mass through the bottom of physics layer k in the physics step (kg m-2), for the coupling
++    real (kind=kind_phys), pointer :: pflx_dc(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_sc(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_mpl(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_mpi(:,:) => null()
++    real (kind=kind_phys), pointer :: pflx_pbll(:,:) => null()  !< PBL liquid condensate through layer bottom (kg m-2)
++    real (kind=kind_phys), pointer :: pflx_pbli(:,:) => null()  !< PBL frozen condensate through layer bottom (kg m-2)
+ 
+     contains
+       procedure :: create  => stateout_create  !<   allocate array data
+@@ -325,6 +332,7 @@
+     real (kind=kind_phys), pointer :: rca    (:)   => null()  !< canopy resistance
+     real (kind=kind_phys), pointer :: tprcp  (:)   => null()  !< sfc_fld%tprcp - total precipitation
+     real (kind=kind_phys), pointer :: srflag (:)   => null()  !< sfc_fld%srflag - snow/rain flag for precipitation
++    real (kind=kind_phys), pointer :: tprcp_t1 (:) => null()  !< lowest-layer T of the step tprcp fell in (pl1)
+     real (kind=kind_phys), pointer :: slc    (:,:) => null()  !< liquid soil moisture
+     real (kind=kind_phys), pointer :: smc    (:,:) => null()  !< total soil moisture
+     real (kind=kind_phys), pointer :: stc    (:,:) => null()  !< soil temperature
+@@ -368,6 +376,11 @@
+     real (kind=kind_phys), pointer :: albdirnir_lnd (:) => null()  !<
+     real (kind=kind_phys), pointer :: albdifvis_lnd (:) => null()  !<
+     real (kind=kind_phys), pointer :: albdifnir_lnd (:) => null()  !<
++    real (kind=kind_phys), pointer :: albdirvis_lnd_rad (:) => null()  !< land albedo the radiation used (direct visible)
++    real (kind=kind_phys), pointer :: albdirnir_lnd_rad (:) => null()  !< land albedo the radiation used (direct NIR)
++    real (kind=kind_phys), pointer :: albdifvis_lnd_rad (:) => null()  !< land albedo the radiation used (diffuse visible)
++    real (kind=kind_phys), pointer :: albdifnir_lnd_rad (:) => null()  !< land albedo the radiation used (diffuse NIR)
++    real (kind=kind_phys), pointer :: ulw_lnd_rad (:) => null()  !< land upward LW at the last radiation call
+ 
+     real (kind=kind_phys), pointer :: albdirvis_ice (:) => null()  !<
+     real (kind=kind_phys), pointer :: albdifvis_ice (:) => null()  !<
+@@ -1075,6 +1088,13 @@
+     integer              :: thompson_ext_ndiag3d=37 !< number of 3d arrays for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner        !< time step for the inner loop in s
+     logical              :: sedi_semi       !< flag for semi Lagrangian sedi of rain
++    logical              :: thompson_sed_actual !< Thompson sedimentation moves actual mass, not the R1 placeholder
++    logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
++    logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_mix_sl     !< MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
++    logical              :: mynn_sfc_heat   !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
++    logical              :: gf_closure      !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl           !< deformed CFL factor
+     type(ty_tempo_cfgs)  :: tempo_cfgs      !< Tempo MP configuration information.
+     logical              :: thompson_mp_is_init=.false. !< Local scheme initialization flag
+@@ -1147,6 +1167,18 @@
+     integer              :: iopt_stc  !snow/soil temperature time scheme (only layer 1)
+     integer              :: iopt_trs  !thermal roughness scheme (1-z0h=z0m; 2-czil; 3-ec;4-kb inversed)
+     integer              :: iopt_diag !2m t/q diagnostic approach (1->external GFS sfc_diag 2->original NoahMP 2-title 3->NoahMP
++    integer              :: noahmp_fwet_opt    !< Noah-MP canopy wetted fraction: 0 stock, 1 mass-weighted, 2 larger, 3 dominant phase
++    integer              :: noahmp_canopy_heat !< Noah-MP canopy heat: 0 stock, 1 massless canopy, 2 heat storage over the step
++    logical              :: precip_phase_host  !< flag: surfaces take the host convective snow decision and the atmosphere pays hfus for it
++    logical              :: noahmp_sw_radshare !< flag: Noah-MP absorbs the radiation share of net shortwave for the land
++    logical              :: lw_sfc_consistent  !< flag: lowest layer gets the surface-booked minus radiation-time net longwave
++    logical              :: sfc_evap_enthalpy  !< flag: lowest layer gets the land evaporation enthalpy the vapour does not carry
++    logical              :: noahmp_heat_advect !< flag: soil water moved between layers carries its sensible heat
++    logical              :: noahmp_kirchhoff   !< flag: Noah-MP phase change with L_f(T) consistent with its heat capacities
++    logical              :: sfc_precip_enthalpy!< flag: precipitation lands with its frame-F enthalpy (Noah-MP, sea ice)
++    logical              :: lw_sfc_return      !< flag: land keeps the LW it emits beyond the radiation-time land emission
++    logical              :: noahmp_pore_air    !< flag: Noah-MP soil pores keep the air heat when water moves
++    logical              :: sfc_precip_t1_carry !< flag: surfaces book precipitation at the T1 of the step it fell (pl1)
+                                       !2-title + internal GFS sfc_diag  )
+ 
+     ! -- RUC LSM options
+@@ -1204,6 +1236,9 @@
+     logical              :: do_gsl_drag_ls_bl    !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     !< flag for GSL drag (turbulent orog form drag only)
++    integer              :: ngw_heat_opt         !< UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
++    logical              :: gwd_ke_heat          !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++    logical              :: samf_cmt_heat        !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           !< flag for version 1 ugwp GWD
+     logical              :: do_ugwp_v1_orog_only !< flag for version 1 ugwp GWD (orographic drag only)
+@@ -1236,10 +1271,13 @@
+     logical              :: shinhong        !< flag for scale-aware Shinhong vertical turbulent mixing scheme
+     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
+     logical              :: dspheat         !< flag for tke dissipative heating
++    logical              :: dspheat_ke      !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
++    logical              :: pbl_kirchhoff   !< PBL condensate filler at FV3's L_h(T)
+     logical              :: sa3dtke         !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl        !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg       !< flag for canopy heat storage parameterization
+     logical              :: lseaspray       !< flag for sea spray parameterization
++    integer              :: nst_spray_opt   !< sea spray time integration: 0 explicit, 1 backward Euler with the lowest layer
+     logical              :: cnvcld
+     logical              :: xr_cnvcld       !< flag for adding suspended convective clouds to Xu-Randall cloud fraction
+     logical              :: random_clds     !< flag controls whether clouds are random
+@@ -1969,6 +2007,8 @@
+ !--- Out (radiation only)
+     real (kind=kind_phys), pointer :: htrsw (:,:)  => null()  !< swh  total sky sw heating rate in k/sec
+     real (kind=kind_phys), pointer :: htrlw (:,:)  => null()  !< hlw  total sky lw heating rate in k/sec
++    real (kind=kind_phys), pointer :: dpsw  (:,:)  => null()  !< layer pressure thickness at the last sw call (Pa)
++    real (kind=kind_phys), pointer :: dplw  (:,:)  => null()  !< layer pressure thickness at the last lw call (Pa)
+     real (kind=kind_phys), pointer :: sfalb (:)    => null()  !< mean surface diffused sw albedo
+ 
+     real (kind=kind_phys), pointer :: coszen(:)    => null()  !< mean cos of zenith angle over rad call period
+@@ -2049,6 +2089,7 @@
+     real (kind=kind_phys), pointer :: psmean (:)     => null()   !< surface pressure (kPa)
+     real (kind=kind_phys), pointer :: cnvprcp(:)     => null()   !< accumulated convective precipitation (kg/m2)
+     real (kind=kind_phys), pointer :: cnvprcpb(:,:)  => null()   !< accumulated convective precipitation in bucket (kg/m2)
++    real (kind=kind_phys), pointer :: cnv_wetdep(:,:) => null()  !< accumulated SAMF wet deposition of chemical tracers in bucket (kg/m2)
+     real (kind=kind_phys), pointer :: spfhmin(:)     => null()   !< minimum specific humidity
+     real (kind=kind_phys), pointer :: spfhmax(:)     => null()   !< maximum specific humidity
+     real (kind=kind_phys), pointer :: u10mmax(:)     => null()   !< maximum u-wind
+@@ -2436,6 +2477,18 @@
+     Stateout%ten_v_pbl  = clear_val
+     Stateout%ten_u_conv = clear_val
+     Stateout%ten_v_conv = clear_val
++    allocate (Stateout%pflx_dc (IM,Model%levs+1))
++    Stateout%pflx_dc = clear_val
++    allocate (Stateout%pflx_sc (IM,Model%levs+1))
++    Stateout%pflx_sc = clear_val
++    allocate (Stateout%pflx_mpl (IM,Model%levs+1))
++    Stateout%pflx_mpl = clear_val
++    allocate (Stateout%pflx_mpi (IM,Model%levs+1))
++    Stateout%pflx_mpi = clear_val
++    allocate (Stateout%pflx_pbll (IM,Model%levs+1))
++    Stateout%pflx_pbll = clear_val
++    allocate (Stateout%pflx_pbli (IM,Model%levs+1))
++    Stateout%pflx_pbli = clear_val
+ 
+  end subroutine stateout_create
+ 
+@@ -2511,6 +2564,11 @@
+     allocate (Sfcprop%albdirnir_lnd (IM))
+     allocate (Sfcprop%albdifvis_lnd (IM))
+     allocate (Sfcprop%albdifnir_lnd (IM))
++    allocate (Sfcprop%albdirvis_lnd_rad (IM))
++    allocate (Sfcprop%albdirnir_lnd_rad (IM))
++    allocate (Sfcprop%albdifvis_lnd_rad (IM))
++    allocate (Sfcprop%albdifnir_lnd_rad (IM))
++    allocate (Sfcprop%ulw_lnd_rad (IM))
+     allocate (Sfcprop%emis_lnd (IM))
+     allocate (Sfcprop%emis_ice (IM))
+     allocate (Sfcprop%emis_wat (IM))
+@@ -2568,6 +2626,11 @@
+     Sfcprop%albdirnir_lnd = clear_val
+     Sfcprop%albdifvis_lnd = clear_val
+     Sfcprop%albdifnir_lnd = clear_val
++    Sfcprop%albdirvis_lnd_rad = -1.0_kind_phys
++    Sfcprop%albdirnir_lnd_rad = -1.0_kind_phys
++    Sfcprop%albdifvis_lnd_rad = -1.0_kind_phys
++    Sfcprop%albdifnir_lnd_rad = -1.0_kind_phys
++    Sfcprop%ulw_lnd_rad = -1.0_kind_phys
+     Sfcprop%emis_lnd  = clear_val
+     Sfcprop%emis_ice  = clear_val
+     Sfcprop%emis_wat  = clear_val
+@@ -2651,6 +2714,7 @@
+     allocate (Sfcprop%f10m   (IM))
+     allocate (Sfcprop%tprcp  (IM))
+     allocate (Sfcprop%srflag (IM))
++    allocate (Sfcprop%tprcp_t1 (IM))
+     allocate (Sfcprop%slc    (IM,Model%lsoil))
+     allocate (Sfcprop%smc    (IM,Model%lsoil))
+     allocate (Sfcprop%stc    (IM,Model%lsoil))
+@@ -2676,6 +2740,7 @@
+     Sfcprop%f10m   = clear_val
+     Sfcprop%tprcp  = clear_val
+     Sfcprop%srflag = clear_val
++    Sfcprop%tprcp_t1 = clear_val
+     Sfcprop%slc    = clear_val
+     Sfcprop%smc    = clear_val
+     Sfcprop%stc    = clear_val
+@@ -3739,6 +3804,13 @@
+     logical              :: ext_diag_thompson = .false.         !< flag for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner       = -999.0             !< time step for the inner loop
+     logical              :: sedi_semi      = .false.            !< flag for semi Lagrangian sedi of rain
++    logical              :: thompson_sed_actual = .false.
++    logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
++    logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
++    logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
++    logical              :: mynn_mix_sl = .false. !< MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
++    logical              :: mynn_sfc_heat = .false. !< MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
++    logical              :: gf_closure = .false. !< GF water closure: increments on GF's own basis, raincv from the applied tendencies
+     integer              :: decfl          = 8                  !< deformed CFL factor
+     real(kind=kind_phys) :: nt_c_l         = 150.e6             !< prescribed cloud liquid water number concentration over land
+     real(kind=kind_phys) :: nt_c_o         = 50.e6              !< prescribed cloud liquid water number concentration over ocean
+@@ -3809,6 +3881,18 @@
+     integer              :: iopt_stc       =  1  !snow/soil temperature time scheme (only layer 1)
+     integer              :: iopt_trs       =  2  !thermal roughness scheme (1-z0h=z0m; 2-czil; 3-ec;4-kb reversed)
+     integer              :: iopt_diag      =  2  !2m t/q diagnostic approach (1->external GFS sfc_diag 2->original NoahMP 2-title
++    integer              :: noahmp_canopy_heat = 0
++    integer              :: noahmp_fwet_opt    = 0
++    logical              :: precip_phase_host  = .false.
++    logical              :: noahmp_sw_radshare = .false.
++    logical              :: lw_sfc_consistent  = .false.
++    logical              :: sfc_evap_enthalpy  = .false.
++    logical              :: noahmp_heat_advect = .false.
++    logical              :: noahmp_kirchhoff   = .false.
++    logical              :: sfc_precip_enthalpy= .false.
++    logical              :: lw_sfc_return      = .false.
++    logical              :: noahmp_pore_air    = .false.
++    logical              :: sfc_precip_t1_carry = .false.
+                                                  !3->NoahMP 2-title + internal GFS sfc_diag  )
+ 
+     integer              :: mosaic_lu      =  0  ! 1 - used of fractional landuse in RUC lsm
+@@ -3850,6 +3934,9 @@
+     logical              :: do_gsl_drag_ls_bl    = .false.      !< flag for GSL drag (mesoscale GWD and blocking only)
+     logical              :: do_gsl_drag_ss       = .false.      !< flag for GSL drag (small-scale GWD only)
+     logical              :: do_gsl_drag_tofd     = .false.      !< flag for GSL drag (turbulent orog form drag only)
++    integer              :: ngw_heat_opt         = 0            !< UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
++    logical              :: gwd_ke_heat          = .false.      !< flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++    logical              :: samf_cmt_heat        = .false.      !< flag for SAMF convective momentum transport dissipative heating
+     logical              :: do_gwd_opt_psl       = .false.      !< flag for PSL drag (mesoscale GWD and blocking only)
+     logical              :: do_ugwp_v1           = .false.      !< flag for version 1 ugwp GWD
+     logical              :: do_ugwp_v1_orog_only = .false.      !< flag for version 1 ugwp GWD (orographic drag only)
+@@ -3886,10 +3973,13 @@
+     logical              :: shinhong       = .false.                  !< flag for scale-aware Shinhong vertical turbulent mixing scheme
+     logical              :: do_ysu         = .false.                  !< flag for YSU vertical turbulent mixing scheme
+     logical              :: dspheat        = .false.                  !< flag for tke dissipative heating
++    logical              :: dspheat_ke     = .false.                  !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
++    logical              :: pbl_kirchhoff  = .false.                  !< PBL condensate filler at FV3's L_h(T)
+     logical              :: sa3dtke        = .false.                  !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl       = .false.                  !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg      = .false.                  !< flag for canopy heat storage parameterization
+     logical              :: lseaspray      = .false.                  !< flag for sea spray parameterization
++    integer              :: nst_spray_opt  = 0
+     logical              :: cnvcld         = .false.
+     logical              :: xr_cnvcld      = .true.                   !< flag for including suspended convective clouds in Xu-Randall cloud fraction
+     logical              :: random_clds    = .false.                  !< flag controls whether clouds are random
+@@ -4277,7 +4367,8 @@
+                                ttendlim, ext_diag_thompson, nt_c_l, nt_c_o, av_i, xnc_max,  &
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+-                               sedi_semi, decfl,                                            &
++                               sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, mynn_mix_sl, mynn_sfc_heat, gf_closure,                   &
++                               thompson_sed_actual,                                                                         &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -4291,6 +4382,11 @@
+                                iopt_dveg,iopt_crs,iopt_btr,iopt_run,iopt_sfc, iopt_frz,     &
+                                iopt_inf, iopt_rad,iopt_alb,iopt_snf,iopt_tbot,iopt_stc,     &
+                                iopt_trs, iopt_diag,                                         &
++                               noahmp_canopy_heat, precip_phase_host, noahmp_sw_radshare,   &
++                               lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect,    &
++                               noahmp_kirchhoff, noahmp_fwet_opt,                           &
++                               sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air,         &
++                               sfc_precip_t1_carry,                                         &
+                           !    RUC lsm options
+                                add_fire_heat_flux,                                          &
+                                mosaic_lu, mosaic_soil, isncond_opt, isncovr_opt,            &
+@@ -4316,6 +4412,9 @@
+                                do_ugwp_v0_nst_only,                                         &
+                                do_gsl_drag_ls_bl, do_gsl_drag_ss, do_gsl_drag_tofd,         &
+                                do_gwd_opt_psl, do_ngw_ec,                                   &
++                               ngw_heat_opt,                                                &
++                               gwd_ke_heat,                                                 &
++                               samf_cmt_heat,                                               &
+                                do_ugwp_v1, do_ugwp_v1_orog_only,  do_ugwp_v1_w_gsldrag,     &
+                                ugwp_seq_update, var_ric, coef_ric_l, coef_ric_s, hurr_pbl,  &
+                                do_myjsfc, do_myjpbl,                                        &
+@@ -4323,7 +4422,7 @@
+                                betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+                                pdfcld, shcnvcw, redrag,                                     &
+                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
+-                               shinhong, do_ysu, dspheat, lheatstrg, lseaspray, cnvcld,     &
++                               shinhong, do_ysu, dspheat, dspheat_ke, pbl_kirchhoff, lheatstrg, lseaspray, nst_spray_opt, cnvcld,     &
+                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
+                                isatmedmf, conv_cf_opt, do_deep, jcap, cscale,               &
+                                cs_parm, flgmin, cgwf, ccwf, cdmbgwd, alpha_fd,              &
+@@ -5024,6 +5123,13 @@
+       Model%dt_inner       = Model%dtp
+     endif
+     Model%sedi_semi        = sedi_semi
++    Model%thompson_kirchhoff = thompson_kirchhoff
++    Model%thompson_sed_actual = thompson_sed_actual
++    Model%thompson_frame_heat = thompson_frame_heat
++    Model%samf_kirchhoff = samf_kirchhoff
++    Model%mynn_mix_sl = mynn_mix_sl
++    Model%mynn_sfc_heat = mynn_sfc_heat
++    Model%gf_closure = gf_closure
+     Model%decfl            = decfl
+     Model%nt_c_l           = nt_c_l
+     Model%nt_c_o           = nt_c_o
+@@ -5197,6 +5303,18 @@
+     Model%iopt_stc         = iopt_stc
+     Model%iopt_trs         = iopt_trs
+     Model%iopt_diag        = iopt_diag
++    Model%noahmp_canopy_heat = noahmp_canopy_heat
++    Model%precip_phase_host = precip_phase_host
++    Model%noahmp_sw_radshare = noahmp_sw_radshare
++    Model%lw_sfc_consistent = lw_sfc_consistent
++    Model%sfc_evap_enthalpy = sfc_evap_enthalpy
++    Model%noahmp_heat_advect = noahmp_heat_advect
++    Model%noahmp_kirchhoff = noahmp_kirchhoff
++    Model%noahmp_fwet_opt = noahmp_fwet_opt
++    Model%sfc_precip_enthalpy = sfc_precip_enthalpy
++    Model%lw_sfc_return = lw_sfc_return
++    Model%noahmp_pore_air = noahmp_pore_air
++    Model%sfc_precip_t1_carry = sfc_precip_t1_carry
+ 
+ ! RUC lsm options
+     Model%mosaic_lu        = mosaic_lu
+@@ -5283,9 +5401,12 @@
+     Model%shinhong          = shinhong
+     Model%do_ysu            = do_ysu
+     Model%dspheat           = dspheat
++    Model%dspheat_ke        = dspheat_ke
++    Model%pbl_kirchhoff     = pbl_kirchhoff
+     Model%hurr_pbl          = hurr_pbl
+     Model%lheatstrg         = lheatstrg
+     Model%lseaspray         = lseaspray
++    Model%nst_spray_opt     = nst_spray_opt
+     Model%cnvcld            = cnvcld
+     Model%xr_cnvcld         = xr_cnvcld
+     Model%random_clds       = random_clds
+@@ -5351,6 +5472,9 @@
+     Model%do_gsl_drag_ls_bl    = do_gsl_drag_ls_bl
+     Model%do_gsl_drag_ss       = do_gsl_drag_ss
+     Model%do_gsl_drag_tofd     = do_gsl_drag_tofd
++    Model%ngw_heat_opt         = ngw_heat_opt
++    Model%gwd_ke_heat          = gwd_ke_heat
++    Model%samf_cmt_heat        = samf_cmt_heat
+     Model%do_gwd_opt_psl       = do_gwd_opt_psl
+     Model%do_ngw_ec            = do_ngw_ec
+     Model%do_ugwp_v1           = do_ugwp_v1
+@@ -7126,6 +7250,8 @@
+         print *, ' ext_diag_thompson : ', Model%ext_diag_thompson
+         print *, ' dt_inner          : ', Model%dt_inner
+         print *, ' sedi_semi         : ', Model%sedi_semi
++        print *, ' thompson_kirchhoff: ', Model%thompson_kirchhoff
++        print *, ' thompson_sed_actual: ', Model%thompson_sed_actual
+         print *, ' decfl             : ', Model%decfl
+         print *, ' nt_c_l            : ', Model%nt_c_l
+         print *, ' nt_c_o            : ', Model%nt_c_o
+@@ -7229,6 +7355,18 @@
+         print *, ' iopt_stc          : ', Model%iopt_stc
+         print *, ' iopt_trs          : ', Model%iopt_trs
+         print *, ' iopt_diag         : ', Model%iopt_diag
++        print *, ' noahmp_canopy_heat : ', Model%noahmp_canopy_heat
++        print *, ' precip_phase_host : ', Model%precip_phase_host
++        print *, ' noahmp_sw_radshare : ', Model%noahmp_sw_radshare
++        print *, ' lw_sfc_consistent : ', Model%lw_sfc_consistent
++        print *, ' sfc_evap_enthalpy : ', Model%sfc_evap_enthalpy
++        print *, ' noahmp_heat_advect : ', Model%noahmp_heat_advect
++        print *, ' noahmp_kirchhoff : ', Model%noahmp_kirchhoff
++        print *, ' noahmp_fwet_opt : ', Model%noahmp_fwet_opt
++        print *, ' sfc_precip_enthalpy : ', Model%sfc_precip_enthalpy
++        print *, ' lw_sfc_return : ', Model%lw_sfc_return
++        print *, ' noahmp_pore_air : ', Model%noahmp_pore_air
++        print *, ' sfc_precip_t1_carry : ', Model%sfc_precip_t1_carry
+       elseif (Model%lsm == Model%lsm_ruc) then
+         print *,' RUC Land Surface Model used'
+         print *, 'The Physics options are'
+@@ -7283,9 +7421,11 @@
+       print *, ' shinhong          : ', Model%shinhong
+       print *, ' do_ysu            : ', Model%do_ysu
+       print *, ' dspheat           : ', Model%dspheat
++      print *, ' dspheat_ke        : ', Model%dspheat_ke
+       print *, ' sa3dtke           : ', Model%sa3dtke
+       print *, ' lheatstrg         : ', Model%lheatstrg
+       print *, ' lseaspray         : ', Model%lseaspray
++      print *, ' nst_spray_opt     : ', Model%nst_spray_opt
+       print *, ' cnvcld            : ', Model%cnvcld
+       print *, ' random_clds       : ', Model%random_clds
+       print *, ' shal_cnv          : ', Model%shal_cnv
+@@ -7323,6 +7463,9 @@
+       print *, ' do_gsl_drag_ls_bl    : ', Model%do_gsl_drag_ls_bl
+       print *, ' do_gsl_drag_ss       : ', Model%do_gsl_drag_ss
+       print *, ' do_gsl_drag_tofd     : ', Model%do_gsl_drag_tofd
++      print *, ' ngw_heat_opt         : ', Model%ngw_heat_opt
++      print *, ' gwd_ke_heat          : ', Model%gwd_ke_heat
++      print *, ' samf_cmt_heat        : ', Model%samf_cmt_heat
+       print *, ' do_gwd_opt_psl       : ', Model%do_gwd_opt_psl
+       print *, ' do_ugwp_v1           : ', Model%do_ugwp_v1
+       print *, ' do_ngw_ec            : ', Model%do_ngw_ec
+@@ -7892,6 +8035,8 @@
+ 
+     allocate (Radtend%htrsw  (IM,Model%levs))
+     allocate (Radtend%htrlw  (IM,Model%levs))
++    allocate (Radtend%dpsw   (IM,Model%levs))
++    allocate (Radtend%dplw   (IM,Model%levs))
+     allocate (Radtend%sfalb  (IM))
+     allocate (Radtend%coszen (IM))
+     allocate (Radtend%tsflw  (IM))
+@@ -7900,6 +8045,8 @@
+ 
+     Radtend%htrsw  = clear_val
+     Radtend%htrlw  = clear_val
++    Radtend%dpsw   = clear_val
++    Radtend%dplw   = clear_val
+     Radtend%sfalb  = clear_val
+     Radtend%coszen = clear_val
+     Radtend%tsflw  = clear_val
+@@ -8214,6 +8361,7 @@
+     allocate (Diag%psmean  (IM))
+     allocate (Diag%cnvprcp (IM))
+     allocate (Diag%cnvprcpb(IM,ndb))
++    allocate (Diag%cnv_wetdep(IM,Model%ntchm))
+     allocate (Diag%spfhmin (IM))
+     allocate (Diag%spfhmax (IM))
+     allocate (Diag%u10mmax (IM))
+@@ -8647,6 +8795,7 @@
+ 
+     Diag%totprcpb   = zero
+     Diag%cnvprcpb   = zero
++    Diag%cnv_wetdep = zero
+     Diag%toticeb    = zero
+     Diag%totsnwb    = zero
+     Diag%totgrpb    = zero
+--- a/ccpp/data/GFS_typedefs.meta
++++ b/ccpp/data/GFS_typedefs.meta
+@@ -753,6 +753,48 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
++[pflx_dc]
++  standard_name = precipitation_mass_through_layer_bottom_from_deep_convection
++  long_name = deep convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_sc]
++  standard_name = precipitation_mass_through_layer_bottom_from_shallow_convection
++  long_name = shallow convective rain through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_mpl]
++  standard_name = liquid_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics liquid precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_mpi]
++  standard_name = frozen_precipitation_mass_through_layer_bottom_from_microphysics
++  long_name = microphysics frozen precipitation through layer bottom per physics step
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_pbll]
++  standard_name = liquid_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL liquid condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++[pflx_pbli]
++  standard_name = frozen_condensate_mass_through_layer_bottom_from_pbl
++  long_name = PBL frozen condensate transport through layer bottom per physics step (down positive)
++  units = kg m-2
++  dimensions = (horizontal_dimension,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
+ 
+ ########################################################################
+ [ccpp-table-properties]
+@@ -1375,6 +1417,13 @@
+   dimensions = (horizontal_dimension)
+   type = real
+   kind = kind_phys
++[tprcp_t1]
++  standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
++  long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
++  units = K
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [srflag]
+   standard_name = precipitation_type
+   long_name = snow/rain flag for precipitation
+@@ -1868,6 +1917,41 @@
+   dimensions = (horizontal_dimension)
+   type = real
+   kind = kind_phys
++[albdirvis_lnd_rad]
++  standard_name = surface_albedo_direct_visible_over_land_on_radiation_timestep
++  long_name = direct visible land albedo used by the last radiation call
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++[albdirnir_lnd_rad]
++  standard_name = surface_albedo_direct_NIR_over_land_on_radiation_timestep
++  long_name = direct NIR land albedo used by the last radiation call
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++[albdifvis_lnd_rad]
++  standard_name = surface_albedo_diffuse_visible_over_land_on_radiation_timestep
++  long_name = diffuse visible land albedo used by the last radiation call
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++[albdifnir_lnd_rad]
++  standard_name = surface_albedo_diffuse_NIR_over_land_on_radiation_timestep
++  long_name = diffuse NIR land albedo used by the last radiation call
++  units = frac
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++[ulw_lnd_rad]
++  standard_name = surface_upwelling_longwave_flux_over_land_on_radiation_timestep
++  long_name = land upward LW at the last radiation call
++  units = W m-2
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [albdirvis_ice]
+   standard_name = surface_albedo_direct_visible_over_ice
+   long_name = direct surface albedo visible band over ice
+@@ -5184,6 +5268,48 @@
+   dimensions = ()
+   type = real
+   kind = kind_phys
++[gf_closure]
++  standard_name = flag_for_grell_freitas_water_closure
++  long_name = GF water closure: increments on GF's own basis, raincv from the applied tendencies
++  units = flag
++  dimensions = ()
++  type = logical
++[mynn_sfc_heat]
++  standard_name = flag_for_mynn_surface_heat_flux_host_consistent
++  long_name = MYNN applies the host sensible heat flux as a theta flux (cp, 1/exner)
++  units = flag
++  dimensions = ()
++  type = logical
++[mynn_mix_sl]
++  standard_name = flag_for_mynn_static_energy_mixing
++  long_name = MYNN mixes liquid-water static energy instead of theta-l (conserves the column enthalpy)
++  units = flag
++  dimensions = ()
++  type = logical
++[samf_kirchhoff]
++  standard_name = flag_for_samf_kirchhoff_latent_heat
++  long_name = flag for SAMF latent heat of condensation L_v(T) of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
++[thompson_sed_actual]
++  standard_name = flag_for_thompson_sedimenting_actual_mass
++  long_name = flag: Thompson flux-form sedimentation moves actual mass, not the R1 placeholder
++  units = flag
++  dimensions = ()
++  type = logical
++[thompson_kirchhoff]
++  standard_name = flag_for_thompson_kirchhoff_latent_heat
++  long_name = flag for Thompson latent heats and heat capacity of the host energy frame
++  units = flag
++  dimensions = ()
++  type = logical
++[thompson_frame_heat]
++  standard_name = flag_for_thompson_frame_F_heating
++  long_name = flag for Thompson heating from the frame-F latent heat of its net phase change
++  units = flag
++  dimensions = ()
++  type = logical
+ [sedi_semi]
+   standard_name = flag_for_semi_Lagrangian_sedi_rain
+   long_name = flag for semi Lagrangian sedi of rain
+@@ -5625,6 +5751,78 @@
+   units = index
+   dimensions = ()
+   type = integer
++[noahmp_canopy_heat]
++  standard_name = control_for_noahmp_canopy_heat_storage
++  long_name = Noah-MP canopy heat: 0 stock, 1 massless canopy, 2 heat storage over the step
++  units = index
++  dimensions = ()
++  type = integer
++[precip_phase_host]
++  standard_name = flag_for_host_convective_precipitation_phase_at_surface
++  long_name = flag: surfaces take the host convective snow decision and the atmosphere pays hfus for it
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_sw_radshare]
++  standard_name = flag_for_noahmp_radiation_share_of_shortwave
++  long_name = flag: Noah-MP absorbs the radiation share of net shortwave for the land
++  units = flag
++  dimensions = ()
++  type = logical
++[lw_sfc_consistent]
++  standard_name = flag_for_surface_booked_longwave_heating
++  long_name = flag: lowest layer gets the surface-booked minus radiation-time net longwave
++  units = flag
++  dimensions = ()
++  type = logical
++[sfc_evap_enthalpy]
++  standard_name = flag_for_land_evaporation_enthalpy_heating
++  long_name = flag: lowest layer gets the land evaporation enthalpy the vapour does not carry
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_heat_advect]
++  standard_name = flag_for_noahmp_soil_water_heat_advection
++  long_name = flag: soil water moved between layers carries its sensible heat
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_kirchhoff]
++  standard_name = flag_for_noahmp_kirchhoff_consistent_phase_change
++  long_name = flag: Noah-MP phase change with L_f(T) consistent with its heat capacities
++  units = flag
++  dimensions = ()
++  type = logical
++[sfc_precip_enthalpy]
++  standard_name = flag_for_surface_precipitation_enthalpy
++  long_name = flag: precipitation lands with its frame-F enthalpy (Noah-MP, sea ice)
++  units = flag
++  dimensions = ()
++  type = logical
++[lw_sfc_return]
++  standard_name = flag_for_land_keeps_longwave_excess
++  long_name = flag: land keeps the LW it emits beyond the radiation-time land emission
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_pore_air]
++  standard_name = flag_for_noahmp_pore_air_heat_kept
++  long_name = flag: Noah-MP soil pores keep the air heat when water moves
++  units = flag
++  dimensions = ()
++  type = logical
++[sfc_precip_t1_carry]
++  standard_name = flag_for_surface_precipitation_at_fallout_temperature
++  long_name = flag: surfaces book precipitation at the lowest-layer T of the step it fell
++  units = flag
++  dimensions = ()
++  type = logical
++[noahmp_fwet_opt]
++  standard_name = control_for_noahmp_canopy_wetted_fraction
++  long_name = Noah-MP canopy wetted fraction rule
++  units = index
++  dimensions = ()
++  type = integer
+ [use_ufo]
+   standard_name = flag_for_gcycle_surface_option
+   long_name = flag for gcycle surface option
+@@ -5875,6 +6073,18 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[dspheat_ke]
++  standard_name = flag_for_kinetic_energy_consistent_dissipation_heating
++  long_name = flag for dissipative heating equal to the resolved kinetic energy loss of the PBL momentum solve
++  units = flag
++  dimensions = ()
++  type = logical
++[pbl_kirchhoff]
++  standard_name = flag_for_pbl_kirchhoff_latent_heat
++  long_name = flag for the PBL condensate filler at the host latent heat L_h(T)
++  units = flag
++  dimensions = ()
++  type = logical
+ [sa3dtke]
+   standard_name = do_scale_aware_3d_tke
+   long_name = flag for scale-aware 3d tke scheme
+@@ -5893,6 +6103,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[nst_spray_opt]
++  standard_name = control_for_sea_spray_time_integration
++  long_name = sea spray: 0 explicit, 1 backward Euler with the lowest layer
++  units = index
++  dimensions = ()
++  type = integer
+ [lseaspray]
+   standard_name = flag_for_sea_spray
+   long_name = flag for sea spray parameterization
+@@ -8091,6 +8307,24 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[samf_cmt_heat]
++  standard_name = flag_for_convective_momentum_transport_dissipation_heating
++  long_name = flag for SAMF convective momentum transport dissipative heating
++  units = flag
++  dimensions = ()
++  type = logical
++[gwd_ke_heat]
++  standard_name = flag_for_gravity_wave_drag_dissipation_heating
++  long_name = flag for GSL drag dissipative heating = -d(KE)/cp and the joint-update cross term
++  units = flag
++  dimensions = ()
++  type = logical
++[ngw_heat_opt]
++  standard_name = control_for_nonorographic_gravity_wave_heating
++  long_name = UGWP-v1 NGW heating: 0 scheme, 1 -d(KE)/cp of its own increment, 2 withdraw net input at launch
++  units = flag
++  dimensions = ()
++  type = integer
+ [do_gwd_opt_psl]
+   standard_name = do_gsl_drag_suite_with_psl_gwd_option
+   long_name = flag to activate PSL drag suite - mesoscale GWD and blocking
+@@ -9051,6 +9285,20 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
++[dpsw]
++  standard_name = air_pressure_difference_between_interfaces_on_sw_radiation_timestep
++  long_name = layer pressure thickness at the last sw radiation call
++  units = Pa
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++[dplw]
++  standard_name = air_pressure_difference_between_interfaces_on_lw_radiation_timestep
++  long_name = layer pressure thickness at the last lw radiation call
++  units = Pa
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
+ [sfalb]
+   standard_name = surface_albedo_for_diffused_shortwave_on_radiation_timestep
+   long_name = mean surface diffused sw albedo
+@@ -9557,6 +9805,13 @@
+   dimensions = (horizontal_dimension,number_of_diagnostic_buckets)
+   type = real
+   kind = kind_phys
++[cnv_wetdep]
++  standard_name = cumulative_convective_wet_deposition_of_chemical_tracers_in_bucket
++  long_name = cumulative convective (SAMF) wet deposition of chemical tracers in bucket
++  units = kg m-2
++  dimensions = (horizontal_dimension,number_of_chemical_tracers)
++  type = real
++  kind = kind_phys
+ [spfhmin]
+   standard_name = minimum_specific_humidity_at_2m
+   long_name = minimum specific humidity at 2m height
+--- a/ccpp/driver/GFS_diagnostics.F90
++++ b/ccpp/driver/GFS_diagnostics.F90
+@@ -1286,6 +1286,16 @@
+     ExtDiag(idx)%intpl_method = 'bilinear'
+     ExtDiag(idx)%data%var2 => IntDiag%cnvprcpb(:,1)
+ 
++    do num = 1, Model%ntchm
++      idx = idx + 1
++      ExtDiag(idx)%axes = 2
++      ExtDiag(idx)%name = 'cnv_wetdep_'//trim(Model%tracer_names(Model%ntchs+num-1))
++      ExtDiag(idx)%desc = 'bucket SAMF wet deposition of '//trim(Model%tracer_names(Model%ntchs+num-1))
++      ExtDiag(idx)%unit = 'kg/m**2'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var2 => IntDiag%cnv_wetdep(:,num)
++    enddo
++
+     idx = idx + 1
+     ExtDiag(idx)%axes = 2
+     ExtDiag(idx)%name = 'cnvprcp'
+--- a/ccpp/driver/GFS_restart.F90
++++ b/ccpp/driver/GFS_restart.F90
+@@ -150,6 +150,9 @@
+     if (Model%rrfs_sd) then
+        num2d = num2d + 6
+     endif
++    if (Model%sfc_precip_t1_carry) then
++       num2d = num2d + 1
++    endif
+ 
+     ! Number of required 3D restart variables.
+     num3d = Model%ntot3d
+@@ -477,6 +480,13 @@
+       Restart(idx)%axes = 2
+       Restart(idx)%data%var2 => Coupling%rrfs_hwp_ave(:)
+     endif
++    ! pl1: T1 of the step whose precipitation tprcp holds
++    if (Model%sfc_precip_t1_carry) then
++      idx = idx + 1
++      Restart(idx)%name = 'sfc_precip_t1'
++      Restart(idx)%axes = 2
++      Restart(idx)%data%var2 => Sfcprop%tprcp_t1(:)
++    endif
+ 
+     !--- phy_f3d variables
+     do num = 1,Model%ntot3d

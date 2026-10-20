@@ -1,0 +1,120 @@
+From 1182cb40b57801b1d8b93b182bcd3f54fad5db4f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:05:24 -0600
+Subject: [PATCH] SAMF: cloud-base double-counting correction must use what the
+ updraft took
+
+samfdeepcnv and samfshalcnv start the updraft (and the deep downdraft) from the
+environment value qo (tracers: ctro), but the "subtract the double counting
+change rates at jmin+1 & kb beforehand" step subtracts the TVD-limited value
+tem1. Wherever the limiter is active the column gains or loses
+xmb*dt*[eta(kb)*(qo(kb)-tem1(kb)) + edto*etad(jmin)*(qo(jmin)-tem1(jmin))].
+
+Deep: at the kb face the updraft part of the TVD flux carries qo(kb), and
+the subtraction uses qo(kb) (likewise edto*etad*qo(jmin) at jmin; ctro for
+tracers). Layer kb is then unchanged and kb+1 loses what the updraft took,
+as in the moist static energy budget (dellah has no updraft term at or below
+kb). Changing only the subtraction would change q at kb but not h, i.e. heat
+or cool layer kb. Shallow: the flux divergence loop starts above kb, so set
+the cloud-base TVD flux to eta*qo(kb) (eta*ctro(kb) for tracers).
+
+Measured (C96 control_p8_ugwpv1, 24 h, global water budget): convective
+water residual +0.0035 kg/m2 per 6 h (+0.8 % of convective rain; +1.0 % at
+C384) -> +0.00002. Single-column budgets close to round-off (<= 2e-14 kg/m2)
+with the fix (double precision; ~1e-6 kg/m2 in the single-precision SAMF
+build); unfixed, +7e-4 kg/m2 per step on smooth profiles, 4 % (deep) and
+23 % (shallow) of rain on two jagged ones, and a median of 3.5-8.7 %
+(maximum 33 %) across synthetic L127 columns. Negative-vapour borrowing is
+needed equally often with and without the fix (~0.03 % of convecting columns).
+Correcting only the deep subtraction would warm layer kb by 0.07 K per
+convecting column-step on average (up to 1.35 K); in this form the direct
+change at kb is zero to round-off per unit mass flux (it can still shift
+by ~1e-3 K through the closure or rain evaporation).
+---
+ physics/CONV/SAMF/samfdeepcnv.f | 24 ++++++++++++++++++++----
+ physics/CONV/SAMF/samfshalcnv.f |  2 ++
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index db1e444e..ae9335da 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -2451,17 +2451,25 @@ c
+               flxtvd(i,k) = 0.
+             endif
+ !
++! cloud-base face: the updraft (downdraft) part of the flux at
++! kb (jmin) carries qo, as dellah does; layer kb is unchanged
++!
++            if(k == kb(i)) flxtvd(i,k) = flxtvd(i,k)
++     &         + eta(i,k) * (qo(i,k) - tem1)
++            if(k == jmin(i)) flxtvd(i,k) = flxtvd(i,k)
++     &         - edto(i) * etad(i,k) * (qo(i,k) - tem1)
++!
+ ! subtract the double counting change rates at jmin+1 & kb beforehand
+ !
+             if(k == jmin(i)) then
+               dp = 1000. * del(i,k+1)
+               dellaq(i,k+1) = dellaq(i,k+1) -
+-     &            edto(i) * etad(i,k) * tem1 * grav/dp
++     &            edto(i) * etad(i,k) * qo(i,k) * grav/dp
+             endif
+             if(k == kb(i)) then
+               dp = 1000. * del(i,k)
+               dellaq(i,k) = dellaq(i,k) -
+-     &            eta(i,k) * tem1 * grav/dp
++     &            eta(i,k) * qo(i,k) * grav/dp
+             endif
+ !
+           endif
+@@ -2535,17 +2543,25 @@ c
+                 flxtvd(i,k) = 0.
+               endif
+ !
++! cloud-base face: the updraft (downdraft) part of the flux at
++! kb (jmin) carries ctro, as dellah does; layer kb is unchanged
++!
++              if(k == kb(i)) flxtvd(i,k) = flxtvd(i,k)
++     &           + eta(i,k) * (ctro(i,k,n) - tem1)
++              if(k == jmin(i)) flxtvd(i,k) = flxtvd(i,k)
++     &           - edto(i) * etad(i,k) * (ctro(i,k,n) - tem1)
++!
+ ! subtract the double counting change rates at jmin+1 & kb beforehand
+ !
+               if(k == jmin(i)) then
+                 dp = 1000. * del(i,k+1)
+                 dellae(i,k+1,n) = dellae(i,k+1,n) -
+-     &              edto(i)*etad(i,k) * tem1 * grav/dp
++     &              edto(i)*etad(i,k) * ctro(i,k,n) * grav/dp
+               endif
+               if(k == kb(i)) then
+                 dp = 1000. * del(i,k)
+                 dellae(i,k,n) = dellae(i,k,n) -
+-     &              eta(i,k) * tem1 * grav/dp
++     &              eta(i,k) * ctro(i,k,n) * grav/dp
+               endif
+ !
+             endif
+diff --git a/physics/CONV/SAMF/samfshalcnv.f b/physics/CONV/SAMF/samfshalcnv.f
+index e122ccc6..0a220514 100644
+--- a/physics/CONV/SAMF/samfshalcnv.f
++++ b/physics/CONV/SAMF/samfshalcnv.f
+@@ -1910,6 +1910,7 @@ c
+               tem1 = q1(i,k+1) +
+      &                   phkp*(qo(i,k)-q1(i,k+1))
+               flxtvd(i,k) = eta(i,k) * tem1
++              if(k == kb(i)) flxtvd(i,k) = eta(i,k) * qo(i,k)
+             endif
+           endif
+         enddo
+@@ -1966,6 +1967,7 @@ c
+                 tem1 = ctr(i,k+1,n) +
+      &                     phkp*(ctro(i,k,n)-ctr(i,k+1,n))
+                 flxtvd(i,k) = eta(i,k) * tem1
++                if(k == kb(i)) flxtvd(i,k) = eta(i,k) * ctro(i,k,n)
+               endif
+             endif
+           enddo
+-- 
+2.55.0
+

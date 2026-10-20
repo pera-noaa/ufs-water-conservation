@@ -1,0 +1,232 @@
+From 6b4bb1ca785b4ab00328a3c3817a363e6a148d92 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 16:40:49 -0600
+Subject: [PATCH 1/5] Thompson: close the water budget (settling, graupel
+ re-closure, sedimentation density, clips)
+
+Ports of four scheme-internal fixes measured in the CCPP copy of Thompson in
+UFS (ufs-community/ccpp-physics fixes C1, C2, C3, M1; C96
+control_p8_ugwpv1 with in-model water meters). The code here is the same
+scheme, so the same defects apply:
+
+C1  Cloud water settling out of the lowest layer (sed_c at kts) left the
+    column but was never added to a precipitation total. Count it as rain.
+C2  The rate limiters rescale rain and snow losses to rain-ice and
+    (below freezing) rain-snow collection, but the graupel gains prg_rci and
+    prg_rcs were not recomputed, so the limiters created graupel. Recompute
+    both after the limiters, with the graupel volume terms pbg_rci and
+    pbg_rcs. (The other graupel volume terms are not re-closed; they carry no
+    water.)
+C3  Before sedimentation, rho was recomputed three times from the
+    temperature after latent heating. Mass densities and the conversion back
+    use one frame only if rho stays the entry density, so each kilogram that
+    fell out removed about 1 + dT/T kilograms of the host's water. Keep the
+    entry density for every mass conversion; the recomputed density now
+    feeds only rhof, the viscosity and the ventilation factors, so the
+    sedimentation fall speeds and rain evaporation see the entry density
+    (a change of order dT/T).
+M1  Hydrometeors ending the step at or below R1 were deleted by the final
+    clip. Exchange them with vapour, with the matching latent heat.
+    The final update also floors vapour at 1e-10, which creates water
+    wherever a step leaves less. Refill it instead: first from the layer's
+    condensate (all species in proportion, with their latent heat; number
+    concentrations, and graupel number and volume, scaled with mass), then
+    from the column's other vapour, mass-weighted; only a column with no
+    vapour to spare is still floored.
+Measured in UFS: C1 -0.15 %, C2 +0.76 % of grid-scale precipitation in the
+first 6 h of a cold start (0.03 % after), C3 -0.11 %, M1 +0.002 %. Measured in WRF (em_quarter_ss supercell, doubly
+periodic, 2 h, meter around mp_gt_driver in WRF's dry-air mass), with the
+next commit: microphysics water change plus precipitation +1.5e-2 of the
+precipitation before, -1.4e-4 after; the remainder is the density mismatch
+removed two commits later. The CASE(THOMPSON) call was metered;
+THOMPSONAERO and THOMPSONGH share the scheme but were not run.
+
+The vapour-floor refill is the second part of ufs-community/ccpp-physics fix
+M1 (diff 07), ported with port_thompson_qv_floor_any.py and adapted to this
+copy: its MAX/MIN case, default real kind and own lvap(k)/lsub/ocp(k), with
+graupel number and volume (ng1d, qb1d), which the CCPP copy does not carry,
+scaled with the graupel mass. The in-WRF numbers above were measured before
+the refill was added. In the double-precision column harness no plausible
+column (2000 random) ends the step below the floor, and the refill changes
+no output bit.
+
+The UFS series' fifth fix of this kind (M2: count all sedimentation out of
+the lowest layer as surface precipitation, -2e-7 of precipitation) is held
+separately, together with a fix to the sedimentation of the R1 placeholder;
+the in-WRF and in-MPAS numbers above include it.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ phys/module_mp_thompson.F | 98 ++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 92 insertions(+), 6 deletions(-)
+
+diff --git a/phys/module_mp_thompson.F b/phys/module_mp_thompson.F
+index d283b2f7..91bb4398 100644
+--- a/phys/module_mp_thompson.F
++++ b/phys/module_mp_thompson.F
+@@ -1619,6 +1619,8 @@
+       REAL:: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       REAL:: Ef_ra, Ef_sa, Ef_ga
+       REAL:: dtsave, odts, odt, odzq, hgt_agl
++      REAL:: rhon, xcl
++      REAL:: xdef, xavl, xcnd, frc
+       REAL:: xslw1, ygra1, zans1, eva_factor
+       REAL:: SR, melt_f
+       INTEGER:: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq, k_melting
+@@ -2943,6 +2945,11 @@
+          ratio = MIN( ABS(prr_rcg(k)), ABS(prg_rcg(k)) )
+          prr_rcg(k) = ratio * SIGN(1.0, SNGL(prr_rcg(k)))
+          prg_rcg(k) = -prr_rcg(k)
++         ! graupel gains must match the (possibly limited) losses that feed them
++         prg_rci(k) = pri_rci(k) + prr_rci(k)
++         if (twet(k).lt.T_0) prg_rcs(k) = -(prr_rcs(k) + prs_rcs(k))
++         pbg_rci(k) = prg_rci(k)/rho_i
++         pbg_rcs(k) = prg_rcs(k)/rho_i
+          if (twet(k).gt.T_0) then
+             ratio = MIN( ABS(prr_rcs(k)), ABS(prs_rcs(k)) )
+             prr_rcs(k) = ratio * SIGN(1.0, SNGL(prr_rcs(k)))
+@@ -3190,8 +3197,9 @@
+          otemp = 1./temp(k)
+          tempc = temp(k) - 273.15
+          qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+-         rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+-         rhof(k) = SQRT(RHO_NOT/rho(k))
++         ! rho stays the entry density so sedimentation conserves the host's column mass
++         rhon = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
++         rhof(k) = SQRT(RHO_NOT/rhon)
+          rhof2(k) = SQRT(rhof(k))
+          qvs(k) = rslf(pres(k), temp(k))
+          ssatw(k) = qv(k)/qvs(k) - 1.
+@@ -3202,7 +3210,7 @@
+          else
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+-         vsc2(k) = SQRT(rho(k)/visco(k))
++         vsc2(k) = SQRT(rhon/visco(k))
+          lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+          ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
+@@ -3487,7 +3495,6 @@
+           if (.NOT. is_aerosol_aware) nc(k) = Nt_c
+           qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+           temp(k) = t1d(k) + DT*tten(k)
+-          rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+           qvs(k) = rslf(pres(k), temp(k))
+           ssatw(k) = qv(k)/qvs(k) - 1.
+          endif
+@@ -3569,7 +3576,6 @@
+           qv(k) = MAX(1.E-10, qv1d(k) + DT*qvten(k))
+           nr(k) = MAX(R2, (nr1d(k) + DT*nrten(k))*rho(k))
+           temp(k) = t1d(k) + DT*tten(k)
+-          rho(k) = 0.622*pres(k)/(R*temp(k)*(qv(k)+0.622))
+          endif
+       enddo
+ #if ( WRF_CHEM == 1 )
+@@ -3834,6 +3840,8 @@
+          rc(k) = MAX(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*DT)
+          nc(k) = MAX(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*DT)
+       enddo
++      ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++      if (ksed1(5) .ge. kts) pptrain = pptrain + sed_c(kts)*DT
+       endif
+ 
+ !+---+-----------------------------------------------------------------+
+@@ -3969,9 +3977,42 @@
+ !+---+-----------------------------------------------------------------+
+ !.. All tendencies computed, apply and pass back final values to parent.
+ !+---+-----------------------------------------------------------------+
++      ! condensate the final clip would delete is exchanged with vapour (with its latent heat) instead
++      do k = kts, kte
++         xcl = qc1d(k) + qcten(k)*DT
++         if (xcl .le. R1) then
++            qcten(k) = qcten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qi1d(k) + qiten(k)*DT
++         if (xcl .le. R1) then
++            qiten(k) = qiten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qr1d(k) + qrten(k)*DT
++         if (xcl .le. R1) then
++            qrten(k) = qrten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qs1d(k) + qsten(k)*DT
++         if (xcl .le. R1) then
++            qsten(k) = qsten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++         xcl = qg1d(k) + qgten(k)*DT
++         if (xcl .le. R1) then
++            qgten(k) = qgten(k) - xcl*odt
++            qvten(k) = qvten(k) + xcl*odt
++            tten(k) = tten(k) - lsub*ocp(k)*xcl*odt*(1-IFDRY)
++         endif
++      enddo
+       do k = kts, kte
+          t1d(k)  = t1d(k) + tten(k)*DT
+-         qv1d(k) = MAX(1.E-10, qv1d(k) + qvten(k)*DT)
++         qv1d(k) = qv1d(k) + qvten(k)*DT
+          qc1d(k) = qc1d(k) + qcten(k)*DT
+          nc1d(k) = MAX(2./rho(k), MIN(nc1d(k) + ncten(k)*DT, Nt_c_max))
+          if (is_aerosol_aware) then
+@@ -4079,6 +4120,51 @@
+ 
+       enddo
+ 
++!..Vapour left below the floor is refilled, not created: first from the layer's
++!.. condensate, with its latent heat, then from the column's other vapour.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) then
++            xcnd = qc1d(k) + qr1d(k) + qi1d(k) + qs1d(k) + qg1d(k)
++            if (xcnd .gt. 0.) then
++               frc = MIN(1., (1.E-10 - qv1d(k))/xcnd)
++               t1d(k) = t1d(k) - frc*ocp(k)*(1-IFDRY)                           &
++                      * (lvap(k)*(qc1d(k)+qr1d(k)) + lsub*(qi1d(k)+qs1d(k)+qg1d(k)))
++               qv1d(k) = qv1d(k) + frc*xcnd
++               qc1d(k) = qc1d(k)*(1.-frc)
++               nc1d(k) = nc1d(k)*(1.-frc)
++               qr1d(k) = qr1d(k)*(1.-frc)
++               nr1d(k) = nr1d(k)*(1.-frc)
++               qi1d(k) = qi1d(k)*(1.-frc)
++               ni1d(k) = ni1d(k)*(1.-frc)
++               qs1d(k) = qs1d(k)*(1.-frc)
++               qg1d(k) = qg1d(k)*(1.-frc)
++               ng1d(k) = ng1d(k)*(1.-frc)
++               qb1d(k) = qb1d(k)*(1.-frc)
++            endif
++         endif
++      enddo
++      xdef = 0.
++      xavl = 0.
++      do k = kts, kte
++         xdef = xdef + MAX(1.E-10 - qv1d(k), 0.)*rho(k)*dzq(k)
++         xavl = xavl + MAX(qv1d(k) - 1.E-10, 0.)*rho(k)*dzq(k)
++      enddo
++      if (xdef .gt. 0. .and. xavl .gt. 0.) then
++         frc = MIN(1., xdef/xavl)
++         xcnd = MIN(1., xavl/xdef)
++         do k = kts, kte
++            if (qv1d(k) .lt. 1.E-10) then
++               qv1d(k) = qv1d(k) + (1.E-10 - qv1d(k))*xcnd
++            else
++               qv1d(k) = qv1d(k) - (qv1d(k) - 1.E-10)*frc
++            endif
++         enddo
++      endif
++!..Only a column with no vapour to spare is still floored.
++      do k = kts, kte
++         qv1d(k) = MAX(1.E-10, qv1d(k))
++      enddo
++
+       end subroutine mp_thompson
+ !+---+-----------------------------------------------------------------+
+ !ctrlL
+-- 
+2.55.0
+

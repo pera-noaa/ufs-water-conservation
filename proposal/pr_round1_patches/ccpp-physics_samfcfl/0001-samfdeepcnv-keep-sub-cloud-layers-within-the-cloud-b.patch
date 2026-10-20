@@ -1,0 +1,50 @@
+From 766d073553f64e5504506412c064d76de9303bbd Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 20:40:32 -0500
+Subject: [PATCH] samfdeepcnv: keep sub-cloud layers within the cloud-base CFL
+ limit
+
+xmbmax bounds the cloud-base mass flux by the CFL limit of layer kbcon,
+where eta = 1. Below cloud base eta(k) = eta(k+1) / (1 + (xlamue - xlamud) dz),
+and xlamud = 0.001 clamt exceeds xlamue = clamt / z above about 1 km, so for
+elevated convection eta grows downward; with the TKE-scaled clamt at its cap
+it about doubles per layer. Those layers then exceed CFL 1 and the explicit
+compensating subsidence overshoots.
+
+Also bound xmbmax by dp / (g dt eta) over kb <= k < kbcon.
+
+Measured, hafs_global_1nest_atm: develop has 257 single-step SAMF heatings
+> 4 K, 253 with layer CFL > 1, the largest 24.5 K at CFL 24; with this
+change none exceeds 4 K, and mean precipitation changes by -0.19 % (two
+consv_te-perturbed members differ by 0.02 %). With other pending physics
+fixes the same test crashed at 5.5 h (+70.7 K in one step at CFL 54, eta 51,
+compute_qs table overflow); with this change it completes, largest CFL 0.85.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/CONV/SAMF/samfdeepcnv.f | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 8f862c9b..3e7aabc0 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -1612,6 +1612,16 @@ c
+      &              * dt2)
+         endif
+       enddo
++!  sub-cloud eta can exceed 1 (detrainment > entrainment above ~1 km): keep CFL <= 1 there too
++      do k = 1, km
++        do i = 1, im
++          if(cnvflg(i) .and. k >= kb(i) .and. k < kbcon(i)) then
++            dp = 1000.0_conv_wp * del(i,k)
++            xmbmax(i) = min(xmbmax(i), dp /
++     &        (real(grav, kind=conv_wp) * dt2 * eta(i,k)))
++          endif
++        enddo
++      enddo
+ c
+ c  compute cloud moisture property and precipitation
+ c

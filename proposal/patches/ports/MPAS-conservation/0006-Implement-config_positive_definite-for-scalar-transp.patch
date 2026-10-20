@@ -1,0 +1,293 @@
+From de5a25ade573d8754f270afe8124abcb84e38dfc Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:37:31 -0600
+Subject: [PATCH 06/13] Implement config_positive_definite for scalar transport
+
+config_positive_definite has been in the Registry, but
+mpas_atm_dynamics_checks reported it as unimplemented, and
+advance_scalars ran the monotonic transport when it was set. A user who
+turns the monotonic limiter off has no positive-definite choice. The
+unlimited scheme leaves negative mixing ratios, and atm_srk3 then zeroes
+them before the physics, which adds mass.
+
+Measured on the idealized supercell (84x84 doubly periodic mesh, dx = 2 km,
+dt = 12 s, Thompson microphysics with its water fixes, no surface fluxes,
+double precision, 2 h, config_monotonic = false): domain water plus
+precipitation gains 1.40 kg/m2, 0.69 of the precipitation. All of it comes
+from that zeroing.
+
+Implementation:
+- With config_positive_definite = true and config_monotonic = false, the
+  final RK stage uses positive-definite flux renormalization (Skamarock
+  2006, MWR 134, 2241-2250; WRF's moist_adv_opt = 1).
+- Where a cell's total outgoing high-order flux in the step exceeds its
+  content, the fluxes leaving it are scaled to its content.
+- Each face takes its donor cell's factor, so the update is conservative.
+  Incoming fluxes are not limited.
+- It reuses the monotonic routine with no low-order part: the full flux
+  takes the place of the antidiffusive one. The factor goes into SCALE_OUT
+  (SCALE_IN = 1), and the existing halo exchange of the scale factors
+  makes it consistent across tasks.
+- Where no cell's outflow exceeds its content, the fluxes are unchanged.
+- With config_monotonic = true the monotonic transport is used, as before.
+  It is also positive definite.
+- The option is not available with lateral boundary conditions; the
+  monotonic transport is used then.
+- mpas_atm_dynamics_checks now says which of these applies.
+
+Unit tests of atm_pd_factor, extracted verbatim, applied with MPAS's
+rescale formula to third-order fluxes on a 2-D x-z periodic slab:
+- At (horizontal, vertical) Courant numbers from (0.3, 0.5) to (1.5, 3.0),
+  the unlimited update leaves values down to -6.2e-3 (q ~ 1e-3 kg/kg).
+  With the renormalization the minimum is -3.3e-19, which is roundoff, and
+  mass is conserved to 4e-15.
+- 19,612 slabs in which no outflow exceeds the content were unchanged, bit
+  for bit.
+
+Staged, not yet run on the supercell: config_monotonic = false with
+config_positive_definite = true, where I expect the domain closure at
+roundoff.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/core_atmosphere/Registry.xml              |   2 +-
+ .../dynamics/mpas_atm_time_integration.F      | 125 ++++++++++++++----
+ 2 files changed, 99 insertions(+), 28 deletions(-)
+
+diff --git a/src/core_atmosphere/Registry.xml b/src/core_atmosphere/Registry.xml
+index 59a3786..cfb7066 100644
+--- a/src/core_atmosphere/Registry.xml
++++ b/src/core_atmosphere/Registry.xml
+@@ -233,7 +233,7 @@
+ 
+                 <nml_option name="config_positive_definite" type="logical" default_value="false" in_defaults="false"
+                      units="-"
+-                     description="Whether to enable positive-definite advection of scalars"
++                     description="Whether to enable positive-definite (Skamarock 2006 flux renormalization) instead of monotonic advection of scalars on the final RK stage; used only with config_monotonic = false and without lateral boundary conditions"
+                      possible_values=".true. or .false."/>
+ 
+                 <nml_option name="config_monotonic" type="logical" default_value="true"
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index a2b0dc2..f857bcc 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -124,7 +124,8 @@ module atm_time_integration
+    !>  This routine checks that dynamics settings are valid.
+    !>  Specifically,the following are checked by this routine:
+    !>
+-   !>  1) config_positive_definite == .false.
++   !>  1) config_positive_definite is used only with config_monotonic = .false. and without
++   !>     lateral boundary conditions
+    !>
+    !>  At present only a warning is printed in the case of a failed check,
+    !>  and a value of 0 is always returned by the ierr argument. However,
+@@ -144,7 +145,7 @@ module atm_time_integration
+        type (MPAS_streamManager_type), pointer :: streamManager
+        integer, intent(out) :: ierr
+ 
+-       logical, pointer :: config_positive_definite
++       logical, pointer :: config_positive_definite, config_monotonic, config_apply_lbcs_chk
+        real (kind=RKIND), pointer :: config_epssm
+ 
+ 
+@@ -152,21 +153,26 @@ module atm_time_integration
+        call mpas_log_write('Checking consistency of dynamics settings...')
+ 
+        !
+-       ! Check that config_positive_definite == .false., since the positive-definite advection
+-       ! option is currently unimplemented.
++       ! config_positive_definite selects positive-definite (not monotonic) transport of scalars; with
++       ! config_monotonic = .true. the monotonic transport, which is also positive definite, is used. The
++       ! positive-definite option is not available with lateral boundary conditions.
+        !
+        nullify(config_positive_definite)
+        call mpas_pool_get_config(blocklist % configs, 'config_positive_definite', config_positive_definite)
++       nullify(config_monotonic)
++       call mpas_pool_get_config(blocklist % configs, 'config_monotonic', config_monotonic)
++       nullify(config_apply_lbcs_chk)
++       call mpas_pool_get_config(blocklist % configs, 'config_apply_lbcs', config_apply_lbcs_chk)
+ 
+-       if (config_positive_definite) then
+-           call mpas_log_write('The positive definite advection option is currently unimplemented, and', &
++       if (config_positive_definite .and. config_monotonic) then
++           call mpas_log_write('config_positive_definite = true and config_monotonic = true: the monotonic transport,', &
+                                messageType=MPAS_LOG_WARN)
+-           call mpas_log_write('setting config_positive_definite = true will enable monotonic advection.', &
+-                               messageType=MPAS_LOG_WARN)
+-           call mpas_log_write('Please remove the specification of config_positive_definite from the', &
+-                               messageType=MPAS_LOG_WARN)
+-           call mpas_log_write('&nhyd_model namelist group.', &
++           call mpas_log_write('which is also positive definite, will be used.', messageType=MPAS_LOG_WARN)
++           call mpas_log_write('')
++       else if (config_positive_definite .and. config_apply_lbcs_chk) then
++           call mpas_log_write('config_positive_definite = true is not available with config_apply_lbcs = true;', &
+                                messageType=MPAS_LOG_WARN)
++           call mpas_log_write('the monotonic transport will be used.', messageType=MPAS_LOG_WARN)
+            call mpas_log_write('')
+        end if
+ 
+@@ -5006,8 +5012,15 @@ module atm_time_integration
+       type (field3DReal), pointer :: scale
+       real (kind=RKIND), dimension(:,:,:), pointer :: scale_arr
+ 
++      logical, pointer :: config_monotonic, config_positive_definite
++      logical :: pd_only
++
+ 
+       call mpas_pool_get_config(configs, 'config_coef_3rd_order', coef_3rd_order)
++      call mpas_pool_get_config(configs, 'config_monotonic', config_monotonic)
++      call mpas_pool_get_config(configs, 'config_positive_definite', config_positive_definite)
++      ! positive definite without monotonic: renormalize the full fluxes (not available with lateral boundary conditions)
++      pd_only = config_positive_definite .and. (.not. config_monotonic) .and. (.not. config_apply_lbcs)
+ 
+       call mpas_pool_get_dimension(mesh, 'nCells', nCells)
+       call mpas_pool_get_dimension(mesh, 'nEdges', nEdges)
+@@ -5055,7 +5068,7 @@ module atm_time_integration
+                                    advCellsForEdge, adv_coefs, adv_coefs_3rd, scalar_old, scalar_new, s_max, s_min, &
+                                    wdtn, scale_arr, flux_arr, flux_upwind_tmp, flux_tmp, &
+                                    bdyMaskCell, bdyMaskEdge, config_gpu_aware_mpi, &
+-                                   exchange_halo_group, advance_density, rho_zz_int)
++                                   exchange_halo_group, pd_only, advance_density, rho_zz_int)
+ 
+       call mpas_deallocate_scratch_field(scale)
+ 
+@@ -5103,7 +5116,7 @@ module atm_time_integration
+                                    advCellsForEdge, adv_coefs, adv_coefs_3rd, scalar_old, scalar_new, s_max, s_min, &
+                                    wdtn, scale_arr, flux_arr, flux_upwind_tmp, flux_tmp, &
+                                    bdyMaskCell, bdyMaskEdge, config_gpu_aware_mpi, &
+-                                   exchange_halo_group, advance_density, rho_zz_int)
++                                   exchange_halo_group, pd_only, advance_density, rho_zz_int)
+ 
+       use mpas_atm_dimensions, only : nVertLevels
+ 
+@@ -5120,6 +5133,7 @@ module atm_time_integration
+       integer, intent(in) :: cellSolveStart, cellSolveEnd
+       logical, intent(in) :: config_gpu_aware_mpi
+       procedure (halo_exchange_routine) :: exchange_halo_group
++      logical, intent(in) :: pd_only
+       logical, intent(in), optional :: advance_density
+       real (kind=RKIND), dimension(:,:), intent(inout), optional :: rho_zz_int
+ 
+@@ -5493,12 +5507,21 @@ module atm_time_integration
+             cell1 = cellsOnEdge(1,iEdge)
+             cell2 = cellsOnEdge(2,iEdge)
+ 
+-            !$acc loop vector
+-            do k=1,nVertLevels
+-               flux_upwind_tmp(k,iEdge) = dvEdge(iEdge) * dt *   &
+-                      (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
+-               flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge) - flux_upwind_tmp(k,iEdge)
+-            end do
++            if (pd_only) then
++               ! positive definite only: no low-order part, the full flux is renormalized below
++               !$acc loop vector
++               do k=1,nVertLevels
++                  flux_upwind_tmp(k,iEdge) = 0.0_RKIND
++                  flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge)
++               end do
++            else
++               !$acc loop vector
++               do k=1,nVertLevels
++                  flux_upwind_tmp(k,iEdge) = dvEdge(iEdge) * dt *   &
++                         (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
++                  flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge) - flux_upwind_tmp(k,iEdge)
++               end do
++            end if
+ 
+             if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
+                !$acc loop vector
+@@ -5543,7 +5566,11 @@ module atm_time_integration
+             !$acc loop vector
+             do k = 2, nVertLevels
+                scalar_new(k,iCell) = scalar_old(k,iCell)*rho_zz_old(k,iCell)
+-               flux_upwind_arr(k) = dt*(max(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k-1,iCell) + min(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k,iCell))
++               if (pd_only) then
++                  flux_upwind_arr(k) = 0.0_RKIND
++               else
++                  flux_upwind_arr(k) = dt*(max(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k-1,iCell) + min(0.0_RKIND,wwAvg(k,iCell))*scalar_old(k,iCell))
++               end if
+             end do
+ 
+             ! keep the upwind update positive definite where a layer's upwind outflow exceeds its content
+@@ -5608,7 +5635,20 @@ module atm_time_integration
+          ! simplification of limiter calculations
+          ! worked through algebra and found equivalent form
+          ! added benefit that it should address ifort single prec overflow issue
+-         if (local_advance_density) then
++         if (pd_only) then
++            ! positive definite (Skamarock 2006, as WRF's moist_adv_opt = 1): where a cell's total outgoing flux
++            ! exceeds its content, scale the fluxes leaving it to its content; incoming fluxes are not limited.
++            ! SCALE_OUT holds minus the outgoing total and scalar_new the old content here.
++            !$acc loop gang worker
++            do iCell=cellSolveStart,cellSolveEnd
++
++               !$acc loop vector
++               do k = 1, nVertLevels
++                  scale_arr(k,SCALE_OUT,iCell) = atm_pd_factor(scalar_new(k,iCell), -scale_arr(k,SCALE_OUT,iCell))
++                  scale_arr(k,SCALE_IN,iCell) = 1.0_RKIND
++               end do
++            end do
++         else if (local_advance_density) then
+             !$acc loop gang worker
+             do iCell=cellSolveStart,cellSolveEnd
+ 
+@@ -5670,12 +5710,19 @@ module atm_time_integration
+ 
+             if (cell1 <= nCellsSolve .or. cell2 <= nCellsSolve) then  ! only for owned cells
+ 
+-               !$acc loop vector
+-               do k=1, nVertLevels
+-                  flux_upwind = dvEdge(iEdge) * dt *   &
+-                         (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
+-                  flux_arr(k,iEdge) = dt*flux_arr(k,iEdge) - flux_upwind
+-               end do
++               if (pd_only) then
++                  !$acc loop vector
++                  do k=1, nVertLevels
++                     flux_arr(k,iEdge) = dt*flux_arr(k,iEdge)
++                  end do
++               else
++                  !$acc loop vector
++                  do k=1, nVertLevels
++                     flux_upwind = dvEdge(iEdge) * dt *   &
++                            (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
++                     flux_arr(k,iEdge) = dt*flux_arr(k,iEdge) - flux_upwind
++                  end do
++               end if
+ 
+                if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
+                   !$acc loop vector
+@@ -5863,6 +5910,30 @@ module atm_time_integration
+    end subroutine atm_upwind_vert_renorm
+ 
+ 
++   !-----------------------------------------------------------------------
++   !  function atm_pd_factor
++   !
++   !> \brief   Positive-definite flux factor of one cell (Skamarock 2006)
++   !> \details Returns content/outgoing where the total outgoing flux exceeds the cell's content (0 for a cell
++   !>          without content), and exactly 1 otherwise. Both arguments in the same units (mass per volume).
++   !-----------------------------------------------------------------------
++   real (kind=RKIND) function atm_pd_factor(content, outgoing)
++
++      !$acc routine seq
++
++      implicit none
++
++      real (kind=RKIND), intent(in) :: content, outgoing
++
++      if (outgoing > content .and. outgoing > 0.0_RKIND) then
++         atm_pd_factor = max(0.0_RKIND, content) / outgoing
++      else
++         atm_pd_factor = 1.0_RKIND
++      end if
++
++   end function atm_pd_factor
++
++
+    subroutine atm_compute_dyn_tend(tend, tend_physics, state, diag, mesh, diag_physics, configs, nVertLevels, rk_step, dynamics_substep, dt, &
+                                    cellStart, cellEnd, vertexStart, vertexEnd, edgeStart, edgeEnd, &
+                                    cellSolveStart, cellSolveEnd, vertexSolveStart, vertexSolveEnd, edgeSolveStart, edgeSolveEnd)
+-- 
+2.55.0
+

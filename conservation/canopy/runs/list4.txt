@@ -1,0 +1,3 @@
+d2_ns|fv3_c_b2.exe|^n_split=8,^lseaspray=.false.|s/^(dt_atmos:\s+).*/\11440/||all|30
+q_ns|fv3_c_b2.exe|^lseaspray=.false.|||all
+d2b_0|fv3_c_b2.exe|^n_split=8|s/^(dt_atmos:\s+).*/\11440/||all|30

@@ -1,0 +1,116 @@
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-18 01:11:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-18 01:11:25.000000000 -0500
+@@ -88,7 +88,7 @@
+      &    rainevap,sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,   
+      &    betascu,lbb1,lbb2,lbb3,dt_decay,maxMF,do_mynnedmf,            
+      &    sigmab_coldstart,cat_adj_deep,samf_cmt_heat,                  
+-     &    pflx,samf_kirchhoff,errmsg,errflg)
++     &    pflx,samf_kirchhoff,tgrs,errmsg,errflg)
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+@@ -135,6 +135,7 @@
+       real(kind=kind_phys), intent(out) :: ud_mf(:,:)
+       real(kind=kind_phys), intent(inout) :: pflx(:,:)
+       logical, intent(in) :: samf_kirchhoff
++      real(kind=kind_phys), intent(in) :: tgrs(:,:)
+       real(kind=kind_phys) :: pfk(im,km+1), ck
+       real(kind=kind_phys), dimension(:,:), intent(inout), optional ::
+      &   qlcn, qicn, w_upi, cnv_mfd, cnv_dqldt, clcn
+@@ -3774,6 +3775,10 @@
+ !               freezing of the ice part releases hfus (h is liquid-referenced)
+                 new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
+      &                      / real(cp, kind=conv_wp) * tem * tem1
++!               frame F: fusion at L_f(T) = hfus + (c_l - c_i)(T - T0), step-initial T
++                if (samf_kirchhoff) new_t1(i,k) = new_t1(i,k)
++     &            + real((cliq - 1972.0_kind_phys) * (tgrs(i,k) - t0c)
++     &            / cp, kind=conv_wp) * tem * tem1
+               else
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem
+               endif
+@@ -4002,7 +4007,7 @@
+               if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
+      &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
+               new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
+-     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++     &           * (tgrs(i,k) - t0c) * ck / cp, kind=conv_wp)
+             endif
+           endif
+         enddo
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-18 01:11:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta	2026-10-18 01:11:25.000000000 -0500
+@@ -880,6 +880,14 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[tgrs]
++  standard_name = physics_timestep_initial_air_temperature
++  long_name = model layer mean temperature at the start of the physics step
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-18 01:11:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-18 01:11:25.000000000 -0500
+@@ -61,7 +61,7 @@
+      &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+      &     sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,betascu,   &
+      &     lbb1,lbb2,lbb3,dt_decay,cat_adj_shal,samf_cmt_heat,
+-     &     pflx,samf_kirchhoff,errmsg,errflg)
++     &     pflx,samf_kirchhoff,tgrs,errmsg,errflg)
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+@@ -101,6 +101,7 @@
+       real(kind=kind_phys), intent(out) :: ud_mf(:,:)
+       real(kind=kind_phys), intent(inout) :: pflx(:,:)
+       logical, intent(in) :: samf_kirchhoff
++      real(kind=kind_phys), intent(in) :: tgrs(:,:)
+       real(kind=kind_phys) :: pfk(im,km+1), ck
+       real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),   &
+      &   omegaout(:,:)
+@@ -2698,6 +2699,10 @@
+ !               freezing of the ice part releases hfus (h is liquid-referenced)
+                 new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
+      &                      / real(cp, kind=conv_wp) * tem * tem1
++!               frame F: fusion at L_f(T) = hfus + (c_l - c_i)(T - T0), step-initial T
++                if (samf_kirchhoff) new_t1(i,k) = new_t1(i,k)
++     &            + real((cliq - 1972.0_kind_phys) * (tgrs(i,k) - t0c)
++     &            / cp, kind=conv_wp) * tem * tem1
+                 ! Water
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1)
+@@ -2827,7 +2832,7 @@
+               if (ncloud > 0 .and. k >= kbcon(i) .and. k <= ktcon(i))
+      &          ck = ck + real(dellal(i,k) * xmb(i) * dt2, kind_phys)
+               new_t1(i,k) = new_t1(i,k) + real((cvap - cliq)
+-     &           * (t1(i,k) - t0c) * ck / cp, kind=conv_wp)
++     &           * (tgrs(i,k) - t0c) * ck / cp, kind=conv_wp)
+             endif
+           endif
+         enddo
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-18 01:11:17.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta	2026-10-18 01:11:25.000000000 -0500
+@@ -668,6 +668,14 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[tgrs]
++  standard_name = physics_timestep_initial_air_temperature
++  long_name = model layer mean temperature at the start of the physics step
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

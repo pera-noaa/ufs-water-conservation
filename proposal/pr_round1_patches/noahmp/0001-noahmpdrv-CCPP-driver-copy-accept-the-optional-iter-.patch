@@ -1,0 +1,83 @@
+From f77df1b24d54cc1fce648aec8d2c84e2c1b53da8 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:48 -0500
+Subject: [PATCH] noahmpdrv (CCPP driver copy): accept the optional iter
+ argument
+
+Companion of the ccpp-physics fix that steps Noah-MP land once per time step
+(noahmpdrv_run gains an optional trailing iter, the CCPP loop counter).
+
+In atmosphere-land builds the land component is compiled against this copy's
+interface but its call reaches the ccpp-physics routine (libfv3ccpp.a comes
+first on the link line). Without iter declared here the call does not mark it
+absent, and control_p8_atmlnd stops with SIGSEGV.
+
+Declare the same optional iter in drivers/ccpp/noahmpdrv.F90 and .meta, and
+step the land on the first iteration only, as the ccpp-physics copy does.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ drivers/ccpp/noahmpdrv.F90  | 12 ++++++++++--
+ drivers/ccpp/noahmpdrv.meta |  8 ++++++++
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/ccpp/noahmpdrv.F90 b/drivers/ccpp/noahmpdrv.F90
+index eaf9eb6..5ed5040 100644
+--- a/drivers/ccpp/noahmpdrv.F90
++++ b/drivers/ccpp/noahmpdrv.F90
+@@ -492,7 +492,8 @@ end subroutine noahmpdrv_timestep_init
+       precip_adv_heat_grd_v_ccpp,                                &
+       precip_adv_heat_grd_b_ccpp,                                &
+       spec_humid_sfc_veg_ccpp,                                   &
+-      spec_humid_sfc_bare_ccpp                                   &
++      spec_humid_sfc_bare_ccpp,                                  &
++      iter                                                       &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -568,6 +569,9 @@ end subroutine noahmpdrv_timestep_init
+   real(kind=kind_phys), dimension(:)     , intent(in)    :: snoalb     ! upper bound on max albedo over deep snow
+   real(kind=kind_phys), dimension(:)     , intent(inout) :: sfalb      ! mean surface albedo [fraction]
+   logical             , dimension(:)     , intent(in)    :: flag_iter  !
++  ! optional and last: NOAA-EMC/noahmp's land component calls this routine with the original arguments
++  integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
++  logical                                                :: first_iter ! land is stepped on the first iteration only
+   integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
+   integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
+   integer                                , intent(in)    :: iopt_btr   ! option for soil moisture factor for stomatal resistance
+@@ -990,9 +994,13 @@ end subroutine noahmpdrv_timestep_init
+ !
+   if (cpllnd .and. cpllnd2atm) return
+ 
++  first_iter = .true.
++  if (present(iter)) first_iter = iter == 1
++
+   do i = 1, im
+ 
+-    if (flag_iter(i) .and. dry(i)) then
++    ! land is stepped once: a coastal (wet and dry) cell can be re-flagged for the second iteration
++    if (flag_iter(i) .and. dry(i) .and. first_iter) then
+ 
+ !
+ !  --- variable checks and derived fields
+diff --git a/drivers/ccpp/noahmpdrv.meta b/drivers/ccpp/noahmpdrv.meta
+index 7d1150c..d1aa05f 100644
+--- a/drivers/ccpp/noahmpdrv.meta
++++ b/drivers/ccpp/noahmpdrv.meta
+@@ -1653,3 +1653,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True
+-- 
+2.31.1
+

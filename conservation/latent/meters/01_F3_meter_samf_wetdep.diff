@@ -1,0 +1,120 @@
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:52:45
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 23:52:45
+@@ -92,6 +92,7 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
++      use tm_meter, only : tm_x
+ 
+       implicit none
+ !
+@@ -103,6 +104,7 @@
+       real(kind=kind_phys), intent(in) :: psp(:), delp(:,:),            
+      &   prslp(:,:),  garea(:), hpbl(:), dot(:,:), phil(:,:) 
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      real(8) tm_a, tm_b
+       logical, intent(in)  :: first_time_step,restart,hwrf_samfdeep,    
+      &     progsigma,progomega,do_mynnedmf,sigmab_coldstart
+       real(kind=kind_phys), intent(in) :: nthresh,betadcu,betamcu,
+@@ -3540,6 +3542,14 @@
+      &               then
+ !   borrow negative mass from wet deposition
+                     tem = -new_qtr(i,k,kk) * dp
++!  F3 METER
++                    if (wet_dep(i,k,n) >= tem) then
++                      tm_x(7) = tm_x(7) + 1.d0
++                    else
++                      tm_x(6) = tm_x(6) + 1.d0
++                      tm_x(8) = tm_x(8)
++     &                  + garea(i)*dble(wet_dep(i,k,n))/grav
++                    endif
+                     if(wet_dep(i,k,n) >= tem) then
+                       wet_dep(i,k,n) = wet_dep(i,k,n) - tem
+                       new_qtr(i,k,kk) = 0.0_conv_wp
+@@ -3939,6 +3949,25 @@
+       endif
+       endif ! (.not.hwrf_samfdeep)
+ 
++!  F3 METER
++      if (do_aerosols) then
++        do n = 1, min(ntc,2)
++          kk = n + itc - 1
++          do i = 1, im
++            tm_a = 0.d0
++            tm_b = 0.d0
++            do k = 1, km
++              tm_a = tm_a + dble(new_qtr(i,k,kk)
++     &             - real(qtr(i,k,kk), kind=conv_wp)) * delp(i,k)
++              tm_b = tm_b + dble(wet_dep(i,k,n))
++            enddo
++            tm_x(0+n) = tm_x(0+n) + garea(i)*tm_a/grav
++            tm_x(0+2+n) = tm_x(0+2+n) + garea(i)*tm_b/grav
++            tm_x(0+5) = tm_x(0+5)
++     &                + garea(i)*abs(tm_a+tm_b)/grav
++          enddo
++        enddo
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+diff -ruN a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:52:45
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 23:52:45
+@@ -64,6 +64,7 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
++      use tm_meter, only : tm_x
+ 
+       implicit none
+ !
+@@ -82,6 +83,7 @@
+      &     omegain(:,:)
+ !
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
++      real(8) tm_a, tm_b
+       integer, intent(inout)  :: kcnv(:)
+       ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+       real(kind=kind_phys), intent(inout) :: tkeh(:,:)
+@@ -2483,6 +2485,14 @@
+                   if (new_qtr(i,k,kk) < 0.0_conv_wp) then
+ !   borrow negative mass from wet deposition
+                     tem = -new_qtr(i,k,kk) * dp
++!  F3 METER
++                    if (wet_dep(i,k,n) >= tem) then
++                      tm_x(17) = tm_x(17) + 1.d0
++                    else
++                      tm_x(16) = tm_x(16) + 1.d0
++                      tm_x(18) = tm_x(18)
++     &                  + garea(i)*dble(wet_dep(i,k,n))/grav
++                    endif
+                     if(wet_dep(i,k,n) >= tem) then
+                       wet_dep(i,k,n) = wet_dep(i,k,n) - tem
+                       new_qtr(i,k,kk) = 0.0_conv_wp
+@@ -2763,6 +2773,25 @@
+       endif
+       endif
+ !!
++!  F3 METER
++      if (do_aerosols) then
++        do n = 1, min(ntc,2)
++          kk = n + itc - 1
++          do i = 1, im
++            tm_a = 0.d0
++            tm_b = 0.d0
++            do k = 1, km
++              tm_a = tm_a + dble(new_qtr(i,k,kk)
++     &             - real(qtr(i,k,kk), kind=conv_wp)) * delp(i,k)
++              tm_b = tm_b + dble(wet_dep(i,k,n))
++            enddo
++            tm_x(10+n) = tm_x(10+n) + garea(i)*tm_a/grav
++            tm_x(10+2+n) = tm_x(10+2+n) + garea(i)*tm_b/grav
++            tm_x(10+5) = tm_x(10+5)
++     &                + garea(i)*abs(tm_a+tm_b)/grav
++          enddo
++        enddo
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_u = real((new_u1 - real(u1, kind=conv_wp)) / real(delt,

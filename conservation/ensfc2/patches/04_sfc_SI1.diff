@@ -1,0 +1,42 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -43,7 +43,7 @@
+      &       hice, fice, tice, weasd, tsfc_wat, tprcp, tiice, ep,       & !  ---  input/outputs:
+      &       snwdph, qss_i, qss_w, snowmt, gflux, cmm, chh,             &
+      &       evapi, evapw, hflxi, hflxw, islmsk,                        &
+-     &       errmsg, errflg
++     &       errmsg, errflg, iter
+      &     )
+ 
+ ! ===================================================================== !
+@@ -155,6 +155,7 @@
+ 
+ !  ---  inputs:
+       integer, intent(in) :: im, kice, ipr
++      integer, optional, intent(in) :: iter
+       logical, intent(in) :: lprnt
+       logical, intent(in) :: thsfc_loc
+ 
+@@ -218,6 +219,8 @@
+       do i = 1, im
+         flag(i) = islmsk(i) == 2 .and. flag_iter(i)                     &
+      &                           .and. use_lake_model(i) /=1
++!       ice is stepped once: an icy cell with open water is re-flagged for NSST's second pass
++        if (present(iter)) flag(i) = flag(i) .and. iter == 1
+         do_sice = do_sice .or. flag(i)
+ !       if (flag_iter(i) .and. islmsk(i) < 2) then
+ !         hice(i) = zero
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+@@ -439,3 +439,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True

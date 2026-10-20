@@ -1,0 +1,583 @@
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -15,6 +15,9 @@
+ 
+   public  :: noahmp_options
+   public  :: noahmp_sflx
++  real(kind=kind_phys), save :: canopy_heat = 0.  ! J m-2 the canopy books but cannot carry, to the top soil layer
++  real(kind=kind_phys), public, save :: host_fpcv = -1.  ! host's convective frozen fraction (< 0: T1 rule)
++  real(kind=kind_phys), public, save :: sw_target = -1.  ! absorbed SW imposed by the driver (< 0: own)
+   public  :: sfcdif4
+   public  :: psi_init
+ 
+@@ -418,6 +421,45 @@
+ 
+ !>\ingroup NoahMP_LSM
+ !!
++  logical function esfix_l(tag)
++    ! experiment switch (diagnostic builds only): ESFIX = comma-separated tags
++    character(len=*), intent(in) :: tag
++    character(len=256), save :: v = ' '
++    logical, save :: got = .false.
++    if (.not. got) then
++       call get_environment_variable('ESFIX', v)
++       got = .true.
++    endif
++    esfix_l = index(','//trim(v)//',', ','//tag//',') > 0
++  end function esfix_l
++  real(kind=kind_phys) function snow_sensible(nsnow, isnow, stc, snice, snliq, dzsnso)
++    ! sensible heat of the snow layers relative to tfrz (Noah-MP snow heat capacity), J m-2
++    integer, intent(in) :: nsnow, isnow
++    real(kind=kind_phys), intent(in) :: stc(-nsnow+1:), snice(-nsnow+1:), snliq(-nsnow+1:), dzsnso(-nsnow+1:)
++    real(kind=kind_phys) :: sv, lv
++    integer :: iz
++    snow_sensible = 0.
++    do iz = isnow+1, 0
++       if (dzsnso(iz) > 0.) then
++          sv = min(1._kind_phys, snice(iz)/(dzsnso(iz)*denice))
++          lv = min(1._kind_phys - sv, snliq(iz)/(dzsnso(iz)*denh2o))
++          snow_sensible = snow_sensible + (cice*sv + cwat*lv)*dzsnso(iz)*(stc(iz) - tfrz)
++       endif
++    enddo
++  end function snow_sensible
++  subroutine snow_heat_to_soil(parameters, nsnow, nsoil, isnow, stc, snice, snliq, dzsnso, sh2o, sice, hs)
++    ! snow layers removed or merged without mixing: their lost sensible heat goes to the top soil layer
++    type (noahmp_parameters), intent(in) :: parameters
++    integer, intent(in) :: nsnow, nsoil, isnow
++    real(kind=kind_phys), intent(inout) :: stc(-nsnow+1:)
++    real(kind=kind_phys), intent(in) :: snice(-nsnow+1:), snliq(-nsnow+1:), dzsnso(-nsnow+1:), sh2o(:), sice(:)
++    real(kind=kind_phys), intent(inout) :: hs
++    real(kind=kind_phys) :: hn
++    hn = snow_sensible(nsnow, isnow, stc, snice, snliq, dzsnso)
++    stc(1) = stc(1) + (hs - hn)/(dzsnso(1)*(sh2o(1)*cwat + (1.0-parameters%smcmax(1))*parameters%csoil &
++             + (parameters%smcmax(1)-sh2o(1)-sice(1))*cpair + sice(1)*cice))
++    hs = hn
++  end subroutine snow_heat_to_soil
+   subroutine noahmp_sflx (parameters, &
+                    iloc    , jloc    , lat     , yearlen , julian  , cosz    , & ! in : time/space-related
+                    dt      , dx      , dz8w    , nsoil   , zsoil   , nsnow   , & ! in : model configuration 
+@@ -1110,6 +1152,7 @@
+         if(prcpconv + prcpshcv > 0.) then
+           fpcv = 0.0
+           if(sfctmp < tfrz) fpcv = 1.0
++          if(host_fpcv >= 0.) fpcv = host_fpcv
+           if(opt_snf == 4 .and. fpcv > 0. .and. fpice > 0.) bdfall = (bdfall*fpice*prcpnonc + &
+                  bdfall0*(prcpconv + prcpshcv)) / (fpice*prcpnonc + prcpconv + prcpshcv)
+           fpice = fpice + (fpcv - fpice)*(prcpconv + prcpshcv)/prcp
+@@ -2155,6 +2198,12 @@
+ 
+ ! vegetation and ground emissivity
+ 
++     if (sw_target >= 0. .and. fsa > 0.) then
++        sav = sav*sw_target/fsa
++        sag = sag*sw_target/fsa
++        fsr = fsr + fsa - sw_target
++        fsa = sw_target
++     endif
+      emv = 1. - exp(-(elai+esai)/1.0)
+      if (ice == 1) then
+        emg = 0.98*(1.-fsno) + parameters%snow_emis*fsno
+@@ -3968,6 +4017,7 @@
+   real (kind=kind_phys) :: eah2         !2m vapor pressure over canopy
+   real (kind=kind_phys) :: qfx          !moisture flux
+   real (kind=kind_phys) :: e1           
++  real (kind=kind_phys) :: tv_start, hcv_eff
+   real (kind=kind_phys) :: hcv          !canopy heat capacity j/m2/k, C.He added 
+ 
+   real (kind=kind_phys) :: vaie         !total leaf area index + stem area index,effective
+@@ -4106,6 +4156,7 @@
+        endif
+ 
+ ! ---------------------------------------------------------------------------------------------
++      tv_start = tv
+       loop1: do iter = 1, niterc    !  begin stability iteration
+ 
+ !      if(iter == 1) then
+@@ -4290,17 +4341,21 @@
+ 
+ ! canopy heat capacity
+         hcv = fveg*(parameters%cbiom*vaie*cwat + canliq*cwat/denh2o + canice*cice/denice) !j/m2/k
++        hcv_eff = hcv
++        if (esfix_l('CH1')) hcv_eff = 0.
+ 
+         b   = sav-irc-shc-evc-tr+pahv                          !additional w/m2
++        if (esfix_l('CH2')) b = b - hcv*(tv - tv_start)/dt
+ !       a   = fveg*(4.*cir*tv**3 + csh + (cev+ctr)*destv) !volumetric heat capacity
+-        a   = fveg*(4.*cir*tv**3 + csh + (cev+ctr)*destv) + hcv/dt !volumetric heat capacity
++        a   = fveg*(4.*cir*tv**3 + csh + (cev+ctr)*destv) + hcv_eff/dt !volumetric heat capacity
+         dtv = b/a
+ 
+         irc = irc + fveg*4.*cir*tv**3*dtv
+         shc = shc + fveg*csh*dtv
+         evc = evc + fveg*cev*destv*dtv
+         tr  = tr  + fveg*ctr*destv*dtv                               
+-        canhs = dtv*hcv/dt
++        canhs = dtv*hcv_eff/dt
++        if (esfix_l('CH2')) canhs = hcv*(tv + dtv - tv_start)/dt
+ 
+ ! update vegetation surface temperature
+         tv  = tv + dtv
+@@ -7208,6 +7263,7 @@
+           &          qsnbot ,snoflow,ponding1       ,ponding2)  !out
+ 
+    lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt
++   lheat = lheat + canopy_heat
+    if(frozen_ground) then
+       sice(1) =  sice(1) + (qsdew-qseva)*dt/(dzsnso(1)*1000.)
+       lheat = lheat + (latheag - hsub)*(qseva - qsdew)*dt
+@@ -7377,6 +7433,8 @@
+ ! canopy water balance. for convenience allow dew to bring canliq above
+ ! maxh2o or else would have to re-adjust drip
+ 
++       canopy_heat = 0.
++       if (esfix_l('CMC')) canopy_heat = (qevac - min(canliq/dt,qevac))*hvap*dt
+        qevac = min(canliq/dt,qevac)
+        canliq=max(0.,canliq+(qdewc-qevac)*dt)
+        if(canliq <= 1.e-06) then
+@@ -7390,6 +7448,7 @@
+ 
+       maxsno = 6.6*(0.27+46./bdfall) * (elai+ esai)
+ 
++      if (esfix_l('CMC')) canopy_heat = canopy_heat + (qsubc - min(canice/dt,qsubc))*hsub*dt
+       qsubc = min(canice/dt,qsubc) 
+       canice= max(0.,canice + (qfroc-qsubc)*dt)
+       if(canice.le.1.e-6) then
+@@ -7433,6 +7492,10 @@
+ ! total canopy evaporation
+ 
+       ecan = qevac + qsubc - qdewc - qfroc
++      if (esfix_l('CMC')) then
++        if (frozen_canopy) canopy_heat = canopy_heat + (hsub - hvap)*etran*dt
++        canopy_heat = canopy_heat - hfus*(qmeltc - qfrzc)*dt
++      endif
+ 
+   end subroutine canwater
+ 
+@@ -7683,6 +7746,7 @@
+ 
+     integer :: i,j,k,l               ! node indices
+     integer :: isnow_old             ! number of top snow layer
++    real(kind=kind_phys) :: hs_comb
+     integer :: mssi                  ! node index
+     integer :: neibor                ! adjacent node selected for combination
+     real (kind=kind_phys)    :: zwice                 ! total ice mass in snow
+@@ -7693,6 +7757,7 @@
+     data dzmin /0.025, 0.025, 0.1/  ! mb: change limit
+ !-----------------------------------------------------------------------
+ 
++       hs_comb = snow_sensible(nsnow, isnow, stc, snice, snliq, dzsnso)
+        isnow_old = isnow
+ 
+        do j = isnow_old+1,0
+@@ -7748,6 +7813,7 @@
+           sice(1) = 0.
+        end if
+ 
++       if (esfix_l('SL1')) call snow_heat_to_soil(parameters, nsnow, nsoil, isnow, stc, snice, snliq, dzsnso, sh2o, sice, hs_comb)
+        if(isnow ==0) return   ! mb: get out if no longer multi-layer
+ 
+        sneqv  = 0.
+@@ -7834,6 +7900,7 @@
+ 
+        end if
+ 
++       if (esfix_l('SL1')) call snow_heat_to_soil(parameters, nsnow, nsoil, isnow, stc, snice, snliq, dzsnso, sh2o, sice, hs_comb)
+   end subroutine combine
+ 
+ !== begin divide ===================================================================================
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -26,6 +26,7 @@
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+   real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: host_fpice = -1.0 !< host frozen fraction of precipitation (< 0: T rule)
+   real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+@@ -125,6 +126,17 @@
+ ! ==================================================================================================
+ 
+ !>\ingroup NoahMP_LSM
++  logical function esfix_g(tag)
++    ! experiment switch (diagnostic builds only): ESFIX = comma-separated tags
++    character(len=*), intent(in) :: tag
++    character(len=256), save :: v = ' '
++    logical, save :: got = .false.
++    if (.not. got) then
++       call get_environment_variable('ESFIX', v)
++       got = .true.
++    endif
++    esfix_g = index(','//trim(v)//',', ','//tag//',') > 0
++  end function esfix_g
+   subroutine noahmp_glacier (&
+                    iloc      ,jloc    ,cosz     ,nsnow    ,nsoil   ,dt        , & ! in : time/space/model-related
+                    sfctmp    ,sfcprs  ,uu       ,vv       ,q2      ,soldn     , & ! in : forcing
+@@ -2513,6 +2525,7 @@
+ ! hedstrom nr and jw pomeroy (1998), hydrol. processes, 12, 1611-1625
+ ! fresh snow density
+ 
++     if (host_fpice >= 0.) fpice = host_fpice
+      bdfall = min(120.,67.92+51.25*exp((sfctmp-tfrz)/2.59)) !mb: change to min v3.7
+ 
+      qrain   = prcp * (1.-fpice)
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -26,6 +26,9 @@
+ 
+       private
+ 
++      ! radiation-time land albedo per column (direct vis, diffuse vis, direct nir, diffuse nir)
++      real(kind=8), allocatable, save :: albrad(:,:)
++      integer, save :: col_kdt = -1, col_off = 0
+       public :: noahmpdrv_init, noahmpdrv_run, &
+                 noahmpdrv_timestep_init, noahmpdrv_final 
+ 
+@@ -377,6 +380,17 @@
+ !!    - Call penman() to calculate potential evaporation.
+ !!    - Calculate the surface specific humidity and convert surface sensible and latent heat fluxes in W m-2 from their kinematic values.
+ !!    - If a "guess" run, restore the land-related prognostic fields.
++  logical function esfix_d(tag)
++    ! experiment switch (diagnostic builds only): ESFIX = comma-separated tags
++    character(len=*), intent(in) :: tag
++    character(len=256), save :: v = ' '
++    logical, save :: got = .false.
++    if (.not. got) then
++       call get_environment_variable('ESFIX', v)
++       got = .true.
++    endif
++    esfix_d = index(','//trim(v)//',', ','//tag//',') > 0
++  end function esfix_d
+   subroutine noahmpdrv_run                                       &
+ !...................................
+ !  ---  inputs:
+@@ -451,7 +465,7 @@
+       precip_adv_heat_grd_b_ccpp,                                &
+       spec_humid_sfc_veg_ccpp,                                   &
+       spec_humid_sfc_bare_ccpp,                                  &
+-      iter                                                       &
++      iter, adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd, lsswr     &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -460,7 +474,7 @@
+   use module_sf_noahmplsm,   only : gfs_stability
+   use module_sf_noahmp_glacier
+   use module_sf_noahmplsm,    only : hvap_lsm => hvap, hsub_lsm => hsub, hfus_lsm => hfus
+-  use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus
++  use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus, host_fpice
+   use noahmp_tables
+ 
+   implicit none
+@@ -531,6 +545,8 @@
+   logical             , dimension(:)     , intent(in)    :: flag_iter  !
+   ! optional and last: NOAA-EMC/noahmp's land component calls this routine with the original arguments
+   integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
++  real(kind=kind_phys), dimension(:), optional, intent(in) :: adjvisbmd, adjvisdfd, adjnirbmd, adjnirdfd
++  logical, optional, intent(in) :: lsswr
+   logical                                                :: first_iter ! land is stepped on the first iteration only
+   integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
+   integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
+@@ -939,6 +955,7 @@
+ !
+       
+   type(noahmp_parameters) :: parameters
++  real(kind=kind_phys) :: swa
+ 
+ !
+ !  --- end declaration
+@@ -965,6 +982,26 @@
+ 
+   first_iter = .true.
+   if (present(iter)) first_iter = iter == 1
++  if (present(adjvisbmd) .and. first_iter) then
++    if (itime /= col_kdt) then
++      col_kdt = itime
++      col_off = 0
++    endif
++    if (.not. allocated(albrad)) then
++      allocate(albrad(4, 100000))
++      albrad = -1.
++    endif
++    if (present(lsswr)) then
++      if (lsswr) then
++        do i = 1, im
++          albrad(1, col_off+i) = albdvis(i)
++          albrad(2, col_off+i) = albivis(i)
++          albrad(3, col_off+i) = albdnir(i)
++          albrad(4, col_off+i) = albinir(i)
++        enddo
++      endif
++    endif
++  endif
+ 
+   do i = 1, im
+ 
+@@ -1150,6 +1187,8 @@
+         call noahmp_options_glacier(iopt_alb, iopt_snf, iopt_tbot, iopt_stc, iopt_gla, &
+                                     iopt_sfc ,iopt_trs)
+         vegetation_frac = 0.0
++        host_fpice = -1.
++        if (esfix_d('PH3')) host_fpice = srflag(i)
+         call noahmp_glacier (                                                                      &
+           i_location           ,1                    ,cosine_zenith        ,nsnow                , &
+           nsoil                ,timestep             ,                                             &
+@@ -1235,6 +1274,21 @@
+ 
+         ice_flag = 0 
+ 
++        host_fpcv = -1.
++        if (esfix_d('PH2') .and. rainc_mp(i) > 0.) then
++          host_fpcv = 0.
++          if (srflag(i)*precipitation_forcing - (snow_mp(i)+graupel_mp(i)+ice_mp(i)) > 0.5*rainc_mp(i)) &
++            host_fpcv = 1.
++        endif
++        sw_target = -1.
++        swa = -1.
++        if (present(adjvisbmd)) then
++          if (albrad(1, col_off+i) >= 0.) then
++            swa = adjvisbmd(i)*(1.-albrad(1,col_off+i)) + adjvisdfd(i)*(1.-albrad(2,col_off+i)) &
++                + adjnirbmd(i)*(1.-albrad(3,col_off+i)) + adjnirdfd(i)*(1.-albrad(4,col_off+i))
++            if (esfix_d('SW1')) sw_target = swa
++          endif
++        endif
+         call noahmp_sflx (parameters                                          , &
+           i_location            ,j_location            ,latitude              , &
+           year_length           ,julian_day            ,cosine_zenith         , &
+@@ -1584,6 +1638,7 @@
+     end if ! flag_iter(i) .and. dry(i)
+ 
+   end do ! im loop
++  if (present(adjvisbmd) .and. first_iter) col_off = col_off + im
+ 
+       return
+ 
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+@@ -1618,3 +1618,47 @@
+   type = integer
+   intent = in
+   optional = True
++[adjvisbmd]
++  standard_name = surface_downwelling_direct_ultraviolet_and_visible_shortwave_flux
++  long_name = sfc uv+vis beam sw downward flux
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
++[adjvisdfd]
++  standard_name = surface_downwelling_diffuse_ultraviolet_and_visible_shortwave_flux
++  long_name = sfc uv+vis diff sw downward flux
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
++[adjnirbmd]
++  standard_name = surface_downwelling_direct_near_infrared_shortwave_flux
++  long_name = sfc nir beam sw downward flux
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
++[adjnirdfd]
++  standard_name = surface_downwelling_diffuse_near_infrared_shortwave_flux
++  long_name = sfc nir diff sw downward flux
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
++[lsswr]
++  standard_name = flag_for_calling_shortwave_radiation
++  long_name = logical flags for sw radiation calls
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++  optional = True
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -466,6 +466,16 @@
+ !\param[out] gflux real, conductive heat flux (\f$W/m^2\f$)
+ !>\section gen_ice3lay Three-layer Thermodynamics Sea Ice Model General Algorithm
+ !> @{
++      logical function esfixi(tag)
++      character(len=*), intent(in) :: tag
++      character(len=256), save :: v = ' '
++      logical, save :: got = .false.
++      if (.not. got) then
++        call get_environment_variable('ESFIX', v)
++        got = .true.
++      endif
++      esfixi = index(','//trim(v)//',', ','//tag//',') > 0
++      end function esfixi
+       subroutine ice3lay
+ !...................................
+ !  ---  inputs:
+@@ -591,6 +601,7 @@
+       real (kind=kind_phys) :: dt2, dt4, dt6, h1, h2, dh, wrk, wrk1,    &
+      &                         dt2i, hdi, hsni, ai, bi, a1, b1, a10, b10&
+      &,                        c1, ip, k12, k32, tsf, f1, tmelt, bmelt
++      real (kind=kind_phys) :: hold_fl, e_fl, b_fl
+ 
+       integer :: i
+ !
+@@ -609,7 +620,20 @@
+           if (hice(i) < hdi) then
+             snowd(i) = snowd(i) + hice(i) - hdi
+             hsni     = (hdi - hice(i)) * dsdi
++            hold_fl  = hice(i)
+             hice (i) = hice(i) + hsni
++            if (esfixi('FL1')) then
++!             flooded snow (heat content -li) joins both layers
++              e_fl = min(stsice(i,2)-t0c, tfi0)
++              e_fl = (hold_fl*(ci*(e_fl-tfi)-li) - hsni*li)/hice(i)
++              stsice(i,2) = tfi + (e_fl + li)/ci + t0c
++              b_fl = min(stsice(i,1)-t0c, tfi0)
++              e_fl = (hold_fl*(ci*(b_fl-tfi)-li*(one-tfi/b_fl))
++     &             - hsni*li)/hice(i)
++              b_fl = e_fl + ci*tfi + li
++              stsice(i,1) = (b_fl - sqrt(b_fl*b_fl
++     &                    - 4.0_kind_phys*ci*li*tfi))/(ci+ci) + t0c
++            endif
+           endif
+ 
+           snof(i)     = snof(i) * dwds
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
+@@ -24,6 +24,17 @@
+   !! \htmlinclude sfc_nst_run.html
+   !!
+   !> \section NSST_general_algorithm GFS Near-Surface Sea Temperature Scheme General Algorithm
++  logical function esfix_n(tag)
++    ! experiment switch (diagnostic builds only): ESFIX = comma-separated tags
++    character(len=*), intent(in) :: tag
++    character(len=256), save :: v = ' '
++    logical, save :: got = .false.
++    if (.not. got) then
++       call get_environment_variable('ESFIX', v)
++       got = .true.
++    endif
++    esfix_n = index(','//trim(v)//',', ','//tag//',') > 0
++  end function esfix_n
+   subroutine sfc_nst_run                                          &
+        ( im, hvap, cp, hfus, jcal, eps, epsm1, rvrdm1, rd, rhw0,  &  ! --- inputs:
+        pi, tgice, sbc, ps, u1, v1, usfco, vsfco, use_oceanuv, t1, &
+@@ -219,7 +230,7 @@
+     real (kind=kind_phys), dimension(im) :: xt_old, xs_old, xu_old, xv_old, xz_old, &
+          zm_old,xtts_old, xzts_old, ifd_old, tref_old, tskin_old, dt_cool_old,z_c_old
+ 
+-    real(kind=kind_phys) :: ulwflx(im), nswsfc(im)
++    real(kind=kind_phys) :: ulwflx(im), nswsfc(im), rain_rate
+     !     real(kind=kind_phys) rig(im),
+     !    &                     ulwflx(im),dlwflx(im),
+     !    &                     slrad(im),nswsfc(im)
+@@ -375,7 +386,9 @@
+                * (t1(i)-t0k))*0.02411_kp/(rho_a(i)*cp)  ! heat diffusivity
+           wetc     = 622.0_kp*le*qss(i)/(rd*t1(i)*t1(i))
+           alfac    = one / (one + (wetc*le*dwat)/(cp*dtmp)) ! wet bulb factor
+-          tem      = (1.0e3_kp * rain(i) / rho_w) * alfac * cp_w
++          rain_rate = rain(i)
++          if (esfix_n('QR1')) rain_rate = 1.0e3_kp*rain(i)/timestep   ! rain is m per step
++          tem      = (1.0e3_kp * rain_rate / rho_w) * alfac * cp_w
+           qrain(i) =  tem * (tsea-t1(i)+1.0e3_kp*(qss(i)-q0(i))*le/cp)
+ 
+           !> - Calculate input non solar heat flux as upward = positive to models here
+@@ -386,7 +399,7 @@
+           !    &hflx(i),' evap=',evap(i),' ulwflx=',ulwflx(i),' dlwflx=',dlwflx(i)
+           !    &,' omg_sh=',omg_sh,' qrain=',qrain(i)
+ 
+-          sep      = sss*(evap(i)/le-rain(i))/rho_w
++          sep      = sss*(evap(i)/le-rain_rate)/rho_w
+           ustar_a  = sqrt(stress(i)/rho_a(i))          ! air friction velocity
+           !
+           !  sensitivities of heat flux components to ts
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+@@ -15,6 +15,17 @@
+ !> \section arg_table_GFS_MP_generic_post_run Argument Table
+ !! \htmlinclude GFS_MP_generic_post_run.html
+ !!
++  logical function esfix_m(tag)
++    ! experiment switch (diagnostic builds only): ESFIX = comma-separated tags
++    character(len=*), intent(in) :: tag
++    character(len=256), save :: v = ' '
++    logical, save :: got = .false.
++    if (.not. got) then
++       call get_environment_variable('ESFIX', v)
++       got = .true.
++    endif
++    esfix_m = index(','//trim(v)//',', ','//tag//',') > 0
++  end function esfix_m
+       subroutine GFS_MP_generic_post_run(                                                                                 &
+         im, levs, kdt, tend_opt_mp, nrcm, nncl, ntcw, ntrac, imp_physics, imp_physics_gfdl, imp_physics_thompson,         &
+         imp_physics_tempo, imp_physics_nssl, imp_physics_mg, imp_physics_fer_hires, cal_pre, cplflx, cplchm, cpllnd,      &
+@@ -28,7 +39,7 @@
+         graupelprv, draincprv, drainncprv, diceprv, dsnowprv, dgraupelprv, dtp, num_diag_buckets,                         &
+         dtend, dtidx, index_of_temperature, index_of_process_mp,ldiag3d, qdiag3d,dqdt_qmicro, lssav, num_dfi_radar,       &
+         fh_dfi_radar,index_of_process_dfi_radar, ix_dfi_radar, dfi_radar_tten, radar_tten_limits, fhour, prevsq,      &
+-        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg)
++        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, con_hfus, con_cp, garea)
+ !
+       use machine, only: kind_phys
+       use calpreciptype_mod, only: calpreciptype
+@@ -38,6 +49,8 @@
+       integer, intent(in) :: imp_physics, imp_physics_gfdl, imp_physics_thompson, imp_physics_mg, imp_physics_fer_hires
+       integer, intent(in) :: imp_physics_nssl, iopt_lake_clm, iopt_lake, lkm, imp_physics_tempo
+       logical, intent(in) :: cal_pre, lssav, ldiag3d, qdiag3d, cplflx, cplchm, cpllnd, progsigma, exticeden
++      real(kind=kind_phys), intent(in) :: con_hfus, con_cp
++      real(kind=kind_phys), dimension(:), intent(in), optional :: garea
+       integer, intent(in) :: index_of_temperature,index_of_process_mp,use_lake_model(:)
+       integer, intent(in) :: imfshalcnv,imfshalcnv_gf,imfdeepcnv,imfdeepcnv_gf,imfdeepcnv_samf
+       integer, intent(in) :: num_diag_buckets
+@@ -473,6 +486,11 @@
+               crain = zero
+               csnow = rainc(i)
+             endif
++            ! convective precipitation the host calls snow froze in the atmosphere, which pays hfus
++            if (csnow > zero) then
++              if (esfix_m('PH1')) gt0(i,1) = gt0(i,1) + con_hfus*rhowater*csnow*con_g &
++                                             / (con_cp*(prsi(i,1)-prsi(i,2)))
++            endif
+ !            if (snow0(i,1)+ice0(i,1)+graupel0(i,1)+csnow > rain0(i,1)+crain) then
+ !            if (snow0(i)+ice0(i)+graupel0(i)+csnow > 0.0) then
+ !              Sfcprop%srflag(i) = 1.                   ! clu: set srflag to 'snow' (i.e. 1)
+--- sfx/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
++++ s2r/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+@@ -1042,4 +1042,28 @@
+   dimensions = ()
+   type = integer
+   intent = out
+-
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[garea]
++  standard_name = cell_area
++  long_name = grid cell area
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True

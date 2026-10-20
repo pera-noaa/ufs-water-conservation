@@ -1,0 +1,21 @@
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -92,7 +92,7 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
+-      use tm_meter, only : tm_cfl_deep
++      use tm_meter, only : tm_cfl_deep, tm_samf_substep
+ 
+       implicit none
+ !
+@@ -3430,6 +3430,9 @@
+ !
+       call tm_cfl_deep(im,km,cnvflg,kb,jmin,ktcon,eta,etad,edto,
+      &     xmb,del,dt2)
++      if (.not.hwrf_samfdeep) call tm_samf_substep(im,km,ntr,cnvflg,
++     &   kb,jmin,ktcon,kmax,eta,etad,edto,ecko,ercko,ecdo,ctr,del,
++     &   xmb,dt2,dellae,real(grav,kind=conv_wp))
+       if (.not.hwrf_samfdeep) then
+        indx = ntk - 2
+        do n = 1, ntr

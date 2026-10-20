@@ -1,0 +1,120 @@
+From cb1c1d571580755119cd65cd9571f8f4259defef Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:59:15 -0600
+Subject: [PATCH] Noah-MP glacier: book the snow the glacier code sets, not
+ create or delete it
+
+With iopt_gla = 2 the glacier ice is an untracked reservoir, and three places
+change glacier snow by assignment, with no matching flux:
+
+- snowwater_glacier resets the pack to 600 mm of ice every call ("reset the
+  glacier to 2m depth with 600mm SWE"): snowfall and rain on glaciers are
+  deleted, sublimation is supplied from nothing, and meltwater is refrozen
+  without releasing its latent heat;
+- noahmpdrv raises land-ice SWE below 0.1 mm to 0.1 mm every call;
+- snow without layers is zeroed when thin, at the end of noahmp_glacier
+  (after its water check) and in snowh2o_glacier.
+
+Book each as runoff. The liquid the reset removes leaves as surface runoff
+and the ice it adds or removes as glacier flow (runsub, like snoflow); the
+floor's added snow is negative baseflow for that call; truncated thin snow
+is glacier flow (end of noahmp_glacier) or surface runoff (snowh2o_glacier).
+Glacier behaviour is unchanged; the glacier no longer creates or deletes
+water, and the reset no longer refreezes meltwater for free.
+
+Over land ice, drain then includes solid glacier flow and is negative
+where the glacier supplies ice (under the reset, strongly so in melt
+seasons). Read as ice, the reset's former free refreeze becomes a
+sensible-heat term of 0.02-0.4 W/m2; a consumer that treats drain as
+liquid would see it as hfus times the ice supplied.
+
+Measured with a single-column harness of noahmpdrv_run (second session),
+both iopt_gla: a 26 mm snow day had all 26 mm deleted, and now books
+25.98 mm as glacier flow; sublimation created 0.47 mm/day, now 0; a
+120-day glacier column lost 860 mm, now -2.4e-13 mm; 60-day melt seasons
+lost 8-33 mm, now <= 1.1e-13 per call; without the reset the 0.1 mm
+floor created 2.3-5.9 mm/day on a melting glacier, now 0. Soil points
+are bit-for-bit unchanged.
+---
+ .../Land/Noahmp/module_sf_noahmp_glacier.F90    | 17 +++++++++++++++++
+ physics/SFC_Models/Land/Noahmp/noahmpdrv.F90    |  6 +++++-
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index 3b799002..c5642fa7 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -355,6 +355,9 @@ contains
+ #endif
+ 
+     if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow joins the glacier, booked as glacier flow like snoflow
++     ! FIXME: this is ice, but runsub/drain is read as liquid; it belongs in a frozen-runoff flux the interface lacks
++     if(isnow == 0) runsub = runsub + sneqv/dt
+      snowh = 0.0
+      sneqv = 0.0
+     end if
+@@ -2650,6 +2653,18 @@ end if   ! opt_gla == 1
+                           ponding1 ,ponding2 ,fsh    ,                 & !inout
+                           qsnbot )                                       !out
+ 
++!the reset below keeps 600 mm of ice: the liquid it removes leaves as surface runoff and
++!the ice it adds or removes is booked as glacier flow, so it creates no water
++   if(isnow < 0) then
++     ponding2 = ponding2 + sum(snliq(isnow+1:0))
++     ! FIXME: this is ice, but runsub/drain is read as liquid; it belongs in a frozen-runoff flux the interface lacks
++     snoflow  = snoflow + (sum(snice(isnow+1:0)) - 600.0)/dt
++   else
++     ! FIXME: this is ice, but runsub/drain is read as liquid; it belongs in a frozen-runoff flux the interface lacks
++     snoflow  = snoflow + (sneqv - 600.0)/dt
++     ponding2 = ponding2 + qrain*dt  ! rain the caller would add only while isnow == 0
++   end if
++
+ !reset the glacier to 2m depth with 600mm SWE
+ 
+    isnow = -3
+@@ -3345,6 +3360,8 @@ end if   ! opt_gla == 1
+    end if
+ 
+    if(snowh <= 1.e-8 .or. sneqv <= 1.e-6) then
++     ! the truncated snow leaves as surface runoff
++     if(isnow == 0) ponding2 = ponding2 + sneqv
+      snowh = 0.0
+      sneqv = 0.0
+    end if
+diff --git a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+index 5506fc34..eb4b2839 100644
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -824,6 +824,7 @@ end subroutine noahmpdrv_timestep_init
+   real (kind=kind_phys)                            :: spec_humidity_bare_2m !   out | bare ground 2-m air specfic humidity [K]
+   real (kind=kind_phys)                            :: runoff_surface        !   out | surface runoff [mm/s] 
+   real (kind=kind_phys)                            :: runoff_baseflow       !   out | baseflow runoff [mm/s]
++  real (kind=kind_phys)                            :: glacier_snow_floor    !       | snow added by the glacier floor [mm]
+   real (kind=kind_phys)                            :: par_absorbed          !   out | absorbed photosynthesis active radiation [W/m2]
+   real (kind=kind_phys)                            :: photosynthesis        !   out | total photosynthesis [umol CO2/m2/s] [+ out]
+   real (kind=kind_phys)                            :: sw_absorbed_veg       !   out | solar radiation absorbed by vegetation [W/m2]
+@@ -956,8 +957,10 @@ end subroutine noahmpdrv_timestep_init
+ !  --- variable checks and derived fields
+ !
+ 
++      glacier_snow_floor = 0.0
+       if(vegtype(i) == isice_table ) then
+         if(weasd(i) < 0.1) then
++          glacier_snow_floor = 0.1 - weasd(i)  ! booked as negative baseflow below
+           weasd(i)  = 0.1
+         end if
+       end if                                       
+@@ -1346,7 +1349,8 @@ end subroutine noahmpdrv_timestep_init
+       ecan      (i)   = evaporation_canopy
+       etran     (i)   = transpiration
+       edir      (i)   = evaporation_soil
+-      drain     (i)   = runoff_baseflow
++      ! FIXME: over land ice drain carries glacier ice and goes negative; it belongs in a frozen-runoff flux the interface lacks
++      drain     (i)   = runoff_baseflow - glacier_snow_floor/timestep
+       runoff    (i)   = runoff_surface
+ 
+       lfmassxy  (i)   = leaf_carbon
+-- 
+2.55.0
+

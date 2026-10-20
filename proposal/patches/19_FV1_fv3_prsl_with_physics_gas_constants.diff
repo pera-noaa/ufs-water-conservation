@@ -1,0 +1,20 @@
+--- a/driver/UFS/atmosphere.F90
++++ b/driver/UFS/atmosphere.F90
+@@ -155,6 +155,7 @@
+ #else
+ use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+ #endif
++use physcons,               only: con_rd, con_fvirt
+ use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
+                                   operator(-), operator(/), time_type_to_real
+ use fms_mod,                only: error_mesg, FATAL,                 &
+@@ -2295,7 +2296,8 @@
+            rTv = rdgas*IPD_Statein%tgrs(im,k)*virq_max(q_grs(:),q_min)
+ #else
+            qgrs_rad = max(qmin,IPD_Statein%qgrs(im,k,sphum))
+-           rTv = rdgas*IPD_Statein%tgrs(im,k)*(1.+zvir*qgrs_rad)
++           ! the physics' constants: it turns prsl back into density with con_rd
++           rTv = con_rd*IPD_Statein%tgrs(im,k)*(1.+con_fvirt*qgrs_rad)
+ #endif
+            if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure )   &
+                 IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) &

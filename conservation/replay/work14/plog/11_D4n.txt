@@ -1,0 +1,9 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #2 succeeded at 3856 (offset 3 lines).
+Hunk #3 succeeded at 4326 (offset 4 lines).
+Hunk #4 succeeded at 5365 (offset 5 lines).
+Hunk #5 succeeded at 7341 (offset 6 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 8109 (offset 6 lines).
+patching file UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.F90
+patching file UFSATM/ccpp/physics/physics/GWD/ugwpv1_gsldrag.meta

@@ -1,0 +1,16 @@
+--- a/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
++++ b/UFSATM/ccpp/physics/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+@@ -2343,7 +2343,12 @@
+     ! -----------------------------------------------------------------------
+ 
+     if (do_sedi_heat) then
+-        call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_ice)
++        ! the falling species brings its own heat capacity: liquid for rain and cloud water
++        if (qflag .eq. "qr" .or. qflag .eq. "ql") then
++            call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_liq)
++        else
++            call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_ice)
++        endif
+     endif
+ 
+     ! -----------------------------------------------------------------------

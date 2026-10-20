@@ -1,0 +1,12 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1271 (offset 3 lines).
+Hunk #2 succeeded at 3966 (offset 7 lines).
+Hunk #3 succeeded at 4407 (offset 7 lines).
+Hunk #4 succeeded at 5386 (offset 9 lines).
+Hunk #5 succeeded at 7403 (offset 11 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 6066 (offset 19 lines).
+patching file UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
+patching file UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.F
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Ocean/UFS/sfc_ocean.meta

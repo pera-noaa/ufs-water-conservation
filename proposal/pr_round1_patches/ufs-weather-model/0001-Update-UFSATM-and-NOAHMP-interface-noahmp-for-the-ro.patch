@@ -1,0 +1,28 @@
+From 52c8f8c264fccb54c03f8ee7de326985916195a4 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 18:40:35 -0500
+Subject: [PATCH] Update UFSATM and NOAHMP-interface/noahmp for the round-1
+ conservation bug fixes
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ NOAHMP-interface/noahmp | 2 +-
+ UFSATM                  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/NOAHMP-interface/noahmp b/NOAHMP-interface/noahmp
+index 2c7b3bc2..f77df1b2 160000
+--- a/NOAHMP-interface/noahmp
++++ b/NOAHMP-interface/noahmp
+@@ -1 +1 @@
+-Subproject commit 2c7b3bc2a8096f6232020c47507593058795102e
++Subproject commit f77df1b24d54cc1fce648aec8d2c84e2c1b53da8
+diff --git a/UFSATM b/UFSATM
+index aa0ba811..447ff088 160000
+--- a/UFSATM
++++ b/UFSATM
+@@ -1 +1 @@
+-Subproject commit aa0ba81170232b7e96f11cd8cba5c503467b8d9a
++Subproject commit 447ff0884e5e662cda1af32ddc471407ef3d7f72

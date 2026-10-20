@@ -1,0 +1,28 @@
+From 447ff0884e5e662cda1af32ddc471407ef3d7f72 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 18:40:34 -0500
+Subject: [PATCH 2/2] Update ccpp-physics and atmos_cubed_sphere for the
+ round-1 conservation bug fixes
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ ccpp/physics           | 2 +-
+ fv3/atmos_cubed_sphere | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/ccpp/physics b/ccpp/physics
+index d9b70fe..a4bee81 160000
+--- a/ccpp/physics
++++ b/ccpp/physics
+@@ -1 +1 @@
+-Subproject commit d9b70feba915022424b35aa0ab33535b9b8c6571
++Subproject commit a4bee81fbd9ffb3316f426b3304e3f93a7db9935
+diff --git a/fv3/atmos_cubed_sphere b/fv3/atmos_cubed_sphere
+index 71ff473..8ff2711 160000
+--- a/fv3/atmos_cubed_sphere
++++ b/fv3/atmos_cubed_sphere
+@@ -1 +1 @@
+-Subproject commit 71ff473b9f4254ee4e436ff4df41be09c6e78dc6
++Subproject commit 8ff2711a57b327813a5070e2d26d0cc74cd69c28

@@ -1,0 +1,303 @@
+From 65137942adfbf8e2292a889d596eedab0458a8f9 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:39:37 -0600
+Subject: [PATCH 07/13] Scalar transport and physics: remove roundoff negatives
+ without adding mass
+
+Two clips remove negative scalars, and each adds mass:
+- max(0, .) in the copy back of the monotonic transport;
+- where (scalars_2 < 0) scalars_2 = 0 in atm_srk3 before the physics.
+With the two previous commits the transport is positive definite (the
+monotonic one, and the positive-definite option), so what reaches the
+clips is roundoff. On the supercell the clips added about 1e-20 kg/m2 per
+10 minutes at dt = 8 s. With both limiters off (config_monotonic =
+config_positive_definite = false, an explicitly unbounded scheme), the
+second clip added 1.40 kg/m2 in 2 h.
+
+Fix: a column-local guard, atm_nonneg_column, replaces both clips:
+- In owned cells, the negative values are set to zero and the same mass is
+  taken from the column's positive values in proportion to their mass
+  (NCEP Office Note 506, eqs. 10-11).
+- The plain clip is kept where borrowing is wrong or undefined. In those
+  cases the result is bit for bit the old clip's (max(0, .), or the where
+  clip):
+  - a column without positive mass to borrow from (its added mass is
+    returned, for metering);
+  - a column with a NaN or Inf value, or with a weight that is not
+    positive and finite. NaN and Inf propagate exactly as before, and no
+    non-finite value enters any sum;
+  - halo cells, where rho_zz_int is not computed;
+  - TKE, which is not a conserved quantity. The other transported scalars
+    (moisture species, number concentrations, aerosol numbers) are all
+    conserved mixing ratios.
+- A column without negative values gets the old clip, bit for bit. There
+  is no reduction across cells or tasks.
+- On OpenACC builds, rho_zz is updated on the host before the physics-side
+  guard, which reads it.
+- Unlike the earlier design, the monotonic copy back again guarantees a
+  non-negative result in every column. The physics-side clip exists only
+  in builds with DO_PHYSICS.
+
+Unit tests (the red team's harness, adapted to this interface, with the
+code extracted verbatim):
+- Random columns are conserved to 1.8e-15 and leave no negatives.
+- Columns without positive mass, NaN, Inf, -0.0, zero or overflowing
+  weights and denormals all give the old clip's result. None of them
+  returns a non-finite added mass.
+- 400,000 halo/TKE columns with NaN, Inf and -0.0 match the old clips bit
+  for bit.
+- 400,000 columns without negatives are bit for bit unchanged.
+- A decomposition emulation (1, 12, 16 tasks; strips and blocks) gives
+  bitwise-identical results. The earlier domain fallback differed by 1 ulp
+  in 7-8 of 200 trials.
+
+This guard is not bit-for-bit neutral. In owned columns, roundoff negatives
+(about 1e-20 kg/m2 per 10 minutes at dt = 8 s) are now borrowed instead of
+zeroed. In the earlier runs of the same guard, Kessler differed by 1e-11
+relative at 2 h, and Thompson's differences grew like those of a known
+roundoff twin. Commits 1 and 2 alone change nothing where they do not
+trigger.
+
+Expected effect with both limiters off: what is left is the mass the plain
+clip adds in columns without positive mass of a species. The earlier
+supercell runs metered 0.33-0.36 kg/m2 by 2 h (0.25 of the precipitation),
+down from 1.40.
+Staged, not yet run: the supercell matrix (dt = 12 s and 8 s monotonic,
+positive definite, both limiters off, Kessler), the red team's
+decomposition (1, 12, 16 tasks), restart and dt = 20 s runs, and this
+guard's meter.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../dynamics/mpas_atm_time_integration.F      | 165 +++++++++++++++++-
+ 1 file changed, 158 insertions(+), 7 deletions(-)
+
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index f857bcc..b3f4d28 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -110,6 +110,10 @@ module atm_time_integration
+    real (kind=RKIND), parameter, private :: seconds_per_day = 86400.0_RKIND
+ 
+ 
++   ! modes of atm_nonneg_column
++   integer, parameter :: NONNEG_CLIP = 0     ! the plain clip only
++   integer, parameter :: NONNEG_BORROW = 1   ! borrow within the column; a column without positive mass gets the plain clip
++
+    contains
+ 
+ 
+@@ -1935,6 +1939,12 @@ module atm_time_integration
+       real (kind=RKIND), dimension(:,:), pointer :: pressure_p, rtheta_p, exner, tend_u
+       real (kind=RKIND), dimension(:,:), pointer :: rho_pp, rtheta_pp, ru_p, rw_p, pv_edge, rho_edge
+       real (kind=RKIND) :: theta_local, fac_m
++      real (kind=RKIND), dimension(:), pointer :: rdzw_mp
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz_mp
++      real (kind=RKIND), dimension(:), allocatable :: q_col, wt_col
++      real (kind=RKIND) :: added
++      integer :: nonneg_mode, nonneg_status, index_tke_mp
++      integer, pointer :: index_tke_ptr
+ 
+ #ifndef MPAS_CAM_DYCORE
+       ! Used in allocating scratch fields for physics tendencies
+@@ -2801,9 +2811,41 @@ module atm_time_integration
+ 
+       end if
+ 
+-      !simply set to zero negative mixing ratios of different water species (for now):
+-      where ( scalars_2(:,:,:) < 0.0)  &
+-         scalars_2(:,:,:) = 0.0
++      !remove negative mixing ratios before the physics: in owned cells without changing the column mass (zeroing
++      !them alone adds mass); a column without positive mass, a column with a non-finite value, halo cells and TKE
++      !(not a conserved quantity) keep the plain clip. With the monotonic or positive-definite transport this
++      !acts only on roundoff.
++      call mpas_pool_get_array(mesh, 'rdzw', rdzw_mp)
++      call mpas_pool_get_array(state, 'rho_zz', rho_zz_mp, 2)
++      MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
++      !$acc update self(rho_zz_mp)
++      MPAS_ACC_TIMER_STOP('atm_srk3: physics ACC_data_xfer')
++      index_tke_mp = -1
++      nullify(index_tke_ptr)
++      call mpas_pool_get_dimension(state, 'index_tke', index_tke_ptr)
++      if (associated(index_tke_ptr)) index_tke_mp = index_tke_ptr
++      allocate(q_col(nVertLevels), wt_col(nVertLevels))
++      do iCell = 1, nCells
++         do iScalar = 1, num_scalars
++            nonneg_mode = NONNEG_BORROW
++            if (iCell > nCellsSolve .or. iScalar == index_tke_mp) nonneg_mode = NONNEG_CLIP
++            do k = 1, nVertLevels
++               q_col(k) = scalars_2(iScalar,k,iCell)
++               if (nonneg_mode == NONNEG_CLIP) then
++                  wt_col(k) = 1.0_RKIND
++               else
++                  wt_col(k) = rho_zz_mp(k,iCell)/rdzw_mp(k)
++               end if
++            end do
++            call atm_nonneg_column(nVertLevels, q_col, wt_col, nonneg_mode, .false., added, nonneg_status)
++            do k = 1, nVertLevels
++               scalars_2(iScalar,k,iCell) = q_col(k)
++            end do
++         end do
++      end do
++      deallocate(q_col, wt_col)
++      where ( scalars_2(:,:,nCells+1:) < 0.0)  &
++         scalars_2(:,:,nCells+1:) = 0.0
+ 
+       MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
+       !$acc update device(scalars_2, rthdynten)
+@@ -5143,6 +5185,10 @@ module atm_time_integration
+ 
+       integer :: i, iCell, iEdge, k, iScalar, cell1, cell2
+       real (kind=RKIND) :: flux, scalar_weight
++      real (kind=RKIND), dimension(nVertLevels) :: q_col, wt_col
++      real (kind=RKIND) :: added
++      integer :: nonneg_mode, nonneg_status, index_tke_mono
++      integer, pointer :: index_tke_ptr
+ 
+       real (kind=RKIND), dimension(num_scalars,nVertLevels,nCells+1), intent(inout) :: scalar_tend
+       real (kind=RKIND), dimension(nVertLevels,nEdges+1), intent(in) :: uhAvg
+@@ -5294,6 +5340,12 @@ module atm_time_integration
+ 
+       !$acc enter data create(scale_arr)
+ 
++      ! TKE is not a conserved quantity: it keeps the plain clip in the copy back below
++      index_tke_mono = -1
++      nullify(index_tke_ptr)
++      call mpas_pool_get_dimension(state, 'index_tke', index_tke_ptr)
++      if (associated(index_tke_ptr)) index_tke_mono = index_tke_ptr
++
+       do iScalar = 1, num_scalars
+ 
+          !$acc parallel
+@@ -5833,18 +5885,34 @@ module atm_time_integration
+          call mpas_log_write(' icell_min, k_min ', intArgs=(/icellmax, kmax/))
+ #endif
+ 
+-         ! the update should be positive definite. but roundoff can sometimes leave small negative values
+-         ! hence the enforcement of PD in the copy back to the model state.
++         ! the update is positive definite up to roundoff (and up to the horizontal outflow of a cell exceeding its
++         ! content). Negative values left are removed in the copy back to the model state: in owned cells without
++         ! changing the column mass (zeroing them alone adds mass); a column without positive mass, a column with
++         ! a non-finite value, halo cells and TKE (not a conserved quantity) keep the plain clip max(0,.).
+ !$OMP BARRIER
+ 
+          !$acc parallel
+ 
+-         !$acc loop gang worker
++         !$acc loop gang worker private(q_col, wt_col, added, nonneg_mode, nonneg_status)
+          do iCell=cellStart,cellEnd
+             if(bdyMaskCell(iCell) <= nSpecZone) then ! regional_MPAS does spec zone update after transport.
++               nonneg_mode = NONNEG_BORROW
++               if (iCell > nCellsSolve .or. iScalar == index_tke_mono) nonneg_mode = NONNEG_CLIP
++               !$acc loop vector
++               do k=1,nVertLevels
++                  q_col(k) = scalar_new(k,iCell)
++                  if (nonneg_mode == NONNEG_CLIP) then
++                     wt_col(k) = 1.0_RKIND
++                  else if (local_advance_density) then
++                     wt_col(k) = rho_zz_int(k,iCell)/rdnw(k)
++                  else
++                     wt_col(k) = rho_zz_new(k,iCell)/rdnw(k)
++                  end if
++               end do
++               call atm_nonneg_column(nVertLevels, q_col, wt_col, nonneg_mode, .true., added, nonneg_status)
+                !$acc loop vector
+                do k=1,nVertLevels
+-                  scalars_new(iScalar,k,iCell) = max(0.0_RKIND,scalar_new(k,iCell))
++                  scalars_new(iScalar,k,iCell) = q_col(k)
+                end do
+             end if
+          end do
+@@ -5858,6 +5926,89 @@ module atm_time_integration
+    end subroutine atm_advance_scalars_mono_work
+ 
+ 
++   !-----------------------------------------------------------------------
++   !  routine atm_nonneg_column
++   !
++   !> \brief   Removes negative values from one column of a scalar without changing the column mass
++   !> \details wt(k) is the mass per unit mixing ratio of layer k (rho_zz/rdzw). use_max selects the plain clip
++   !>          this replaces: max(0,q) (true) or q = 0 where q < 0 (false). On return, status is
++   !>            0  no negative value: the plain clip was applied, which changes nothing but what it always did
++   !>               (bit for bit the old result)
++   !>            1  mode NONNEG_BORROW: the negative values were set to zero and the same mass taken from the
++   !>               column's positive values in proportion to their mass (NCEP Office Note 506, eqs. 10-11)
++   !>            2  mode NONNEG_CLIP, or a column without positive mass to borrow from: the plain clip was
++   !>               applied, and added is the mass it adds
++   !>            3  a non-finite value or a weight that is not positive and finite: the plain clip was applied
++   !>               (NaN and Inf propagate as they did) and added = 0, so no non-finite value is returned
++   !-----------------------------------------------------------------------
++   subroutine atm_nonneg_column(nz, q, wt, mode, use_max, added, status)
++
++      !$acc routine seq
++
++      implicit none
++
++      integer, intent(in) :: nz
++      real (kind=RKIND), dimension(nz), intent(inout) :: q
++      real (kind=RKIND), dimension(nz), intent(in) :: wt
++      integer, intent(in) :: mode
++      logical, intent(in) :: use_max
++      real (kind=RKIND), intent(out) :: added
++      integer, intent(out) :: status
++
++      integer :: k
++      logical :: valid
++      real (kind=RKIND) :: pos, neg, fac
++
++      pos = 0.0_RKIND
++      neg = 0.0_RKIND
++      valid = .true.
++      do k = 1, nz
++         ! .not. (abs(x) <= huge(x)) is true for NaN and for +-Inf
++         if (.not. (abs(q(k)) <= huge(q(k))) .or. .not. (abs(wt(k)) <= huge(wt(k))) .or. .not. (wt(k) > 0.0_RKIND)) &
++            valid = .false.
++         if (q(k) < 0.0_RKIND) then
++            neg = neg + q(k)*wt(k)
++         else
++            pos = pos + q(k)*wt(k)
++         end if
++      end do
++      if (.not. (abs(pos) <= huge(pos)) .or. .not. (abs(neg) <= huge(neg))) valid = .false.
++
++      added = 0.0_RKIND
++      status = 0
++      if (.not. valid) then
++         status = 3
++      else if (neg < 0.0_RKIND) then
++         if (mode == NONNEG_BORROW .and. pos + neg > 0.0_RKIND) then
++            fac = (pos + neg) / pos
++            do k = 1, nz
++               if (q(k) < 0.0_RKIND) then
++                  q(k) = 0.0_RKIND
++               else
++                  q(k) = q(k) * fac
++               end if
++            end do
++            status = 1
++            return
++         end if
++         added = -neg
++         status = 2
++      end if
++
++      ! the plain clip (statuses 0, 2 and 3)
++      if (use_max) then
++         do k = 1, nz
++            q(k) = max(0.0_RKIND, q(k))
++         end do
++      else
++         do k = 1, nz
++            if (q(k) < 0.0_RKIND) q(k) = 0.0_RKIND
++         end do
++      end if
++
++   end subroutine atm_nonneg_column
++
++
+    !-----------------------------------------------------------------------
+    !  routine atm_upwind_vert_renorm
+    !
+-- 
+2.55.0
+

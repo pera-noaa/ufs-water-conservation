@@ -1,0 +1,93 @@
+From a7a51d0a0ee75c7be1b07c6058233d1a1a9635fa Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 16:43:58 -0600
+Subject: [PATCH 15/18] Noah-MP: take the latent heats from the host
+
+Noah-MP charges the land its own latent heats for the water it evaporates
+or sublimates (hvap = 2.5104e6, hsub = 2.844e6 J/kg), but the vapour enters
+the atmosphere carrying the host's (con_hvap = 2.5e6; con_hvap + con_hfus
+= 2.83358e6 from ice). The land therefore pays 0.4 % more latent energy
+than its water carries into the atmosphere. This is the energy side of the
+water-flux fix in noahmpdrv (cf. NCAR/ccpp-physics#582).
+
+hvap, hsub and hfus become module variables (soil and glacier modules),
+set at the start of noahmpdrv_run from its con_hvap and con_hfus arguments
+(hsub = con_hvap + con_hfus), with the old values as defaults. The run
+phase already receives both, from CCPP and from NOAA-EMC/noahmp's land
+component alike, so no interface changes.
+
+Measured with in-model meters (C96 control_p8_ugwpv1, 24 h, 1.77M soil
+column-steps): the land paid +0.131 W/m2 per land column more than its
+vapour carries (0.41 % of the 31.8 W/m2 land latent heat flux, one-signed);
+with the fix exactly 0. Water is unchanged.
+---
+ .../Land/Noahmp/module_sf_noahmp_glacier.F90           |  6 +++---
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 |  6 +++---
+ physics/SFC_Models/Land/Noahmp/noahmpdrv.F90           | 10 ++++++++++
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+index 3b799002..491a3b68 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -24,9 +24,9 @@ module noahmp_glacier_globals
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 27be3b61..35bc6435 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -185,9 +185,9 @@ use machine ,   only : kind_phys
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+diff --git a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+index c203b860..01c246b5 100644
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -459,6 +459,8 @@ end subroutine noahmpdrv_timestep_init
+ 
+   use module_sf_noahmplsm,   only : gfs_stability
+   use module_sf_noahmp_glacier
++  use module_sf_noahmplsm,    only : hvap_lsm => hvap, hsub_lsm => hsub, hfus_lsm => hfus
++  use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus
+   use noahmp_tables
+ 
+   implicit none
+@@ -950,6 +952,14 @@ end subroutine noahmpdrv_timestep_init
+ !
+ !  --- Just return if external land component is activated for two-way interaction
+ !
++  ! the host's latent heats, so the land pays the latent energy its water carries in the atmosphere
++  hvap_lsm = con_hvap
++  hfus_lsm = con_hfus
++  hsub_lsm = con_hvap + con_hfus
++  hvap_gla = hvap_lsm
++  hfus_gla = hfus_lsm
++  hsub_gla = hsub_lsm
++
+   if (cpllnd .and. cpllnd2atm) return
+ 
+   first_iter = .true.
+-- 
+2.55.0
+

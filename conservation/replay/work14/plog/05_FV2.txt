@@ -1,0 +1,3 @@
+patching file driver/UFS/atmosphere.F90
+Hunk #1 succeeded at 2261 (offset 2 lines).
+Hunk #2 succeeded at 2277 (offset 2 lines).

@@ -1,0 +1,42 @@
+# mbb1/out: 120 PBL steps in 119 EMT lines (1..119), area 5.100965e+14
+ 1 P_shear (incl. EDMF momentum terms)              +2.640382e+00
+ 2   of which surface-layer term (k=1)              +1.520932e-01
+ 3 P_buoy                                           -6.876913e-02
+ 4   P_buoy > 0 part                                +6.478687e-01
+ 5 TKE floor at entry (max(q,tkmin))                +1.163012e-10
+ 6 eps, mean over the 20 substeps                   +3.559577e+00
+ 7 eps removed by the clip                          +4.501408e-03
+ 8 TKE floor in substeps (tkmnz)                    +8.615277e-01
+ 9 eps of the last substep (heated)                 +3.511852e+00
+10 dTKE/dt local (P - eps + floors)                 -1.264370e-01
+11 dTKE/dt transport (diffusion + MF + borrowing)   +2.079938e-18
+14 -dKE/dt momentum solve (total)                   +2.251103e+00
+15   surface stress work, implicit (u_new)          +1.129825e+00
+16   surface stress work, explicit (u_old)          +1.219778e+00
+17   sum of local -dKE < 0 (cooling in the KE form) -6.240856e-01
+18 heat solve: sum cp dT m - dtsfc (closure)        +2.679576e+00
+19 dissipative heating actually applied             +2.251103e+00
+20 B&B: sum of layer heating < 0                    -1.681627e-03
+21 B&B: sum of interface D < 0                      -4.238299e-03
+22 B&B: interface D from EDMF mass-flux transfer    +5.068885e-02
+23 B&B: sum of (D - D_MF) < 0 (diffusive part)      -3.654238e-03
+   TKE content in / out (J m-2, step means)      9.864962e+02 / 8.954616e+02
+   TKE content in (step 3) -> out (step 120) (J m-2) 5.817854e+02 -> 9.423795e+02  = +4.244e-03 W m-2
+   excess eps_last - (-dKE)                      +1.260749e+00
+   identity check local: P - eps_mean + floor_sub - dTKE_local = +7.466e-15
+   PBL segment (EMS s=4): r = +1.579823e-12 W m-2, sum|r| = 1.677416e-09, max|r_step| = 2.797e-11  (119 steps)
+
+# heating by form x category (W m-2 of global area)
+old       land-day +0.5102  sea-day +1.3406  land-night +0.4110  sea-night +1.2500  total +3.5119  sum(min(layer,0)) +0.0000
+perlayer  land-day +0.1423  sea-day +1.0353  land-night +0.0981  sea-night +0.9755  total +2.2511  sum(min(layer,0)) +0.0000
+BB        land-day +0.1423  sea-day +1.0353  land-night +0.0981  sea-night +0.9755  total +2.2511  sum(min(layer,0)) +0.0000
+# band(k)  old  perlayer  BB  | BB by land-day sea-day land-night sea-night | old by same
+  1-  1  +0.2819 +0.0517 +1.2302 | +0.0490 +0.5889 +0.0297 +0.5625 | +0.0231 +0.1314 +0.0130 +0.1144
+  2-  3  +0.2893 +0.1684 +0.1913 | +0.0109 +0.0876 +0.0093 +0.0834 | +0.0315 +0.1351 +0.0136 +0.1091
+  4-  6  +0.2035 +0.2759 +0.1132 | +0.0069 +0.0516 +0.0058 +0.0488 | +0.0281 +0.0937 +0.0115 +0.0702
+  7- 10  +0.2574 +0.3881 +0.0861 | +0.0080 +0.0372 +0.0072 +0.0337 | +0.0518 +0.0904 +0.0442 +0.0710
+ 11- 15  +0.5180 +0.4549 +0.0789 | +0.0084 +0.0330 +0.0073 +0.0302 | +0.1155 +0.1265 +0.1276 +0.1484
+ 16- 20  +0.6072 +0.3097 +0.0766 | +0.0083 +0.0320 +0.0063 +0.0299 | +0.1032 +0.1866 +0.0975 +0.2199
+ 21- 30  +0.7501 +0.2304 +0.1597 | +0.0222 +0.0682 +0.0117 +0.0576 | +0.1067 +0.3124 +0.0659 +0.2651
+ 31- 45  +0.3507 +0.1623 +0.1496 | +0.0188 +0.0641 +0.0103 +0.0565 | +0.0350 +0.1563 +0.0194 +0.1400
+ 46-128  +0.2539 +0.2098 +0.1656 | +0.0097 +0.0727 +0.0103 +0.0730 | +0.0154 +0.1081 +0.0184 +0.1119

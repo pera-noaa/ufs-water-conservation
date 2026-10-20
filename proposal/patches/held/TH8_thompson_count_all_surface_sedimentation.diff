@@ -1,0 +1,50 @@
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -4029,9 +4029,8 @@
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (rr(kts).gt.R1*rr_min) then
+-                  pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+-               endif 
++               ! all of the flux out of the lowest layer reaches the surface
++               pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+             enddo
+          else !if(.not. sedi_semi)
+             niter = 1
+@@ -4140,9 +4139,8 @@
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (ri(kts).gt.R1*rr_min) then
+-               pptice = pptice + sed_i(kts)*DT*onstep(2)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptice = pptice + sed_i(kts)*DT*onstep(2)
+          enddo
+       endif
+ 
+@@ -4170,9 +4168,8 @@
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (rs(kts).gt.R1*rr_min) then
+-               pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+          enddo
+       endif
+ 
+@@ -4201,9 +4198,8 @@
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (rg(kts).gt.R1*rr_min) then
+-                  pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+-               endif
++               ! all of the flux out of the lowest layer reaches the surface
++               pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+             enddo
+          else ! if(.not. sedi_semi) then 
+             niter = 1

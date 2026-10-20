@@ -1,0 +1,52 @@
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -450,7 +450,8 @@
+       precip_adv_heat_grd_v_ccpp,                                &
+       precip_adv_heat_grd_b_ccpp,                                &
+       spec_humid_sfc_veg_ccpp,                                   &
+-      spec_humid_sfc_bare_ccpp                                   &
++      spec_humid_sfc_bare_ccpp,                                  &
++      iter                                                       &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -526,6 +527,9 @@
+   real(kind=kind_phys), dimension(:)     , intent(in)    :: snoalb     ! upper bound on max albedo over deep snow
+   real(kind=kind_phys), dimension(:)     , intent(inout) :: sfalb      ! mean surface albedo [fraction]
+   logical             , dimension(:)     , intent(in)    :: flag_iter  !
++  ! optional and last: NOAA-EMC/noahmp's land component calls this routine with the original arguments
++  integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
++  logical                                                :: first_iter ! land is stepped on the first iteration only
+   integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
+   integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
+   integer                                , intent(in)    :: iopt_btr   ! option for soil moisture factor for stomatal resistance
+@@ -947,10 +951,14 @@
+ !  --- Just return if external land component is activated for two-way interaction
+ !
+   if (cpllnd .and. cpllnd2atm) return
++
++  first_iter = .true.
++  if (present(iter)) first_iter = iter == 1
+ 
+   do i = 1, im
+ 
+-    if (flag_iter(i) .and. dry(i)) then
++    ! land is stepped once: a coastal (wet and dry) cell can be re-flagged for the second iteration
++    if (flag_iter(i) .and. dry(i) .and. first_iter) then
+ 
+ !
+ !  --- variable checks and derived fields
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+@@ -1610,3 +1610,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True

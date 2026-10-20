@@ -1,0 +1,36 @@
+== /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/../energy/accepted/41_preclag_01_PL1_sfc_precip_t1_carry.diff
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #2 succeeded at 1174 (offset -1 lines).
+Hunk #3 succeeded at 2710 (offset -1 lines).
+Hunk #4 succeeded at 2736 (offset -1 lines).
+Hunk #5 succeeded at 3884 (offset -2 lines).
+Hunk #6 succeeded at 4377 (offset -3 lines).
+Hunk #7 succeeded at 5301 (offset -4 lines).
+Hunk #8 succeeded at 7352 (offset -5 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #2 succeeded at 5787 (offset -6 lines).
+patching file UFSATM/ccpp/driver/GFS_restart.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+== /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/replay/src/full14/delta_PL1_folded_into_EP1.diff
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1174 (offset -3 lines).
+Hunk #2 succeeded at 3883 (offset -6 lines).
+Hunk #3 succeeded at 4375 (offset -6 lines).
+Hunk #4 succeeded at 5298 (offset -9 lines).
+Hunk #5 succeeded at 7348 (offset -9 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 5787 (offset -18 lines).
+patching file UFSATM/ccpp/driver/GFS_restart.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta

@@ -1,0 +1,52 @@
+From b229a502d4377d5fc07b13f78e22ae2493a381af Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 17:10:16 -0600
+Subject: [PATCH 2/2] Noah-MP: condense the water for negative transpiration
+ heat on the canopy
+
+vege_flux can return a negative transpiration heat flux (fctr < 0: vapour
+condensing through the stomatal pathway). canwater takes
+etran = max(fctr/hvap, 0), so that latent heat warms the canopy but no
+water condenses: Noah-MP's water and its latent heat flux disagree.
+
+Count that condensation as dew (or frost, on a frozen canopy) on the
+canopy, through the existing qdewc/qfroc pathway. The energy solution is
+unchanged; only the water follows it.
+
+Measured with in-model meters (C96 control_p8_ugwpv1, 24 h, 1.77M soil
+column-steps, all other water-conservation fixes applied): fctr < 0 on
+13 % of column-steps, and Noah-MP's latent energy exceeded the latent
+energy of its water by 0.024 W/m2 per land column; with the fix the total
+mismatch is 0.0013 W/m2 (the canopy evaporation cap, unchanged). The fix
+adds about 8e-4 mm/day of canopy dew over land. Water closure is
+unchanged.
+---
+ physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index e3f709af..3662f154 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7332,7 +7332,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+       if (.not.frozen_canopy) then             ! barlage: change to frozen_canopy
+         etran = max( fctr/hvap, 0. )
+         qevac = max( fcev/hvap, 0. )
+-        qdewc = abs( min( fcev/hvap, 0. ) )
++        ! condensation in the transpiration pathway (fctr < 0) is dew on the canopy
++        qdewc = abs( min( fcev/hvap, 0. ) ) + abs( min( fctr/hvap, 0. ) )
+         qsubc = 0.
+         qfroc = 0.
+       else
+@@ -7340,7 +7341,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+         qevac = 0.
+         qdewc = 0.
+         qsubc = max( fcev/hsub, 0. )
+-        qfroc = abs( min( fcev/hsub, 0. ) )
++        qfroc = abs( min( fcev/hsub, 0. ) ) + abs( min( fctr/hsub, 0. ) )
+       endif
+ 
+ ! canopy water balance. for convenience allow dew to bring canliq above
+-- 
+2.55.0
+

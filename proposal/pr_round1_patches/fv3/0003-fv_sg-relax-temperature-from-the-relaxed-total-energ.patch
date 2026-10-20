@@ -1,0 +1,82 @@
+From c280b476d9b7c1d194cd96d62930dcd46494eec3 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:50 -0500
+Subject: [PATCH 3/6] fv_sg: relax temperature from the relaxed total energy
+ (nwat = 6)
+
+In the non-hydrostatic nwat = 6 branch fv_subgrid_z mixes total energy
+conservatively, then relaxes T, u, v, w and q separately. Kinetic energy is
+quadratic, so the relaxed state loses fra*(1-fra)*d**2/2 per layer pair.
+
+Set T from the relaxed total energy (cvm*T + gz + KE) with the relaxed
+state's heat capacity, so the filter conserves total energy.
+
+Measured (C96 control_p8_ugwpv1, 24 h): -1.58e-4 -> +3.0e-11 W/m2. Acts in
+the sponge only (levels 0-46); step-1 maximum 9.6e-3 K.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ model/fv_sg.F90 | 19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/model/fv_sg.F90 b/model/fv_sg.F90
+index 8cd088d..9c78934 100644
+--- a/model/fv_sg.F90
++++ b/model/fv_sg.F90
+@@ -137,13 +137,13 @@ contains
+       real, intent(in):: grav_var(isd:ied,jsd:jed,km)
+       real, intent(inout):: t_dt(is:ie,js:je,km)
+ !---------------------------Local variables-----------------------------
+-      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
++      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den, te1
+       real q0(is:ie,km,nq), qcon(is:ie,km)
+       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
+ #ifdef MULTI_GASES
+       real :: rkx, rdx, rzx, c_air
+ #endif
+-      real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
++      real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol, cvx
+       real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
+       real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
+       integer i, j, k, kk, n, m, iq, km1, im, kbot, l
+@@ -212,7 +212,7 @@ contains
+ #ifdef MULTI_GASES
+ !$OMP                                  rkx,rdx,rzx,c_air,                                    &
+ #endif
+-!$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
++!$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1,te1,cvx)
+   do 1000 j=js,je
+ 
+     do iq=1, nq
+@@ -354,6 +354,7 @@ contains
+                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
+              hd(i,k) = cpm(i)*t0(i,k) + tmp
+              te(i,k) = cvm(i)*t0(i,k) + tmp
++            te1(i,k) = te(i,k)
+               gzh(i) = gzh(i) - grav_var(i,j,k)*delz(i,j,k)
+           enddo
+        enddo
+@@ -678,6 +679,18 @@ contains
+             enddo
+          enddo
+       enddo
++      if ( .not. hydrostatic .and. nwat == 6 ) then
++! T from the relaxed total energy, so the filter conserves cvm*T + gz + KE
++         do k=1,kbot
++            do i=is,ie
++               q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
++               q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
++               cvx = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
++               t0(i,k) = (te1(i,k) + (te(i,k) - te1(i,k))*fra - gz(i,k)     &
++                       - 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)) / cvx
++            enddo
++         enddo
++      endif
+    endif
+ 
+    do k=1,kbot
+-- 
+2.31.1
+

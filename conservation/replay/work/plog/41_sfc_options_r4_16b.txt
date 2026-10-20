@@ -1,0 +1,22 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 379 (offset 7 lines).
+Hunk #2 succeeded at 1169 (offset 10 lines).
+Hunk #3 succeeded at 2560 (offset 30 lines).
+Hunk #4 succeeded at 2622 (offset 30 lines).
+Hunk #5 succeeded at 3874 (offset 33 lines).
+Hunk #6 succeeded at 4367 (offset 38 lines).
+Hunk #7 succeeded at 5287 (offset 44 lines).
+Hunk #8 succeeded at 7335 (offset 50 lines).
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 1938 (offset 42 lines).
+Hunk #2 succeeded at 5759 (offset 60 lines).
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta

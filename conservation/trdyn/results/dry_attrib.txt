@@ -1,0 +1,105 @@
+== o0
+pt_udry: rms dev at step 1 point A: 1.0877e-17, max 2.2204e-16; at step 120 point O: 2.2818e-05, max 9.8080e-04
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d            1.1481e-09   1.078e-04
+remap                         4.0296e-10   2.374e-05
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -2.5225e-22   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                 -1.9518e-22   3.331e-16
+physics total                -1.0304e-09   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    3.1941e-21   1.610e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         5.2065e-10   check: 5.2065e-10
+== a1
+pt_udry: rms dev at step 1 point A: 1.0877e-17, max 2.2204e-16; at step 120 point O: 3.7155e-14, max 4.6352e-13
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d           -1.1925e-27   2.220e-16
+remap                         6.4439e-27   1.141e-13
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -2.1055e-31   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                  2.2712e-30   4.441e-16
+physics total                -4.7941e-27   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    9.2113e-28   3.009e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         1.3805e-27   check: 1.3805e-27
+== n0
+pt_udry: rms dev at step 1 point A: 4.9123e-06, max 3.3953e-04; at step 120 point O: 2.2881e-05, max 9.8132e-04
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d            1.1389e-09   7.706e-05
+remap                         4.0361e-10   2.696e-05
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -9.2486e-19   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                 -1.0593e-22   4.441e-16
+physics total                -1.0430e-09   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    3.2542e-21   1.588e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         4.9943e-10   check: 4.9943e-10
+== i1
+pt_udry: rms dev at step 1 point A: 4.3776e-17, max 4.4409e-16; at step 120 point O: 2.2818e-05, max 9.8080e-04
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d            1.1481e-09   1.078e-04
+remap                         4.0296e-10   2.374e-05
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -2.5106e-22   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                 -1.6017e-22   4.441e-16
+physics total                -1.0304e-09   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    3.1524e-21   1.588e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         5.2065e-10   check: 5.2065e-10
+== e2
+pt_udry: rms dev at step 1 point A: 4.3776e-17, max 4.4409e-16; at step 120 point O: 3.7155e-14, max 4.6352e-13
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d           -1.1924e-27   2.220e-16
+remap                         6.4437e-27   1.139e-13
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -2.1067e-31   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                  2.2856e-30   2.220e-16
+physics total                -4.7941e-27   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    9.2120e-28   3.009e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         1.3805e-27   check: 1.3805e-27
+== e2L
+pt_udry: rms dev at step 1 point A: 4.3776e-17, max 4.4409e-16; at step 120 point O: 3.7155e-14, max 4.6352e-13
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d           -1.1924e-27   2.220e-16
+remap                         6.4437e-27   1.139e-13
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -2.1067e-31   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                  2.2856e-30   2.220e-16
+physics total                -4.7941e-27   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    9.2120e-28   3.009e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         1.3805e-27   check: 1.3805e-27
+== e2R
+pt_udry: rms dev at step 1 point A: 2.4956e-14, max 4.3410e-13; at step 60 point O: 3.7155e-14, max 4.6352e-13
+process                    sum dMS (24h)   largest 1-step increase of max|dev|
+dyn_core+tracer_2d           -6.7632e-28   0.000e+00
+remap                         3.5176e-27   8.882e-14
+other fv_dynamics             0.0000e+00   0.000e+00
+fv_subgrid_z                 -1.5882e-31   0.000e+00
+gap H>I                       0.0000e+00   0.000e+00
+statein conv                  1.4709e-30   2.220e-16
+physics total                -2.5589e-27   0.000e+00
+fill_gfs + nopbl              0.0000e+00   0.000e+00
+write-back                    4.7399e-28   2.776e-14
+fv_update_phys                0.0000e+00   0.000e+00
+gap O>A                       0.0000e+00
+TOTAL                         7.5774e-28   check: 7.5774e-28

@@ -1,0 +1,185 @@
+diff -ruN -x '*.pyc' a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:33:35.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 20:33:37.000000000 -0500
+@@ -92,8 +92,10 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
++      use energy_meter_common, only : emz, emzx
+ 
+       implicit none
++      real(kind=8) :: emh
+       real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+@@ -3768,6 +3770,11 @@
+ !               freezing of the ice part releases hfus (h is liquid-referenced)
+                 new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
+      &                      / real(cp, kind=conv_wp) * tem * tem1
++              emh = real(hfus,8)/real(cp,8)*tem*tem1
++              emz(k,1) = emz(k,1) + real(cp,8)*emh
++     &          * real(delp(i,k),8)/real(grav,8)*real(garea(i),8)
++              emzx(k,1) = max(emzx(k,1),
++     &          abs(emh)/real(delt,8)*86400.d0)
+               else
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem
+               endif
+@@ -3968,6 +3975,8 @@
+      &            - real(v1(i,k-1), kind=conv_wp)))
+               cmtq(k)   = cmtq(k)   + 0.5_conv_wp * tem
+               cmtq(k-1) = cmtq(k-1) + 0.5_conv_wp * tem
++              emz(k,12) = emz(k,12) + min(0.d0, real(tem,8))
++     &          / real(grav,8)*real(garea(i),8)
+             enddo
+             cmtu = cmtu - real(delp(i,1), kind=conv_wp)
+      &           * (new_u1(i,1) - real(u1(i,1), kind=conv_wp))
+@@ -3976,14 +3985,31 @@
+             cmtq(1) = cmtq(1) + 0.5_conv_wp * (cmtu * (new_u1(i,1)
+      &              + real(u1(i,1), kind=conv_wp)) + cmtv
+      &              * (new_v1(i,1) + real(v1(i,1), kind=conv_wp)))
++            emz(1,13) = emz(1,13) + 0.5d0*(cmtu*(new_u1(i,1)
++     &        + u1(i,1)) + cmtv*(new_v1(i,1) + v1(i,1)))
++     &        / real(grav,8)*real(garea(i),8)
+             do k = 1, km
+               new_t1(i,k) = new_t1(i,k) + cmtq(k)
+      &          / (real(cp, kind=conv_wp)
+      &          * real(delp(i,k), kind=conv_wp))
+             enddo
++            do k = 1, km
++              emz(k,3) = emz(k,3) + cmtq(k)/real(grav,8)
++     &          * real(garea(i),8)
++              emz(k,7) = emz(k,7) + min(0.d0, cmtq(k)/real(grav,8)
++     &          * real(garea(i),8))
++              emzx(k,3) = max(emzx(k,3), abs(cmtq(k))
++     &          / (real(cp,8)*real(delp(i,k),8))/real(delt,8)*86400.d0)
++            enddo
+           endif
+         enddo
+       endif
++      do k = 1, km
++        do i = 1, im
++          emz(k,6) = emz(k,6)
++     &      + real(delp(i,k),8)/real(grav,8)*real(garea(i),8)
++        enddo
++      enddo
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+diff -ruN -x '*.pyc' a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:33:35.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 20:33:37.000000000 -0500
+@@ -65,8 +65,10 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
++      use energy_meter_common, only : emz, emzx
+ 
+       implicit none
++      real(kind=8) :: emh
+       real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+@@ -2692,6 +2694,11 @@
+ !               freezing of the ice part releases hfus (h is liquid-referenced)
+                 new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
+      &                      / real(cp, kind=conv_wp) * tem * tem1
++              emh = real(hfus,8)/real(cp,8)*tem*tem1
++              emz(k,2) = emz(k,2) + real(cp,8)*emh
++     &          * real(delp(i,k),8)/real(grav,8)*real(garea(i),8)
++              emzx(k,2) = max(emzx(k,2),
++     &          abs(emh)/real(delt,8)*86400.d0)
+                 ! Water
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1)
+@@ -2793,6 +2800,8 @@
+      &            - real(v1(i,k-1), kind=conv_wp)))
+               cmtq(k)   = cmtq(k)   + 0.5_conv_wp * tem
+               cmtq(k-1) = cmtq(k-1) + 0.5_conv_wp * tem
++              emz(k,12) = emz(k,12) + min(0.d0, real(tem,8))
++     &          / real(grav,8)*real(garea(i),8)
+             enddo
+             cmtu = cmtu - real(delp(i,1), kind=conv_wp)
+      &           * (new_u1(i,1) - real(u1(i,1), kind=conv_wp))
+@@ -2801,11 +2810,22 @@
+             cmtq(1) = cmtq(1) + 0.5_conv_wp * (cmtu * (new_u1(i,1)
+      &              + real(u1(i,1), kind=conv_wp)) + cmtv
+      &              * (new_v1(i,1) + real(v1(i,1), kind=conv_wp)))
++            emz(1,13) = emz(1,13) + 0.5d0*(cmtu*(new_u1(i,1)
++     &        + u1(i,1)) + cmtv*(new_v1(i,1) + v1(i,1)))
++     &        / real(grav,8)*real(garea(i),8)
+             do k = 1, km
+               new_t1(i,k) = new_t1(i,k) + cmtq(k)
+      &          / (real(cp, kind=conv_wp)
+      &          * real(delp(i,k), kind=conv_wp))
+             enddo
++            do k = 1, km
++              emz(k,4) = emz(k,4) + cmtq(k)/real(grav,8)
++     &          * real(garea(i),8)
++              emz(k,7) = emz(k,7) + min(0.d0, cmtq(k)/real(grav,8)
++     &          * real(garea(i),8))
++              emzx(k,4) = max(emzx(k,4), abs(cmtq(k))
++     &          / (real(cp,8)*real(delp(i,k),8))/real(delt,8)*86400.d0)
++            enddo
+           endif
+         enddo
+       endif
+diff -ruN -x '*.pyc' a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90	2026-10-17 20:33:31.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90	2026-10-17 20:33:37.000000000 -0500
+@@ -2,7 +2,7 @@
+ !! GWD-segment split meter (diagnostic builds only).
+ module em_gw
+   use machine, only: kind_phys
+-  use energy_meter_common, only: emy
++  use energy_meter_common, only: emy, emz, emzx
+   implicit none
+ contains
+ !> \section arg_table_em_gw_run Argument Table
+@@ -56,6 +56,15 @@
+           e(6) = e(6) + m*(du*(ue - u0) + dv*(ve - v0))
+           e(7) = e(7) + m*(dug*dun + dvg*dvn)
+           e(8) = e(8) + m*abs(hg + kg)
++          emz(k,5) = emz(k,5) + m*hg*a
++          emz(k,8) = emz(k,8) + min(0.d0, m*hg*a)
++          emzx(k,5) = max(emzx(k,5), abs(hg)/con_cp/dtp*86400.d0)
++          emz(k,9) = emz(k,9) + m*con_cp*dtp*dtdt_ngw(i,k)*a
++          emzx(k,6) = max(emzx(k,6), abs(dtdt_ngw(i,k))*86400.d0)
++          emz(k,10) = emz(k,10) - m*(dun*(u0 + 0.5d0*dun) + dvn*(v0 + 0.5d0*dvn))*a
++          emzx(k,7) = max(emzx(k,7), abs(dun*(u0 + 0.5d0*dun) + dvn*(v0 + 0.5d0*dvn))/con_cp/dtp*86400.d0)
++          emz(k,11) = emz(k,11) - m*(du*(ue - u0) + dv*(ve - v0))*a
++          emzx(k,8) = max(emzx(k,8), abs(du*(ue - u0) + dv*(ve - v0))/con_cp/dtp*86400.d0)
+        enddo
+        emy = emy + e*a
+     enddo
+diff -ruN -x '*.pyc' a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 20:33:31.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 20:33:37.000000000 -0500
+@@ -48,6 +48,17 @@
+     integer :: s, jj, ierr
+     real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12)
+     real(kind=8) :: gbuf(8), grbuf(8)
++    real(kind=8) :: zb(200, 14), zx(200, 9)
++    integer :: kz
++    if (kdt == 100 .and. emkdt(12) /= 100) then
++       call MPI_Reduce(emz, zb, 2800, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       call MPI_Reduce(emzx, zx, 1800, MPI_DOUBLE_PRECISION, MPI_MAX, mpiroot, mpicomm, ierr)
++       if (mpirank == mpiroot) then
++          do kz = 1, levs
++             write(*,'(a,i4,23es16.8)') 'EMZ ', kz, zb(kz,:), zx(kz,:)
++          enddo
++       endif
++    endif
+     if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
+        gbuf = emy
+        if (mpirank == mpiroot) then
+diff -ruN -x '*.pyc' a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	2026-10-17 20:33:31.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	2026-10-17 20:33:37.000000000 -0500
+@@ -11,6 +11,7 @@
+   real(kind=8), save :: emg(10, emnp) = 0.d0, emx(12) = 0.d0, emf(12, emnc) = 0.d0
+   integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
+   real(kind=8), save :: emy(8) = 0.d0
++  real(kind=8), save, public :: emz(200, 14) = 0.d0, emzx(200, 9) = 0.d0
+ contains
+   subroutine em_probe(p, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                       ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)

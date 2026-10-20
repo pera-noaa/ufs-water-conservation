@@ -1,0 +1,97 @@
+From 395d1ddcedb81727848d4012a5af9667d26ef5c0 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 19:07:24 -0600
+Subject: [PATCH 3/4] Thompson: substep cloud sedimentation; cap the snow gain
+ from rain-snow collection
+
+Two parts of the C1/C2 fix that the first commit lacked.
+
+Cloud sedimentation took a single full time step, unlike rain, ice, snow
+and graupel, so where vtck*DT > dz a layer lost more cloud than it held:
+rc was clipped at R1 but qcten and the surface precipitation took the full
+flux, and the excess came from vapour. Substep it with the same Courant
+rule as the other species; with one substep the arithmetic is unchanged.
+
+Below 0 C the rain limiter can shrink the rain lost to rain-snow collection
+while the snow gain stays, so the re-closed graupel gain
+prg_rcs = -(prr_rcs + prs_rcs) went negative after graupel conservation had
+run. Cap the snow gain at the rain lost to it first.
+
+Ported from the CCPP fix (C96 control_p8_ugwpv1: these two remove the
+negative hydrometeors left at the end of the step, 2.2e-5 -> 1.3e-8 kg/m2
+over 24 h with all other fixes applied). In the MPAS supercell neither part
+changes the water budget before 0:50 (bit-identical) or removes the episodic
+residual described in the layer-mass commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/physics_wrf/module_mp_thompson.F  | 37 +++++++++++++------
+ 1 file changed, 25 insertions(+), 12 deletions(-)
+
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index 26e091ae..7036f267 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -1468,6 +1468,8 @@
+ 
+       REAL:: rgvm, delta_tp, orho, lfus2
+       REAL, DIMENSION(5):: onstep
++      REAL:: dtsed
++      INTEGER:: nstepc
+       DOUBLE PRECISION:: N0_exp, N0_min, lam_exp, lamc, lamr, lamg
+       DOUBLE PRECISION:: lami, ilami, ilamc
+       REAL:: xDc, Dc_b, Dc_g, xDi, xDr, xDs, xDg, Ds_m, Dg_m
+@@ -2649,6 +2651,8 @@
+           prr_rcs(k) = prr_rcs(k) * ratio
+           prr_rcg(k) = prr_rcg(k) * ratio
+          endif
++         ! snow cannot gain more from rain-snow collection than the rain loses to it
++         if (temp(k).lt.T_0 .and. prs_rcs(k).gt.-prr_rcs(k)) prs_rcs(k) = -prr_rcs(k)
+ 
+ !..Snow conservation.
+          sump = prs_sde(k) - prs_ihm(k) - prr_sml(k) &
+@@ -3467,20 +3471,29 @@
+ !+---+-----------------------------------------------------------------+
+ 
+       if (ANY(L_qc .eqv. .true.)) then
+-      do k = kte, kts, -1
+-         sed_c(k) = vtck(k)*rc(k)
+-         sed_n(k) = vtnck(k)*nc(k)
+-      enddo
++      ! substeps keep each layer's outflow within its content (Courant number <= 1), as for the other species
++      nstepc = 1
+       do k = ksed1(5), kts, -1
+-         odzq = 1./dzq(k)
+-         orho = 1./rho(k)
+-         qcten(k) = qcten(k) + (sed_c(k+1)-sed_c(k)) *odzq*orho
+-         ncten(k) = ncten(k) + (sed_n(k+1)-sed_n(k)) *odzq*orho
+-         rc(k) = MAX(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*DT)
+-         nc(k) = MAX(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*DT)
++         if (vtck(k) .gt. 0.) nstepc = MAX(nstepc, INT(DT*vtck(k)/dzq(k) + 1.))
++      enddo
++      onstep(5) = 1./REAL(nstepc)
++      dtsed = DT*onstep(5)
++      do n = 1, nstepc
++         do k = kte, kts, -1
++            sed_c(k) = vtck(k)*rc(k)
++            sed_n(k) = vtnck(k)*nc(k)
++         enddo
++         do k = ksed1(5), kts, -1
++            odzq = 1./dzq(k)
++            orho = onstep(5)/rho(k)
++            qcten(k) = qcten(k) + (sed_c(k+1)-sed_c(k)) *odzq*orho
++            ncten(k) = ncten(k) + (sed_n(k+1)-sed_n(k)) *odzq*orho
++            rc(k) = MAX(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*dtsed)
++            nc(k) = MAX(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*dtsed)
++         enddo
++         ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++         if (ksed1(5) .ge. kts) pptrain = pptrain + sed_c(kts)*dtsed
+       enddo
+-      ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
+-      if (ksed1(5) .ge. kts) pptrain = pptrain + sed_c(kts)*DT
+       endif
+ 
+ !+---+-----------------------------------------------------------------+
+-- 
+2.55.0
+

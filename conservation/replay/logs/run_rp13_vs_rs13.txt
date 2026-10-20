@@ -1,0 +1,4 @@
+atmf*.nc: 30 files; byte-identical 30, all variables bitwise (metadata differs) 0
+sfcf*.nc: 30 files; byte-identical 30, all variables bitwise (metadata differs) 0
+RESTART/*: 76 files; byte-identical 76, all variables bitwise (metadata differs) 0
+BITWISE IDENTICAL

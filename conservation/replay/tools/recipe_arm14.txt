@@ -1,0 +1,33 @@
+# bug-fix arm of full14 (default-off gate arm gB14): series rows that are unconditional bug fixes, as-cut where the
+# series row is rebased on option context (38: ensfc2 13 as cut; 57: ensfc2 12_sfc_NM10r as cut)
+01_FX1 P . 1 $R/patches/01_FX1.diff
+02_SG1 P . 1 $R/patches/02_SG1.diff
+03_CP1 P . 1 $R/patches/03_CP1.diff
+04_R1 P . 1 $R/patches/04_R1.diff
+05_FV2 P UFSATM/fv3/atmos_cubed_sphere 1 $R/patches/05_FV2.diff
+07_D3A P . 1 $R/patches/07_D3A.diff
+12_NM12 P UFSATM/ccpp/physics 1 $R/patches/12_NM12.diff
+23_F3_01a P . 1 $R/patches/23_F3_01a.diff
+25_SAMF32 P . 1 $R/patches/25_SAMF32.diff
+26_TOPT P . 1 $R/patches/26_TOPT.diff
+27_T1_02b P UFSATM/ccpp/physics 1 $R/patches/27_T1_02b.diff
+29_INLQ_04 P . 1 $R/patches/29_INLQ_04.diff
+31_SI1 P . 2 $R/patches/31_SI1.diff
+32_SI2 P . 2 $R/patches/32_SI2.diff
+33_NP1 P . 2 $R/patches/33_NP1.diff
+34_QR1 P . 2 $R/patches/34_QR1.diff
+35_CMC P . 2 $R/patches/35_CMC.diff
+36_FL1 P . 2 $R/patches/36_FL1.diff
+38_SL2_ascut P . 2 $A/24_ensfc2_13_sfc_SL2.diff
+39_CS1 P . 2 $R/patches/39_CS1.diff
+40_CB1 P . 2 $R/patches/40_CB1.diff
+43_TH8-TH9_unconditional P . 1 $R/patches/43_TH8-TH9_unconditional.diff
+47_MYNN01 P . 1 $R/patches/47_MYNN01.diff
+48_MYNN01b P . 1 $R/patches/48_MYNN01b.diff
+49_GFDL02 P . 1 $R/patches/49_GFDL02.diff
+52_PBL05 P . 1 $R/patches/52_PBL05.diff
+54_GFDL07 P . 1 $R/patches/54_GFDL07.diff
+55_SAMF08 P . 1 $R/patches/55_SAMF08.diff
+56_NOFMA P . 1 $R/patches/56_NOFMA.diff
+57_NM10r_ascut P . 2 $S2/12_sfc_NM10r.diff
+CMP $E/gB14/ufs-weather-model

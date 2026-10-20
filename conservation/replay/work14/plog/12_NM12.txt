@@ -1,0 +1,2 @@
+patching file physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+patching file physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90

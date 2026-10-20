@@ -1,0 +1,166 @@
+From 22d1469290591fa887654868dbe85885714470df Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 20:36:51 -0600
+Subject: [PATCH 1/2] Monotonic scalar transport: remove negatives without
+ adding mass
+
+The monotonic (FCT) scalar transport ends with scalars_new = max(0, scalar_new),
+described as removing roundoff. The upwind part of the update is positive
+definite only while the vertical Courant number is at most 1. Above that,
+for example in a deep updraft, the update leaves real negative values. The
+clip zeroes them and the mass appears from nowhere.
+
+Measured on the idealized supercell (84x84 doubly periodic mesh, dx = 2 km,
+40 levels, dz = 500 m, Thompson microphysics with its water fixes, no
+surface fluxes, double precision, 2 h). With dt = 12 s the vertical Courant
+number reaches 1.17. Domain water W + accumulated precipitation P gains
+6.05e-5 kg/m2 (3.8e-5 of P), in steps at 0:50-1:20 and 1:30-1:40, exactly
+when the Courant number exceeds 1. A meter on this clip accounts for all of
+it at every 10-minute output. Kessler (Courant number at most 0.96) and
+dt = 8 s (at most 0.78) close to roundoff without this change.
+
+Fix: in the copy back, zero the negative values and take the same mass
+from the column's positive values, in proportion to their mass (NCEP
+Office Note 506, eqs. 10-11; Han et al. 2022, doi:10.25923/5051-3r70).
+The weights are the density the update divided by (rho_zz_int or
+rho_zz_new) over rdzw. A column without negative values is unchanged, bit
+for bit. A column whose mass is not positive is left as it is, so the
+clip before the physics handles it (next commit). The routine
+atm_nonneg_column does this and is shared with that clip.
+
+After (dt = 12 s, monotonic): |W + P - (W0 + P0)| <= 1.4e-14 kg/m2 at
+every output (before: 6.05e-5).
+- The fix moved 5.7e-5 kg/m2 of water within columns, and none between
+  columns.
+- The largest change to a column's positive values was 0.6 %.
+- Max w is 48.6 -> 48.7 m/s. Domain-mean P at 2 h is 1.5755 -> 1.5747
+  kg/m2.
+- dt = 8 s and Kessler still close to roundoff. They are not bit-identical
+  to before: the old clip also zeroed roundoff negatives (about 1e-20
+  kg/m2 per 10 minutes), which are now conserved instead. Kessler
+  differences are 1e-11 relative at 2 h. Thompson's differences grow like
+  a known roundoff twin of the same run.
+- The rain number concentration (nr) changes by at most 1e-8 #/m2 per
+  window through this clip.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../dynamics/mpas_atm_time_integration.F      | 80 ++++++++++++++++++-
+ 1 file changed, 76 insertions(+), 4 deletions(-)
+
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index 6f23b939..1d8155b7 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -5129,6 +5129,8 @@ module atm_time_integration
+ 
+       integer :: i, iCell, iEdge, k, iScalar, cell1, cell2
+       real (kind=RKIND) :: flux, scalar_weight
++      real (kind=RKIND), dimension(nVertLevels) :: q_col, wt_col
++      real (kind=RKIND) :: added
+ 
+       real (kind=RKIND), dimension(num_scalars,nVertLevels,nCells+1), intent(inout) :: scalar_tend
+       real (kind=RKIND), dimension(nVertLevels,nEdges+1), intent(in) :: uhAvg
+@@ -5760,18 +5762,30 @@ module atm_time_integration
+          call mpas_log_write(' icell_min, k_min ', intArgs=(/icellmax, kmax/))
+ #endif
+ 
+-         ! the update should be positive definite. but roundoff can sometimes leave small negative values
+-         ! hence the enforcement of PD in the copy back to the model state.
++         ! the update is positive definite only while the vertical Courant number is at most 1; beyond that, and
++         ! from roundoff, it can leave negative values. They are removed in the copy back to the model state
++         ! without changing the column mass (zeroing them alone adds mass); a column whose mass is not positive
++         ! is left for the clip before the microphysics.
+ !$OMP BARRIER
+ 
+          !$acc parallel
+ 
+-         !$acc loop gang worker
++         !$acc loop gang worker private(q_col, wt_col, added)
+          do iCell=cellStart,cellEnd
+             if(bdyMaskCell(iCell) <= nSpecZone) then ! regional_MPAS does spec zone update after transport.
+                !$acc loop vector
+                do k=1,nVertLevels
+-                  scalars_new(iScalar,k,iCell) = max(0.0_RKIND,scalar_new(k,iCell))
++                  q_col(k) = scalar_new(k,iCell)
++                  if (local_advance_density) then
++                     wt_col(k) = rho_zz_int(k,iCell)/rdnw(k)
++                  else
++                     wt_col(k) = rho_zz_new(k,iCell)/rdnw(k)
++                  end if
++               end do
++               call atm_nonneg_column(nVertLevels, q_col, wt_col, .false., added)
++               !$acc loop vector
++               do k=1,nVertLevels
++                  scalars_new(iScalar,k,iCell) = q_col(k)
+                end do
+             end if
+          end do
+@@ -5785,6 +5799,64 @@ module atm_time_integration
+    end subroutine atm_advance_scalars_mono_work
+ 
+ 
++   !-----------------------------------------------------------------------
++   !  routine atm_nonneg_column
++   !
++   !> \brief   Removes negative values from one column of a scalar without changing the column mass
++   !> \details Negative values are set to zero and the same mass is taken from the column's positive values
++   !>          in proportion to their mass (NCEP Office Note 506, eqs. 10-11). A column without negative values
++   !>          is returned unchanged, bit for bit. Where the column mass is not positive nothing can be
++   !>          borrowed: with zero_nonpositive the column is set to zero and added returns the mass that adds;
++   !>          otherwise the column is left unchanged (added = 0) for a later call to resolve.
++   !>          wt(k) is the mass per unit mixing ratio of layer k (rho_zz/rdzw).
++   !-----------------------------------------------------------------------
++   subroutine atm_nonneg_column(nz, q, wt, zero_nonpositive, added)
++
++      !$acc routine seq
++
++      implicit none
++
++      integer, intent(in) :: nz
++      real (kind=RKIND), dimension(nz), intent(inout) :: q
++      real (kind=RKIND), dimension(nz), intent(in) :: wt
++      logical, intent(in) :: zero_nonpositive
++      real (kind=RKIND), intent(out) :: added
++
++      integer :: k
++      real (kind=RKIND) :: pos, neg, fac
++
++      pos = 0.0_RKIND
++      neg = 0.0_RKIND
++      do k = 1, nz
++         if (q(k) < 0.0_RKIND) then
++            neg = neg + q(k)*wt(k)
++         else
++            pos = pos + q(k)*wt(k)
++         end if
++      end do
++
++      added = 0.0_RKIND
++      if (neg >= 0.0_RKIND) return
++
++      if (pos + neg > 0.0_RKIND) then
++         fac = (pos + neg) / pos
++         do k = 1, nz
++            if (q(k) < 0.0_RKIND) then
++               q(k) = 0.0_RKIND
++            else
++               q(k) = q(k) * fac
++            end if
++         end do
++      else if (zero_nonpositive) then
++         added = -(pos + neg)
++         do k = 1, nz
++            q(k) = 0.0_RKIND
++         end do
++      end if
++
++   end subroutine atm_nonneg_column
++
++
+    subroutine atm_compute_dyn_tend(tend, tend_physics, state, diag, mesh, diag_physics, configs, nVertLevels, rk_step, dynamics_substep, dt, &
+                                    cellStart, cellEnd, vertexStart, vertexEnd, edgeStart, edgeEnd, &
+                                    cellSolveStart, cellSolveEnd, vertexSolveStart, vertexSolveEnd, edgeSolveStart, edgeSolveEnd)
+-- 
+2.55.0
+

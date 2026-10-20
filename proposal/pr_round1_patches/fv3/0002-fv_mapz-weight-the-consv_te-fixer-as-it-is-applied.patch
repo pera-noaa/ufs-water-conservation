@@ -1,0 +1,56 @@
+From c93d5ba3331a3ccf4e7cac61071679a4a53c8ed5 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:50 -0500
+Subject: [PATCH 2/6] fv_mapz: weight the consv_te fixer as it is applied
+
+The consv_te fixer turns the global energy deficit into a temperature
+increment with the weight cv_air*sum(pkz*delp), but applies it as
+pt + dtmp*pkz, which (divided by (1+r_vir*qv)*(1-qc)) heats the moist heat
+capacity cvm. It delivers the intended energy times the mass-weighted
+cvm/(cv_air*(1+r_vir*qv)*(1-qc)).
+
+In the non-hydrostatic MOIST_CAPPA/USE_COND branch, sum
+cvm*pkz*delp/(cv_air*(1+r_vir*qv)*(1-qc)) for the weight.
+
+Measured (C96 control_p8_ugwpv1, 24 h, 64-bit dycore): intended minus
+delivered -5.5e-4 -> -3.6e-10 W/m2. Forecast at noise: T rms 0.148 K against
+0.149 K for consv_te = 0.999. With do_sat_adj the weight is exact to first
+order only (it uses the pre-adjustment q).
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ model/fv_mapz.F90 | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/model/fv_mapz.F90 b/model/fv_mapz.F90
+index faa606b..d9a22f8 100644
+--- a/model/fv_mapz.F90
++++ b/model/fv_mapz.F90
+@@ -776,6 +776,22 @@ if( last_step .and. (.not.do_adiabatic_init)  ) then
+                zsum1(i,j) = zsum1(i,j) + pkz(i,j,k)*delp(i,j,k)
+             enddo
+          enddo
++#if defined(MOIST_CAPPA) && defined(USE_COND) && !defined(MULTI_GASES)
++         if ( .not. hydrostatic ) then
++! weight as the correction is applied: pt+dtmp*pkz is divided by (1+r_vir*qv)*(1-qc) and heats cvm
++            do i=is,ie
++               zsum1(i,j) = 0.
++            enddo
++            do k=1,km
++               call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
++                             ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
++               do i=is,ie
++                  zsum1(i,j) = zsum1(i,j) + cvm(i)*pkz(i,j,k)*delp(i,j,k)   &
++                             / (cv_air*(1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
++               enddo
++            enddo
++         endif
++#endif
+          if ( hydrostatic ) then
+             do i=is,ie
+                zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)
+-- 
+2.31.1
+

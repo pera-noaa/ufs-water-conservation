@@ -1,0 +1,346 @@
+From 6d2b0363a5bf02d26bd89053d6c145d89eb56eba Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 19:55:06 -0600
+Subject: [PATCH 1/3] TEMPO: close the water budget (settling, graupel
+ re-closure, sedimentation density, clips)
+
+Ports of four scheme-internal fixes measured and tested in the CCPP copy of
+Thompson in UFS (ufs-community/ccpp-physics fixes C1, C2, C3, M1; C96
+control_p8_ugwpv1 with in-model water meters). There, together with the
+driver fixes, they reduce the microphysics' loss of about 0.3 % of
+grid-scale precipitation to about 2e-8 of it; closing to rounding also needs
+M5, the third commit of this series. TEMPO keeps the same logic in
+restructured form:
+
+C1  Cloud water settling out of the lowest layer (cloud_precip) entered only
+    the freezing-rain diagnostic. Add it to rain_precip after that
+    diagnostic and before the frozen fraction, so that the fraction's total
+    includes it. Cloud sedimentation also took one full time step where
+    rain, ice, snow and graupel substep, so where vt*dt > dz a layer lost
+    more cloud than it held and the clips filled the overdraft from vapour.
+    Substep it with the same Courant rule (at every level with a nonzero
+    fall speed); with one substep the arithmetic is unchanged.
+C2  check_over_depletion rescales the rain and ice (snow) losses to rain-ice
+    and, below freezing, rain-snow collection, but not the graupel gains
+    prg_rci and prg_rcs, so the limiters created graupel. Recompute both
+    after the limiters, with their graupel volume (this version's own volume
+    expressions). Below freezing the rain limiter can shrink the rain lost
+    to rain-snow collection while the snow gain stays, which would make the
+    recomputed prg_rcs negative: cap the snow gain at the rain lost to it
+    first.
+C3  Between the tendency update and sedimentation, rho was recomputed three
+    times from the temperature after latent heating, and all mass
+    conversions through sedimentation used it. Keep rho at the entry
+    density; pass the updated density (rhon) only to thermo_vars, for fall
+    speeds and ventilation.
+M1  Condensate ending the step at or below r1 was deleted by the final
+    clips. Exchange it with vapour first, with lvap (cloud, rain) or lsub
+    (ice, snow, graupel).
+The UFS series' fifth fix of this kind (M2: count all of the lowest layer's
+sedimentation as precipitation, not only above low_limit_mass_for_precip)
+is held separately. The column numbers below were measured with it; without
+it, the rain leaving the lowest layer below that limit is uncounted again
+(not re-measured here).
+
+And one fix of this version's own (v3.0.5 and later already have it):
+
+F1  Standard (flux-form) rain and graupel sedimentation fixed the number of
+    substeps from the fall speeds before the loop, then recomputed the fall
+    speeds after every substep, so with faster fall speeds a layer could
+    lose more than it held. The overdraft became negative condensate that
+    the clips filled with created water: up to 3.7 kg/m2 in one call of a
+    random column and 1.4e5 kg/m2 in a single graupel layer (dt = 600 s,
+    hail-aware). The recomputation is commented out exactly as in v3.0.5,
+    so the substeps keep every layer's outflow within its content. This
+    changes behaviour with semi_sedi_flag off: the fall speeds stay those
+    of the start of the step (as from v3.0.5), and snow, which takes the
+    rain fall speed for its boost, sees those too. In the test column below
+    the hour's precipitation changes by +2.3e-2 kg/m2 (+7.6e-4) at 20 s and
+    +5.6e-3 kg/m2 (+1.8e-4) at 60 s.
+
+Measured with TEMPO's 59-level test column (test/data/mpas_59lev_test.txt),
+full microphysics, and a water-closure check of every call against the entry
+dry-air density (gfortran, double precision): sum(W1 - W0 + P)/sum(P), 20 s
+x 180 / 60 s x 60 steps. Standard sedimentation: 4.2e-5 / 1.1e-3 before,
+2.9e-8 / 4.3e-8 after; the remaining residual is water created at up to
+2.2e-8 kg/m2 per step, 4.8e-9 per step on average at 20 s and 2.2e-8 at 60
+s, which the third commit removes. With semi-Lagrangian sedimentation:
+4.1e-3 / 2.7e-3 before, 3.3e-3 / 2.2e-3 after; the rest is the next two
+commits. (In this version tempo_init resets tempo_cfgs, so the test passes
+semi_sedi_flag to tempo_init.)
+
+The cloud substepping and the cap do not act in that column (its result is
+bit for bit the same without them). Two one-call cases (dt = 600 s) do:
+
+- fog only in a 5 m lowest layer (Courant number 5.6), microphysics off:
+  without substeps the surface received 5.6 times the cloud the layer held
+  (0.051 against 0.0091 kg/m2), the excess drawn from the layer's vapour;
+  with the 6 substeps, 1.000 times and no vapour drawn.
+- cold rain and snow, one level per combination of 258-270 K and rain and
+  snow contents of 1e-5 to 1e-3 kg/kg: the rain limiter left one level's
+  re-closed prg_rcs at -1.5e-8 kg m-3 s-1, 9.1e-4 kg/m2 of negative graupel
+  that the intermediate checks then deleted (water created); with the cap
+  the call's residual is 3.2e-9 kg/m2, the level the third commit removes.
+
+Not changed here: the intermediate *_check_and_update calls overwrite the
+tendencies of species at or below r1 mid-step, which deletes water; the
+third commit sends it to vapour instead.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_mp_tempo_main.F90 | 139 +++++++++++++++++++++++++----------
+ 1 file changed, 101 insertions(+), 38 deletions(-)
+
+diff --git a/src/module_mp_tempo_main.F90 b/src/module_mp_tempo_main.F90
+index 5b2aca9..c679965 100644
+--- a/src/module_mp_tempo_main.F90
++++ b/src/module_mp_tempo_main.F90
+@@ -3,7 +3,7 @@ module module_mp_tempo_main
+   use module_mp_tempo_cfgs, only : ty_tempo_cfgs
+   use module_mp_tempo_params, only : wp, sp, dp, &
+     min_qv, roverrv, rdry, r1, r2, nt_c_max, t0, nrhg, rho_g, &
+-    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default
++    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default, lsub
+   use module_mp_tempo_utils, only : get_nuc, get_constant_cloud_number, snow_moments, calc_rslf, calc_rsif
+   use module_mp_tempo_diags, only : reflectivity_10cm, effective_radius, max_hail_diam, &
+     freezing_rain
+@@ -125,6 +125,8 @@ module module_mp_tempo_main
+     ! thermodynamic variables
+     real(wp), dimension(kts:kte) :: temp, pres, qv !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: rho, rhof, rhof2 !! thermodynamic variables
++    real(wp), dimension(kts:kte) :: rhon !! density after latent heating, for fall speeds only
++    real(wp) :: xcl
+     real(wp), dimension(kts:kte) :: qvs, qvsi, delqvs !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: satw, sati, ssatw, ssati !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: diffu, visco, vsc2, tcond, lvap, ocp, lvt2 !! thermodynamic variables
+@@ -422,12 +424,14 @@ module module_mp_tempo_main
+     call sum_tendencies(rho, temp, idx_bg, lvap, ocp, tend, tten, qvten, qcten, &
+       ncten, qiten, niten, qsten, qrten, nrten, qgten, ngten, qbten)
+ 
++    ! rho stays the entry density so sedimentation conserves the host's column mass; rhon is only for
++    ! fall speeds and ventilation
+     ! update after tendencies applied ------------------------------------------------------------
+     do k = 1, nz
+       temp(k) = t1d(k) + tten(k)*global_dt
+       tempc = temp(k) - t0
+       qv(k) = max(min_qv, qv1d(k) + qvten(k)*global_dt)
+-      rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++      rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       nwfaten(k) = nwfaten(k) - (tend%pna_rca(k) + tend%pna_sca(k) + tend%pna_gca(k) + &
+         tend%pni_iha(k)) / rho(k)
+       nifaten(k) = nifaten(k) - (tend%pnd_rcd(k) + tend%pnd_scd(k) + tend%pnd_gcd(k)) / rho(k)
+@@ -486,7 +490,7 @@ module module_mp_tempo_main
+       qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+       qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
+ 
+-    call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++    call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+       satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+       supersaturated)
+ 
+@@ -515,10 +519,10 @@ module module_mp_tempo_main
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*global_dt)
+         temp(k) = t1d(k) + tten(k)*global_dt
+-        rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++        rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       enddo 
+       
+-      call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++      call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+       satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+       supersaturated)
+     endif 
+@@ -543,10 +547,10 @@ module module_mp_tempo_main
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*global_dt)
+         temp(k) = t1d(k) + tten(k)*global_dt
+-        rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++        rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       enddo 
+         
+-      call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++      call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+         satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+         supersaturated)
+     endif 
+@@ -582,13 +586,15 @@ module module_mp_tempo_main
+             steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%rain_precip)
+           call sedimentation(xr=nr, vt=vtnr, dz1d=dz1d, rho=rho, xten=nrten, limit=r2, &
+             steps=substeps_sedi, ktop_sedi=ktop_sedi)                 
+-          vtrr = 0._wp
+-          vtnr = 0._wp
+-          xrx = qr1d
+-          xnx = nr1d
+-          call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r) 
+-          call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
+-            vt=vtrr, vtn=vtnr)
++          ! the fall speeds stay those the substeps were counted for (as from v3.0.5): recomputed
++          ! here, a layer could lose more than it holds
++          ! vtrr = 0._wp
++          ! vtnr = 0._wp
++          ! xrx = qr1d
++          ! xnx = nr1d
++          ! call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r)
++          ! call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
++          !   vt=vtrr, vtn=vtnr)
+         enddo
+       endif 
+     endif
+@@ -635,21 +641,23 @@ module module_mp_tempo_main
+             steps=substeps_sedi, ktop_sedi=ktop_sedi)
+           call sedimentation(xr=rb, vt=vtrg, dz1d=dz1d, rho=rho, xten=qbten, &
+             limit=meters3_to_liters*r1/rho_g(nrhg), steps=substeps_sedi, ktop_sedi=ktop_sedi)
+-          vtrg = 0._wp
+-          vtng = 0._wp
+-          xrx = qg1d
+-          if (present(ng1d) .and. present(qb1d)) then
+-            if (.not. allocated(xngx)) allocate(xngx(nz), source=0._wp)
+-            if (.not. allocated(xqbx)) allocate(xqbx(nz), source=0._wp)
+-            xngx = ng1d
+-            xqbx = qb1d
+-          endif 
+-          call graupel_check_and_update(rho=rho, l_qg=l_qg, qg1d=xrx, ng1d=xngx, &
+-            qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+-            qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
+-          call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
+-            l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
+-            vt=vtrg, vtn=vtng)
++          ! the fall speeds stay those the substeps were counted for (as from v3.0.5): recomputed
++          ! here, a layer could lose more than it holds
++          ! vtrg = 0._wp
++          ! vtng = 0._wp
++          ! xrx = qg1d
++          ! if (present(ng1d) .and. present(qb1d)) then
++          !   if (.not. allocated(xngx)) allocate(xngx(nz), source=0._wp)
++          !   if (.not. allocated(xqbx)) allocate(xqbx(nz), source=0._wp)
++          !   xngx = ng1d
++          !   xqbx = qb1d
++          ! endif
++          ! call graupel_check_and_update(rho=rho, l_qg=l_qg, qg1d=xrx, ng1d=xngx, &
++          !   qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
++          !   qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
++          ! call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
++          !   l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
++          !   vt=vtrg, vtn=vtng)
+         enddo
+       endif 
+     endif
+@@ -683,10 +691,17 @@ module module_mp_tempo_main
+     substeps_sedi = 1
+     if (any(l_qc)) then
+       call cloud_fallspeed(rhof, w1d, l_qc, rc, nc, ilamc, dz1d, vtrc, vtnc, ktop_sedi)
+-      call sedimentation(xr=rc, vt=vtrc, dz1d=dz1d, rho=rho, xten=qcten, limit=r1, &
+-        steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%cloud_precip)
+-      call sedimentation(xr=nc, vt=vtnc, dz1d=dz1d, rho=rho, xten=ncten, limit=r2, &
+-        steps=substeps_sedi, ktop_sedi=ktop_sedi)
++      ! substeps keep each layer's outflow within its content (Courant number <= 1), as for the other species
++      do k = 1, ktop_sedi
++        if (max(vtrc(k), vtnc(k)) > 0._wp) substeps_sedi = &
++          max(substeps_sedi, int(global_dt/(dz1d(k)/max(vtrc(k), vtnc(k))) + 1._wp))
++      enddo
++      do n = 1, substeps_sedi
++        call sedimentation(xr=rc, vt=vtrc, dz1d=dz1d, rho=rho, xten=qcten, limit=r1, &
++          steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%cloud_precip)
++        call sedimentation(xr=nc, vt=vtnc, dz1d=dz1d, rho=rho, xten=ncten, limit=r2, &
++          steps=substeps_sedi, ktop_sedi=ktop_sedi)
++      enddo
+     endif 
+ 
+     ! after sedimentation freeze all cloud water below hgfrz temperature
+@@ -697,6 +712,40 @@ module module_mp_tempo_main
+         qcten=qcten, ncten=ncten, tten=tten, ncsave=ncsave)
+     endif 
+ 
++    ! condensate the final clips would delete is exchanged with vapour (with its latent heat) instead
++    do k = 1, nz
++      xcl = qc1d(k) + qcten(k)*dt
++      if (xcl <= r1) then
++        qcten(k) = qcten(k) - xcl*global_inverse_dt
++        qvten(k) = qvten(k) + xcl*global_inverse_dt
++        tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*global_inverse_dt
++      endif
++      xcl = qr1d(k) + qrten(k)*dt
++      if (xcl <= r1) then
++        qrten(k) = qrten(k) - xcl*global_inverse_dt
++        qvten(k) = qvten(k) + xcl*global_inverse_dt
++        tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*global_inverse_dt
++      endif
++      xcl = qi1d(k) + qiten(k)*dt
++      if (xcl <= r1) then
++        qiten(k) = qiten(k) - xcl*global_inverse_dt
++        qvten(k) = qvten(k) + xcl*global_inverse_dt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++      endif
++      xcl = qs1d(k) + qsten(k)*dt
++      if (xcl <= r1) then
++        qsten(k) = qsten(k) - xcl*global_inverse_dt
++        qvten(k) = qvten(k) + xcl*global_inverse_dt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++      endif
++      xcl = qg1d(k) + qgten(k)*dt
++      if (xcl <= r1) then
++        qgten(k) = qgten(k) - xcl*global_inverse_dt
++        qvten(k) = qvten(k) + xcl*global_inverse_dt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++      endif
++    enddo
++
+     ! final update -------------------------------------------------------------------------------
+     do k = 1, nz
+       t1d(k)  = t1d(k) + tten(k)*global_dt
+@@ -743,6 +792,14 @@ module module_mp_tempo_main
+       qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
+ 
+     ! diagnostic output --------------------------------------------------------------------------
++    ! freezing rain
++    call freezing_rain(temp=temp(1), rain_precip=tempo_main_diags%rain_precip, &
++      cloud_precip=tempo_main_diags%cloud_precip, &
++      frz_rain=tempo_main_diags%frz_rain_precip)
++
++    ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++    tempo_main_diags%rain_precip = tempo_main_diags%rain_precip + tempo_main_diags%cloud_precip
++
+     ! frozen fraction
+     tempo_main_diags%frozen_fraction = &
+       (tempo_main_diags%ice_liquid_equiv_precip + tempo_main_diags%snow_liquid_equiv_precip + &
+@@ -750,11 +807,6 @@ module module_mp_tempo_main
+       (tempo_main_diags%ice_liquid_equiv_precip + tempo_main_diags%snow_liquid_equiv_precip + &
+       tempo_main_diags%graupel_liquid_equiv_precip + tempo_main_diags%rain_precip + r1)
+ 
+-    ! freezing rain
+-    call freezing_rain(temp=temp(1), rain_precip=tempo_main_diags%rain_precip, &
+-      cloud_precip=tempo_main_diags%cloud_precip, &
+-      frz_rain=tempo_main_diags%frz_rain_precip)
+-
+     if (tempo_cfgs%cloud_number_mixing_ratio_flag) then
+       allocate(tempo_main_diags%cloud_number_mixing_ratio(nz), source=nc*rho)
+     endif 
+@@ -1371,6 +1423,9 @@ module module_mp_tempo_main
+         endif
+       endif
+ 
++      ! below freezing, snow cannot gain more from rain-snow collection than the rain loses to it
++      if (temp(k) < t0 .and. tend%prs_rcs(k) > -tend%prr_rcs(k)) tend%prs_rcs(k) = -tend%prr_rcs(k)
++
+       ! losses to snow include sublimation; melting; collection by rain; 
+       ! rime splintering
+       sump = tend%prs_sde(k) - tend%prs_ihm(k) - tend%prr_sml(k) + &
+@@ -1409,6 +1464,14 @@ module module_mp_tempo_main
+       tend%prr_rcg(k) = ratio * sign(1.0_dp, tend%prr_rcg(k))
+       tend%prg_rcg(k) = -tend%prr_rcg(k)
+       tend%pbg_rcg(k) = meters3_to_liters*tend%prg_rcg(k)/rho_i ! scale density change
++
++      ! graupel gains must match the (possibly limited) losses that feed them
++      tend%prg_rci(k) = tend%pri_rci(k) + tend%prr_rci(k)
++      tend%pbg_rci(k) = tend%prg_rci(k)/rho_i
++      if (temp(k) < t0) then
++        tend%prg_rcs(k) = -(tend%prr_rcs(k) + tend%prs_rcs(k))
++        tend%pbg_rcs(k) = meters3_to_liters*tend%prg_rcs(k)/rho_i
++      endif
+       ! reset total rain-snow collection amount if reduced
+       if (temp(k) > t0) then
+         ratio = min(abs(tend%prr_rcs(k)), abs(tend%prs_rcs(k)))
+-- 
+2.55.0
+

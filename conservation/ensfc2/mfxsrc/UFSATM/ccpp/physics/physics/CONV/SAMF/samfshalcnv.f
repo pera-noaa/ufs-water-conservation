@@ -1,0 +1,2780 @@
+!>  \file samfshalcnv.f
+!!
+
+!>  This module contains the Scale-Aware mass flux Shallow Convection scheme.
+      module samfshalcnv
+
+      use samfcnv_aerosols, only : samfshalcnv_aerosols
+      use progsigma, only : progsigma_calc
+      use progomega, only : progomega_calc
+      use mo_conv_kind, only : conv_wp
+      contains
+
+      subroutine samfshalcnv_init(imfshalcnv, imfshalcnv_samf,          &
+     &                           errmsg, errflg)
+
+      integer,                   intent(in) :: imfshalcnv
+      integer,                   intent(in) :: imfshalcnv_samf
+
+      ! CCPP error handling
+      character(len=*),          intent(out) :: errmsg
+      integer,                   intent(out) :: errflg
+
+      ! Consistency checks
+      if (imfshalcnv/=imfshalcnv_samf) then
+        write(errmsg,'(*(a))') 'Logic error: namelist choice of',       &
+     &  ' shallow convection is different from SAMF'
+        errflg = 1
+        return
+      end if
+      end subroutine samfshalcnv_init
+
+!> \defgroup SAMF_shal GFS saSAS Shallow Convection Module
+!>  This subroutine contains the entirety of the SAMF shallow convection
+!!  scheme.
+!> @{
+!!  This routine follows the \ref SAMFdeep quite closely, although it
+!!  can be interpreted as only having the "static" and "feedback" control
+!!  portions, since the "dynamic" control is not necessary to find the cloud
+!!  base mass flux. The algorithm is simplified from SAMF deep convection by
+!!  excluding convective downdrafts and being confined to operate below
+!!  \f$p=0.7p_{sfc}\f$. Also, entrainment is both simpler and stronger in
+!!  magnitude compared to the deep scheme.
+!!
+!! \section arg_table_samfshalcnv_run Argument Table
+!! \htmlinclude samfshalcnv_run.html
+!!
+!!  \section gen_samfshalcnv GFS samfshalcnv General Algorithm
+!!  -# Compute preliminary quantities needed for the static and feedback control portions of the algorithm.
+!!  -# Perform calculations related to the updraft of the entraining/detraining cloud model ("static control").
+!!  -# The cloud base mass flux is obtained using the cumulus updraft velocity averaged ove the whole cloud depth.
+!!  -# Calculate the tendencies of the state variables (per unit cloud base mass flux) and the cloud base mass flux.
+!!  -# For the "feedback control", calculate updated values of the state variables by multiplying the cloud base mass flux and the tendencies calculated per unit cloud base mass flux from the static control.
+!!  \section det_samfshalcnv GFS samfshalcnv Detailed Algorithm
+      subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+     &     eps,epsm1,fv,grav,hvap,rd,rv,                                &
+     &     t0c,delt,ntk,ntr,delp,first_time_step,restart,               & 
+     &     tmf,qmicro,progsigma,progomega,                              &
+     &     prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,     &
+     &     rn,kbot,ktop,kcnv,islimsk,garea,cscale,ten_t, ten_u, ten_v,  &
+     &     ten_q, dot,ncloud,hpbl,ud_mf,dt_mf,cnvw,cnvc,                &
+     &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+     &     sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,betascu,   &
+     &     lbb1,lbb2,lbb3,dt_decay,cat_adj_shal,errmsg,errflg)
+!
+      use machine , only : kind_phys
+      use funcphys , only : fpvs
+
+      implicit none
+!
+      integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+      integer, intent(in)  :: islimsk(:)
+      real(kind=kind_phys), intent(in) :: cliq, cp, cvap,               &
+     &   eps, epsm1, fv, grav, hvap, rd, rv, t0c, betascu, betadcu,     &
+     &   betamcu, lbb1, lbb2, lbb3, dt_decay
+      real(kind=kind_phys), intent(in) ::  delt, cscale
+      real(kind=kind_phys), intent(in) :: psp(:), delp(:,:),            &
+     &   prslp(:,:), garea(:), hpbl(:), dot(:,:), phil(:,:),            &
+     &   tmf(:,:,:), q(:,:)
+      real(kind=kind_phys), intent(in), optional :: qmicro(:,:),        &
+     &     prevsq(:,:)
+      real(kind=kind_phys), intent(in), optional :: sigmain(:,:),       &
+     &     omegain(:,:)
+!
+      real(kind=kind_phys), dimension(:), intent(in) :: fscav
+      integer, intent(inout)  :: kcnv(:)
+      ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+      real(kind=kind_phys), intent(inout) :: tkeh(:,:)
+      real(kind=kind_phys), intent(in) ::   qtr(:,:,:),                 &
+     &   q1(:,:)
+
+      real(kind=kind_phys), intent(in) :: t1(:,:), u1(:,:), v1(:,:)
+!
+      integer, intent(out) :: kbot(:), ktop(:)
+      real(kind=kind_phys), intent(out) :: rn(:),                       &
+     &   cnvw(:,:), cnvc(:,:), dt_mf(:,:)
+!
+      real(kind=kind_phys), intent(out) :: ud_mf(:,:)
+      real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),   &
+     &   omegaout(:,:)
+
+      real(kind=kind_phys), intent(in) :: clam,    c0s,     c1,         &
+     &                     asolfac, evef, pgcon
+      logical,          intent(in)  :: hwrf_samfshal,first_time_step,   &
+     &     restart,progsigma,progomega
+      real(kind=kind_phys), intent(in) :: cat_adj_shal
+      character(len=*), intent(out) :: errmsg
+      integer,          intent(out) :: errflg
+
+!
+!  local variables
+      integer              i,j,indx, k, kk, km1, n
+      integer              kpbl(im)
+!
+      real(kind=conv_wp) clamd,   tkemx,   tkemn,   dtke
+!
+      real(kind=conv_wp) dellat,
+     &                     c0l,     d0,
+     &                     desdt,   dp,
+     &                     dq,      dqsdp,   dqsdt,   dt,
+     &                     dt2,     dtmax,   dtmin,
+     &                     dxcrt,   dxcrtc0,
+     &                     dv1h,    dv2h,    dv3h,
+     &                     dz,      dz1,     e1,
+     &                     el2orc,  elocp,   aafac,
+     &                     cm,      cq,
+     &                     es,      etah,    h1,      shevf,
+!    &                     evfact,  evfactl,
+     &                     fact1,   fact2,   factor,
+     &                     cthk,    cthkmn,  dthk,
+     &                     gamma,   pprime,  betaw,   tauadv,
+     &                     qlk,     qrch,    qs,
+     &                     rfact,   shear,   tfac,
+     &                     val,     val1,    val2,
+     &                     w1,      w1l,     w1s,     w2,
+     &                     w2l,     w2s,     w3,      w3l,
+     &                     w3s,     w4,      w4l,     w4s,
+     &                     rho,     tem,     tem1,    tem2,
+     &                     ptem,    ptem1
+!
+      integer              kb(im), kb1(im), kbcon(im), kbcon1(im),
+     &                     ktcon(im), ktcon1(im), 
+     &                     kbm(im), kmax(im)
+!
+      real(kind=conv_wp) aa1(im),      cina(im),
+     &                     tkemean(im), clamt(im),
+     &                     ps(im),      del(im,km), prsl(im,km),
+     &                     umean(im),   advfac(im), gdx(im),
+     &                     delhbar(im), delq(im),   delq2(im),
+     &                     delqbar(im), delqev(im), deltbar(im),
+!    &                     deltv(im),   dtconv(im), edt(im),
+     &                     deltv(im),   dtconv(im),
+     &                     pdot(im),    po(im,km),
+     &                     qcond(im),   qevap(im),  hmax(im),
+!    &                     rntot(im),   vshear(im),
+     &                     rntot(im),
+     &                     xlamud(im),  xmb(im),    xmbmax(im),
+     &                     delebar(im,ntr),
+     &                     delubar(im), delvbar(im)
+!
+      real(kind=conv_wp) c0(im), sfcpbl(im)
+c
+      real(kind=conv_wp) crtlame, crtlamd
+!
+      real(kind=conv_wp) cinpcr,  cinpcrmx,  cinpcrmn,
+     &                     cinacr,  cinacrmx,  cinacrmn,
+     &                     sfclfac, rhcrt,
+     &                     tkcrt,   cmxfac
+!
+!  parameters for updraft velocity calculation
+      real(kind=conv_wp) bb1, bb2, csmf, wucb
+cc
+
+!  parameters for prognostic sigma closure
+      real(kind=conv_wp) omega_u(im,km),zdqca(im,km),tmfq(im,km),
+     &                     omegac(im),zeta(im,km),dbyo1(im,km),
+     &                     sigmab(im),qadv(im,km)
+      real(kind=conv_wp) gravinv,dxcrtas,invdelt,sigmind,sigmins,
+     &                     sigminm,wc_min,wc_eff
+!  local 32-bit arrays for external calls ---
+      real(kind=conv_wp) :: omegain_loc(im,km), omegaout_loc(im,km)
+      real(kind=conv_wp) :: sigmain_loc(im,km), sigmaout_loc(im,km)
+      real(kind=conv_wp) :: qmicro_loc(im,km)
+      logical flag_shallow,flag_mid
+c  physical parameters
+!     parameter(g=grav,asolfac=0.89)
+!     parameter(g=grav)
+!     parameter(elocp=hvap/cp,
+!    &          el2orc=hvap*hvap/(rv*cp))
+!     parameter(c0s=0.002,c1=5.e-4,d0=.01)
+!     parameter(d0=.01)
+      parameter(d0=.001_conv_wp)
+!     parameter(c0l=c0s*asolfac)
+!
+! asolfac: aerosol-aware parameter based on Lim & Hong (2012)
+!      asolfac= cx / c0s(=.002)
+!      cx = min([-0.7 ln(Nccn) + 24]*1.e-4, c0s)
+!      Nccn: CCN number concentration in cm^(-3)
+!      Until a realistic Nccn is provided, Nccns are assumed
+!      as Nccn=100 for sea and Nccn=1000 for land
+!
+      parameter(cm=1.0_conv_wp,cq=1.0_conv_wp)
+!     parameter(fact1=(cvap-cliq)/rv,fact2=hvap/rv-fact1*t0c)
+      parameter(clamd=0.1_conv_wp,tkemx=0.65_conv_wp,tkemn=0.05_conv_wp)
+      parameter(dtke=tkemx-tkemn)
+      parameter(cthk=200.0_conv_wp,cthkmn=0.0_conv_wp,dthk=25.0_conv_wp)
+      parameter(sfclfac=0.2_conv_wp,rhcrt=0.75_conv_wp)
+      parameter(cinpcrmx=180.0_conv_wp,cinpcrmn=120.0_conv_wp)
+!  shevf is an enhancing evaporation factor for shallow convection
+      parameter(cinacrmx=-120.0_conv_wp,shevf=2.0_conv_wp)
+      parameter(dtmax=10800.0_conv_wp,dtmin=600.0_conv_wp)
+      parameter(bb1=4.0_conv_wp,bb2=0.8_conv_wp,csmf=0.2_conv_wp)
+      parameter(tkcrt=2.0_conv_wp,cmxfac=10._conv_wp)
+!      parameter(bet1=1.875,cd1=.506,f1=2.0,gam1=.5)
+      parameter(betaw=.03_conv_wp,dxcrtc0=9.e3_conv_wp)
+      parameter(h1=0.33333333_conv_wp)
+c  local variables and arrays
+      real(kind=conv_wp) pfld(im,km),    to(im,km),     qo(im,km),
+     &                     uo(im,km),      vo(im,km),     qeso(im,km),
+     &                     ctr(im,km,ntr), ctro(im,km,ntr)
+!  for aerosol transport
+!     real(kind=kind_phys) qaero(im,km,ntc)
+c  variables for tracer wet deposition,
+      real(kind=conv_wp), dimension(im,km,ntc) :: chem_c, chem_pw,
+     &  wet_dep
+! wet scavenging efficiency
+      real(kind=conv_wp), parameter :: escav   = 0.8_conv_wp
+!
+!  for updraft velocity calculation
+      real(kind=conv_wp) wu2(im,km),      buo(im,km),     drag(im,km),
+     &                     wush(im,km),    wc(im)
+!
+!  for updraft fraction & scale-aware function
+      real(kind=conv_wp) scaldfunc(im), sigmagfm(im)
+!
+c  cloud water
+!     real(kind=kind_phys) qlko_ktcon(im), dellal(im,km), tvo(im,km),
+      real(kind=conv_wp) qlko_ktcon(im), dellal(im,km),
+     &                     dbyo(im,km),    zo(im,km),    xlamue(im,km),
+     &                     rh(im,km),
+     &                     heo(im,km),      heso(im,km),
+     &                     dellah(im,km),  dellaq(im,km),
+     &                     dellae(im,km,ntr),
+     &                     dellau(im,km),  dellav(im,km), hcko(im,km),
+     &                     ucko(im,km),    vcko(im,km),    qcko(im,km),
+     &                     qrcko(im,km),    ecko(im,km,ntr),
+     &                     ercko(im,km,ntr), eta(im,km),
+     &                     zi(im,km),      pwo(im,km),     c0t(im,km),
+     &                     sumx(im),      tx1(im),        cnvwt(im,km),
+     &                     rhbar(im)
+!
+!  variables for Total Variation Diminishing (TVD) flux-limiter scheme
+!      on environmental subsidence and uplifting
+!
+      real(kind=conv_wp) q_diff(im,0:km-1), e_diff(im,0:km-1,ntr),
+     &                     flxtvd(im,km-1)
+      real(kind=conv_wp) rrkp, phkp
+      real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
+!
+      logical do_aerosols, totflg, cnvflg(im), flg(im)
+!
+      real(kind=conv_wp) tf, tcr, tcrf
+      parameter (tf=233.16_conv_wp, tcr=263.16_conv_wp,
+     &           tcrf=1.0_conv_wp/(tcr-tf))
+
+      real(kind=kind_phys), intent(out) :: ten_t(:,:), ten_u(:,:),
+     & ten_v(:,:), ten_q(:,:,:), dqtr(:,:,:)
+
+      real(kind=conv_wp) :: new_t1(im,km),new_u1(im,km),new_v1(im,km),
+     & new_q1(im,km), new_qtr(im,km,nn)
+
+      ten_t = 0._kind_phys
+      ten_u = 0._kind_phys
+      ten_v = 0._kind_phys
+      ten_q = 0._kind_phys
+      dqtr  = 0._kind_phys
+
+      new_t1  = real(t1,  kind=conv_wp)
+      new_u1  = real(u1,  kind=conv_wp)
+      new_v1  = real(v1,  kind=conv_wp)
+      new_q1  = real(q1,  kind=conv_wp)
+      new_qtr = real(qtr, kind=conv_wp)
+
+c-----------------------------------------------------------------------
+!
+! Initialize CCPP error handling variables
+      errmsg = ''
+      errflg = 0
+
+      gravinv = 1.0_conv_wp/real(grav, kind=conv_wp)
+      invdelt = 1.0_conv_wp/real(delt, kind=conv_wp)
+
+      elocp = real(hvap, kind=conv_wp)/real(cp, kind=conv_wp)
+      el2orc = real(hvap, kind=conv_wp)*real(hvap, kind=conv_wp)
+     &         /(real(rv, kind=conv_wp)*real(cp, kind=conv_wp))
+
+      fact1 = (real(cvap, kind=conv_wp)-real(cliq, kind=conv_wp))
+     &         /real(rv, kind=conv_wp)
+      fact2 = real(hvap, kind=conv_wp)/real(rv, kind=conv_wp)
+     &        -fact1*real(t0c, kind=conv_wp)
+
+      if (.not.hwrf_samfshal) then
+             cinacrmn=-80.0_conv_wp
+      endif
+
+      if (progsigma) then
+         dxcrt=10.e3_conv_wp
+         dxcrtas=500.e3_conv_wp
+      else
+         dxcrt=15.e3_conv_wp
+         dxcrtas=500.e3_conv_wp
+      endif
+
+c-----------------------------------------------------------------------
+      if (.not.hwrf_samfshal) then
+!>  ## Determine whether to perform aerosol transport
+        do_aerosols = (itc > 0) .and. (ntc > 0) .and. (ntr > 0)
+        if (do_aerosols) do_aerosols = (ntr >= itc + ntc - 3)
+      endif
+!
+!************************************************************************
+!      convert input Pa terms to Cb terms  -- Moorthi
+!>  ## Compute preliminary quantities needed for the static and feedback control portions of the algorithm.
+!>  - Convert input pressure terms to centibar units.
+      ps   = real(psp, kind=conv_wp)   * 0.001_conv_wp
+      prsl = real(prslp, kind=conv_wp) * 0.001_conv_wp
+      del  = real(delp, kind=conv_wp)  * 0.001_conv_wp
+!************************************************************************
+!   - Initialize parameters related to prognostic closure
+      if (progsigma) then
+ 	 if (progomega) then
+            sigmind  = 0.03_conv_wp
+            sigmins  = 0.03_conv_wp
+            sigminm = 0.03_conv_wp
+            wc_min = 0.2_conv_wp
+         else
+   	    sigmind  = 0.01_conv_wp
+            sigmins  = 0.03_conv_wp
+            sigminm = 0.03_conv_wp
+            wc_min = 0.2_conv_wp
+ 	 endif
+      endif
+!     
+      km1 = km - 1
+c
+c  initialize arrays
+c
+!>  - Initialize column-integrated and other single-value-per-column variable arrays.
+!
+      chem_c  = 0.0_conv_wp
+      chem_pw = 0.0_conv_wp
+      wet_dep = 0.0_conv_wp
+!
+      if(hwrf_samfshal) then
+       do i=1,im
+        cnvflg(i) = .true.
+        if(kcnv(i) == 1) cnvflg(i) = .false.
+        if(cnvflg(i)) then
+          kbot(i)=km+1
+          ktop(i)=0
+        endif
+        sfcpbl(i) = sfclfac * real(hpbl(i), kind=conv_wp)
+        rn(i)=0.0_kind_phys
+        kbcon(i)=km
+        ktcon(i)=1
+        kb(i)=km
+        pdot(i) = 0.0_conv_wp
+        qlko_ktcon(i) = 0.0_conv_wp
+!        edt(i)  = 0.
+        aa1(i)  = 0.0_conv_wp
+        cina(i) = 0.0_conv_wp
+!        vshear(i) = 0.
+        advfac(i) = 0.0_conv_wp
+        gdx(i) = sqrt(real(garea(i), kind=conv_wp))
+        xmb(i) = 0.0_conv_wp
+          scaldfunc(i)=-1.0_conv_wp  ! wang initialized
+          sigmagfm(i)=-1.0_conv_wp
+       enddo
+
+      else !gfs_samfshal
+       do i=1,im
+        cnvflg(i) = .true.
+        if(kcnv(i) == 1) cnvflg(i) = .false.
+        if(cnvflg(i)) then
+          kbot(i)=km+1
+          ktop(i)=0
+        endif
+        sfcpbl(i) = sfclfac * real(hpbl(i), kind=conv_wp)
+        rn(i)=0.0_kind_phys
+        kbcon(i)=km
+        ktcon(i)=1
+        kb(i)=km
+        pdot(i) = 0.0_conv_wp
+        qlko_ktcon(i) = 0.0_conv_wp
+!        edt(i)  = 0.0
+        aa1(i)  = 0.0_conv_wp
+        cina(i) = 0.0_conv_wp
+!        vshear(i) = 0.
+        gdx(i) = sqrt(real(garea(i), kind=conv_wp))
+        xmb(i) = 0.0_conv_wp
+       enddo
+      endif
+!>  - Return to the calling routine if deep convection is present or the surface buoyancy flux is negative.
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+!>  - determine aerosol-aware rain conversion parameter over land
+      do i=1,im
+        if(islimsk(i) == 1) then
+           c0(i) = real(c0s, kind=conv_wp)*real(asolfac, kind=conv_wp)
+        else
+           c0(i) = real(c0s, kind=conv_wp)
+        endif
+      enddo
+!
+!>  - determine scale-aware rain conversion parameter decreasing with decreasing grid size
+      do i=1,im
+        if(gdx(i) < dxcrtc0) then
+          tem = gdx(i) / dxcrtc0
+          tem1 = tem**3
+          c0(i) = c0(i) * tem1
+        endif
+      enddo
+!
+!>  - determine rain conversion parameter above the freezing level which exponentially decreases with decreasing temperature from Han et al.'s (2017) \cite han_et_al_2017 equation 8.
+      do k = 1, km
+        do i = 1, im
+          if(real(t1(i,k), kind=conv_wp) > 273.16_conv_wp) then
+            c0t(i,k) = c0(i)
+          else
+            tem = d0 * (real(t1(i,k), kind=conv_wp) - 273.16_conv_wp)
+            tem1 = exp(tem)
+            c0t(i,k) = c0(i) * tem1
+          endif
+        enddo
+      enddo
+!
+!>  - Initialize convective cloud water and cloud cover to zero.
+      do k = 1, km
+        do i = 1, im
+          cnvw(i,k) = 0.0_kind_phys
+          cnvc(i,k) = 0.0_kind_phys
+        enddo
+      enddo
+! hchuang code change
+!>  - Initialize updraft mass fluxes to zero.
+      do k = 1, km
+        do i = 1, im
+          ud_mf(i,k) = 0.0_kind_phys
+          dt_mf(i,k) = 0.0_kind_phys
+        enddo
+      enddo
+c
+      dt2   = real(delt, kind=conv_wp)
+!
+c  model tunable parameters are all here
+      aafac   = .1_conv_wp
+!      evfact  = 0.3
+!      evfactl = 0.3
+!
+      crtlame = 1.0e-4_conv_wp
+      crtlamd = 3.0e-4_conv_wp
+!
+      w1l     = -8.e-3_conv_wp
+      w2l     = -4.e-2_conv_wp
+      w3l     = -5.e-3_conv_wp
+      w4l     = -5.e-4_conv_wp
+      w1s     = -2.e-4_conv_wp
+      w2s     = -2.e-3_conv_wp
+      w3s     = -1.e-3_conv_wp
+      w4s     = -2.e-5_conv_wp
+c
+c  define top layer for search of the downdraft originating layer
+c  and the maximum thetae for updraft
+c
+!>  - Determine maximum indices for the parcel starting point (kbm) and cloud top (kmax).
+      do i=1,im
+        kbm(i)   = km
+        kmax(i)  = km
+        tx1(i)   = 1.0_conv_wp / ps(i)
+      enddo
+!
+      do k = 1, km
+        do i=1,im
+          if (prsl(i,k)*tx1(i) > 0.70_conv_wp) kbm(i)   = k + 1
+          if (prsl(i,k)*tx1(i) > 0.60_conv_wp) kmax(i)  = k + 1
+        enddo
+      enddo
+      do i=1,im
+        kbm(i)   = min(kbm(i),kmax(i))
+      enddo
+c
+c  hydrostatic height assume zero terr and compute
+c  updraft entrainment rate as an inverse function of height
+c
+!>  - Calculate hydrostatic height at layer centers assuming a flat surface (no terrain) from the geopotential.
+      do k = 1, km
+        do i=1,im
+          zo(i,k) = real(phil(i,k), kind=conv_wp)
+     &            / real(grav, kind=conv_wp)
+        enddo
+      enddo
+!>  - Calculate interface height
+      if(hwrf_samfshal) then
+       do k = 1, km1
+        do i=1,im
+          zi(i,k) = 0.5_conv_wp*(zo(i,k)+zo(i,k+1))
+          xlamue(i,k) = real(clam, kind=conv_wp) / zi(i,k)
+        enddo
+       enddo
+       do i=1,im
+        xlamue(i,km) = xlamue(i,km1)
+       enddo
+      else
+       do k = 1, km1
+        do i=1,im
+          zi(i,k) = 0.5_conv_wp*(zo(i,k)+zo(i,k+1))
+        enddo
+       enddo
+      endif
+c
+c  pbl height
+c
+!>  - Find the index for the PBL top using the PBL height; enforce that it is lower than the maximum parcel starting level.
+      do i=1,im
+        flg(i) = cnvflg(i)
+        kpbl(i)= 1
+      enddo
+      do k = 2, km1
+        do i=1,im
+          if (flg(i) .and. zo(i,k) <= real(hpbl(i), kind=conv_wp)) then
+            kpbl(i) = k
+          else
+            flg(i) = .false.
+          endif
+        enddo
+      enddo
+      do i=1,im
+        kpbl(i)= min(kpbl(i),kbm(i))
+      enddo
+c
+c!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+c   convert surface pressure to mb from cb
+c
+!>  - Convert prsl from centibar to millibar, set normalized mass flux to 1, cloud properties to 0, and save model state variables (after advection/turbulence).
+      do k = 1, km
+        do i = 1, im
+          if (cnvflg(i) .and. k <= kmax(i)) then
+            pfld(i,k) = prsl(i,k) * 10.0_conv_wp
+            eta(i,k)  = 1.0_conv_wp
+            rh(i,k)   = 0.0_conv_wp
+            hcko(i,k) = 0.0_conv_wp
+            qcko(i,k) = 0.0_conv_wp
+            qrcko(i,k)= 0.0_conv_wp
+            ucko(i,k) = 0.0_conv_wp
+            vcko(i,k) = 0.0_conv_wp
+            dbyo(i,k) = 0.0_conv_wp
+            pwo(i,k)  = 0.0_conv_wp
+            dellal(i,k) = 0.0_conv_wp
+            to(i,k)   = real(t1(i,k), kind=conv_wp)
+            qo(i,k)   = real(q1(i,k), kind=conv_wp)
+            uo(i,k)   = real(u1(i,k), kind=conv_wp)
+            vo(i,k)   = real(v1(i,k), kind=conv_wp)
+!            uo(i,k)   = u1(i,k) * rcs(i)
+!            vo(i,k)   = v1(i,k) * rcs(i)
+            wu2(i,k)  = 0.0_conv_wp
+            buo(i,k)  = 0.0_conv_wp
+            wush(i,k) = 0.0_conv_wp
+            drag(i,k) = 0.0_conv_wp
+            cnvwt(i,k) = 0.0_conv_wp
+          endif
+        enddo
+      enddo
+
+      do i = 1,im
+          omegac(i)=0.0_conv_wp
+      enddo
+
+      do k = 1, km
+         do i = 1, im
+            dbyo1(i,k)=0.0_conv_wp
+            zdqca(i,k)=0.0_conv_wp
+            omega_u(i,k)=0.0_conv_wp
+            zeta(i,k)=1.0_conv_wp
+         enddo
+      enddo
+!
+!  initialize tracer variables
+!
+      if (.not.hwrf_samfshal) then
+        do n = 3, ntr+2
+          kk = n-2
+        do k = 1, km
+          do i = 1, im
+            if (cnvflg(i) .and. k <= kmax(i)) then
+              ctr(i,k,kk)  = real(qtr(i,k,n), kind=conv_wp)
+              ctro(i,k,kk) = real(qtr(i,k,n), kind=conv_wp)
+              ecko(i,k,kk) = 0.0_conv_wp
+              ercko(i,k,kk) = 0.0_conv_wp
+            endif
+          enddo
+        enddo
+        enddo
+      endif
+!>  - Calculate saturation specific humidity and enforce minimum moisture values.
+      do k = 1, km
+        do i=1,im
+          if (cnvflg(i) .and. k <= kmax(i)) then
+            qeso(i,k) = real(0.01_kind_phys * fpvs(real(to(i,k),
+     &                  kind=kind_phys)), kind=conv_wp)
+            qeso(i,k) = real(eps, kind=conv_wp) * qeso(i,k)
+     &                / (pfld(i,k) + real(epsm1, kind=conv_wp)
+     &                * qeso(i,k))
+            val1      = 1.e-8_conv_wp
+            qeso(i,k) = max(qeso(i,k), val1)
+            val2      = 1.e-10_conv_wp
+            qo(i,k)   = max(qo(i,k), val2 )
+!            qo(i,k)   = min(qo(i,k),qeso(i,k))
+!            tvo(i,k)  = to(i,k) + fv * to(i,k) * qo(i,k)
+          endif
+        enddo
+      enddo
+c
+c  compute moist static energy
+c
+!>  - Calculate moist static energy (heo) and saturation moist static energy (heso).
+      do k = 1, km
+        do i=1,im
+          if (cnvflg(i) .and. k <= kmax(i)) then
+!            tem        = grav * zo(i,k) + cp * to(i,k)
+            tem        = real(phil(i,k), kind=conv_wp)
+     &                  + real(cp, kind=conv_wp) * to(i,k)
+            heo(i,k)  = tem  + real(hvap, kind=conv_wp) * qo(i,k)
+            heso(i,k) = tem  + real(hvap, kind=conv_wp) * qeso(i,k)
+c           heo(i,k)  = min(heo(i,k),heso(i,k))
+         endif
+        enddo
+      enddo
+c
+c  determine level with largest moist static energy within pbl
+c  this is the level where updraft starts
+c
+!> ## Perform calculations related to the updraft of the entraining/detraining cloud model ("static control").
+!> - Find the index for a level of sfclfac*hpbl which is initial guess for the parcel starting level.
+      do i=1,im
+        flg(i) = cnvflg(i)
+        kb1(i) = 1
+      enddo
+      do k = 1, km1
+        do i=1,im
+          if (flg(i) .and. zo(i,k) <= sfcpbl(i)) then
+            kb1(i) = k
+          else
+            flg(i) = .false.
+          endif
+        enddo
+      enddo
+      do i=1,im
+        kb1(i) = min(kb1(i),kpbl(i))
+      enddo
+c
+!> - Search in the PBL for the level of maximum moist static energy to start the ascending parcel.
+      do i=1,im
+         if (cnvflg(i)) then
+            hmax(i) = heo(i,kb1(i))
+            kb(i) = kb1(i)
+         endif
+      enddo
+      do k = 2, km
+        do i=1,im
+          if(cnvflg(i) .and. (k > kb1(i) .and. k <= kpbl(i))) then
+            if(heo(i,k) > hmax(i)) then
+              kb(i)   = k
+              hmax(i) = heo(i,k)
+            endif
+          endif
+        enddo
+      enddo
+c
+!> - Calculate the temperature, water vapor mixing ratio, and pressure at interface levels.
+      do k = 1, km1
+        do i=1,im
+          if (cnvflg(i) .and. k <= kmax(i)-1) then
+            dz      = .5_conv_wp * (zo(i,k+1) - zo(i,k))
+            dp      = .5_conv_wp * (pfld(i,k+1) - pfld(i,k))
+            es      = real(0.01_kind_phys * fpvs(real(to(i,k+1),
+     &                  kind=kind_phys)), kind=conv_wp)
+            pprime  = pfld(i,k+1) + real(epsm1, kind=conv_wp) * es
+            qs      = real(eps, kind=conv_wp) * es / pprime
+            dqsdp   = - qs / pprime
+            desdt   = es * (fact1 / to(i,k+1) + fact2 / (to(i,k+1)**2))
+            dqsdt   = qs * pfld(i,k+1) * desdt / (es * pprime)
+            gamma   = el2orc * qeso(i,k+1) / (to(i,k+1)**2)
+            dt      = (real(grav, kind=conv_wp)*dz + real(hvap
+     &               ,kind=conv_wp)*dqsdp*dp) / (real(cp, kind=conv_wp)
+     &               *(1.0_conv_wp + gamma))
+            dq      = dqsdt * dt + dqsdp * dp
+            to(i,k) = to(i,k+1) + dt
+            qo(i,k) = qo(i,k+1) + dq
+            po(i,k) = .5_conv_wp * (pfld(i,k) + pfld(i,k+1))
+          endif
+        enddo
+      enddo
+!
+!> - Recalculate saturation specific humidity, moist static energy, saturation moist static energy, and horizontal momentum on interface levels. Enforce minimum specific humidity.
+      do k = 1, km1
+        do i=1,im
+          if (cnvflg(i) .and. k <= kmax(i)-1) then
+            qeso(i,k) = real(0.01_kind_phys * fpvs(real(to(i,k),
+     &                  kind=kind_phys)), kind=conv_wp)
+            qeso(i,k) = real(eps, kind=conv_wp) * qeso(i,k) / (po(i,k)
+     &                + real(epsm1, kind=conv_wp)*qeso(i,k))
+            val1      = 1.e-8_conv_wp
+            qeso(i,k) = max(qeso(i,k), val1)
+            val2      = 1.e-10_conv_wp
+            qo(i,k)   = max(qo(i,k), val2 )
+!            qo(i,k)   = min(qo(i,k),qeso(i,k))
+            rh(i,k)   = min(qo(i,k)/qeso(i,k), 1.0_conv_wp)
+            heo(i,k)  = .5_conv_wp * real(grav, kind=conv_wp) * (zo(i,k)
+     &                 + zo(i,k+1)) + real(cp, kind=conv_wp) * to(i,k)
+     &                 + real(hvap, kind=conv_wp) * qo(i,k)
+            heso(i,k) = .5_conv_wp * real(grav, kind=conv_wp) * (zo(i,k)
+     &                 + zo(i,k+1)) + real(cp, kind=conv_wp) * to(i,k)
+     &                 + real(hvap, kind=conv_wp) * qeso(i,k)
+            uo(i,k)   = .5_conv_wp * (uo(i,k) + uo(i,k+1))
+            vo(i,k)   = .5_conv_wp * (vo(i,k) + vo(i,k+1))
+          endif
+        enddo
+      enddo
+
+      if (.not.hwrf_samfshal) then
+       do n = 1, ntr
+       do k = 1, km1
+        do i=1,im
+          if (cnvflg(i) .and. k <= kmax(i)-1) then
+            ctro(i,k,n) = .5_conv_wp * (ctro(i,k,n) + ctro(i,k+1,n))
+          endif
+        enddo
+       enddo
+       enddo
+      endif
+c
+c  look for the level of free convection as cloud base
+c
+!> - Search below the index "kbm" for the level of free convection (LFC) where the condition \f$h_b > h^*\f$ is first met, where \f$h_b, h^*\f$ are the state moist static energy at the parcel's starting level and saturation moist static energy, respectively. Set "kbcon" to the index of the LFC.
+      do i=1,im
+        flg(i)    = cnvflg(i)
+        if(flg(i)) kbcon(i) = kmax(i)
+      enddo
+      do k = 2, km1
+        do i=1,im
+          if (flg(i) .and. k < kbm(i)) then
+            if(k > kb(i) .and. heo(i,kb(i)) > heso(i,k)) then
+              kbcon(i) = k
+              flg(i)    = .false.
+            endif
+          endif
+        enddo
+      enddo
+c
+      do i=1,im
+        if(cnvflg(i)) then
+          if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+        endif
+      enddo
+!!
+!> - If no LFC, return to the calling routine without modifying state variables.
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+!> - Determine the vertical pressure velocity at the LFC. After Han and Pan (2011) \cite han_and_pan_2011 , determine the maximum pressure thickness between a parcel's starting level and the LFC. If a parcel doesn't reach the LFC within the critical thickness, then the convective inhibition is deemed too great for convection to be triggered, and the subroutine returns to the calling routine without modifying the state variables.
+      do i=1,im
+        if(cnvflg(i)) then
+!          pdot(i)  = 10.* dot(i,kbcon(i))
+          pdot(i)  = 0.01_conv_wp * real(dot(i,kbcon(i)), kind=conv_wp) ! Now dot is in Pa/s
+        endif
+      enddo
+c
+c   turn off convection if pressure depth between parcel source level
+c      and cloud base is larger than a critical value, cinpcr
+c
+      do i=1,im
+        if(cnvflg(i)) then
+          if(islimsk(i) == 1) then
+            w1 = w1l
+            w2 = w2l
+            w3 = w3l
+            w4 = w4l
+          else
+            w1 = w1s
+            w2 = w2s
+            w3 = w3s
+            w4 = w4s
+          endif
+          if(pdot(i) <= w4) then
+            tem = (pdot(i) - w4) / (w3 - w4)
+          elseif(pdot(i) >= -w4) then
+            tem = - (pdot(i) + w4) / (w4 - w3)
+          else
+            tem = 0.0_conv_wp
+          endif
+          val1    =             -1.0_conv_wp
+          tem = max(tem,val1)
+          val2    =              1.0_conv_wp
+          tem = min(tem,val2)
+          ptem = 1.0_conv_wp - tem
+          ptem1= .5_conv_wp*(cinpcrmx-cinpcrmn)
+          cinpcr = cinpcrmx - ptem * ptem1
+          tem1 = pfld(i,kb(i)) - pfld(i,kbcon(i))
+
+          if(tem1 > cinpcr .and.
+     &       zi(i,kbcon(i)) > real(hpbl(i), kind=conv_wp)) then
+             cnvflg(i) = .false.
+          endif
+        endif
+      enddo
+!!
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!
+! re-define kb & kbcon
+!
+      do i=1,im
+         if (cnvflg(i)) then
+            hmax(i) = heo(i,1)
+            kb(i) = 1
+         endif
+      enddo
+      do k = 2, km
+        do i=1,im
+          if (cnvflg(i) .and. k <= kpbl(i)) then
+            if(heo(i,k) > hmax(i)) then
+              kb(i)    = k
+              hmax(i) = heo(i,k)
+            endif
+          endif
+        enddo
+      enddo
+!
+      do i=1,im
+        flg(i)    = cnvflg(i)
+        if(flg(i)) kbcon(i) = kmax(i)
+      enddo
+      do k = 2, km1
+        do i=1,im
+          if (flg(i) .and. k < kbm(i)) then
+            if(k > kb(i) .and. heo(i,kb(i)) > heso(i,k)) then
+              kbcon(i) = k
+              flg(i)    = .false.
+            endif
+          endif
+        enddo
+      enddo
+!
+      do i=1,im
+        if(cnvflg(i)) then
+          if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+        endif
+      enddo
+!!
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+      do i=1,im
+        if(cnvflg(i)) then
+!          pdot(i)  = 10.* dot(i,kbcon(i))
+          pdot(i)  = 0.01_conv_wp * real(dot(i,kbcon(i)), kind=conv_wp) ! Now dot is in Pa/s
+        endif
+      enddo
+!
+!> - if the mean relative humidity in the subcloud layers is less than a threshold value (rhcrt), convection is not triggered.
+!
+      do i = 1, im
+        rhbar(i) = 0.0_conv_wp
+        sumx(i) = 0.0_conv_wp
+      enddo
+      do k = 1, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k >= kb(i) .and. k < kbcon(i)) then
+              dz = zo(i,k+1) - zo(i,k)
+              rhbar(i) = rhbar(i) + rh(i,k) * dz
+              sumx(i) = sumx(i) + dz
+            endif
+          endif
+        enddo
+      enddo
+      do i= 1, im
+        if(cnvflg(i)) then
+          rhbar(i) = rhbar(i) / sumx(i)
+          if(rhbar(i) < rhcrt) then
+            cnvflg(i) = .false.
+          endif
+        endif
+      enddo
+!!
+
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+!
+! turbulent entrainment rate assumed to be proportional
+!    to subcloud mean TKE
+!
+!c
+!c  specify the detrainment rate for the updrafts
+!c
+      if (hwrf_samfshal) then
+       do i = 1, im
+        if(cnvflg(i)) then
+          xlamud(i) = xlamue(i,kbcon(i))
+!          xlamud(i) = crtlamd
+        endif
+       enddo
+      else
+      if(ntk > 0) then
+        do i= 1, im
+          if(cnvflg(i)) then
+            sumx(i) = 0.0_conv_wp
+            tkemean(i) = 0.0_conv_wp
+          endif
+        enddo
+!
+        do k = 1, km1
+          do i = 1, im
+            if(cnvflg(i)) then
+              if(k >= kb(i) .and. k < kbcon(i)) then
+                dz = zo(i,k+1) - zo(i,k)
+                tkemean(i) = tkemean(i) + real(tkeh(i,k), kind=conv_wp)
+     &                      * dz
+                sumx(i) = sumx(i) + dz
+              endif
+            endif
+          enddo
+        enddo
+!
+        do i= 1, im
+          if(cnvflg(i)) then
+             tkemean(i) = tkemean(i) / sumx(i)
+             if(tkemean(i) > tkemx) then
+               clamt(i) = real(clam, kind=conv_wp) + clamd
+             else if(tkemean(i) < tkemn) then
+               clamt(i) = real(clam, kind=conv_wp) - clamd
+             else
+               tem = tkemx - tkemean(i)
+               tem1 = 1.0_conv_wp - 2.0_conv_wp * tem / dtke
+               clamt(i) = real(clam, kind=conv_wp) + clamd * tem1
+             endif
+          endif
+        enddo
+!
+        do i=1,im
+          if(cnvflg(i)) then
+            if(tkemean(i) > tkcrt) then
+              tem = 1.0_conv_wp + tkemean(i)/tkcrt
+              tem1 = min(tem, cmxfac)
+              clamt(i) = tem1 * real(clam, kind=conv_wp)
+            endif
+          endif
+        enddo
+!
+      else
+!
+        do i= 1, im
+          if(cnvflg(i)) then
+            clamt(i)  = real(clam, kind=conv_wp)
+          endif
+        enddo
+!
+      endif
+!!
+!
+!  assume updraft entrainment rate
+!      is an inverse function of height
+!
+      do k = 1, km1
+        do i=1,im
+          if(cnvflg(i)) then
+            dz = zo(i,k+1) - zo(i,k)
+            xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+            xlamue(i,k) = max(xlamue(i,k), crtlame)
+          endif
+        enddo
+      enddo
+      do i=1,im
+        if(cnvflg(i)) then
+          xlamue(i,km) = xlamue(i,km1)
+        endif
+      enddo
+c
+c  specify the detrainment rate for the updrafts
+c
+!! (The updraft detrainment rate is set constant and equal to the entrainment rate at cloud base.)
+!!
+!> - The updraft detrainment rate is vertically constant and proportional to clamt
+      do i = 1, im
+        if(cnvflg(i)) then
+!          xlamud(i) = xlamue(i,kbcon(i))
+!          xlamud(i) = crtlamd
+          xlamud(i) = 0.001_conv_wp * clamt(i)
+        endif
+      enddo
+      endif    ! hwrf_samfshal
+c
+c  determine updraft mass flux for the subcloud layers
+c
+!> - Calculate the normalized mass flux for subcloud and in-cloud layers according to Pan and Wu (1995) \cite pan_and_wu_1995 equation 1:
+!!  \f[
+!!  \frac{1}{\eta}\frac{\partial \eta}{\partial z} = \lambda_e - \lambda_d
+!!  \f]
+!!  where \f$\eta\f$ is the normalized mass flux, \f$\lambda_e\f$ is the entrainment rate and \f$\lambda_d\f$ is the detrainment rate. The normalized mass flux increases upward below the cloud base and decreases upward above.
+      do k = km1, 1, -1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k < kbcon(i) .and. k >= kb(i)) then
+              dz       = zi(i,k+1) - zi(i,k)
+              ptem     = 0.5_conv_wp*(xlamue(i,k)+xlamue(i,k+1))
+     &                  -xlamud(i)
+              eta(i,k) = eta(i,k+1) / (1.0_conv_wp + ptem * dz)
+            endif
+          endif
+        enddo
+      enddo
+c
+c  compute mass flux above cloud base
+c
+      do i = 1, im
+        flg(i) = cnvflg(i)
+      enddo
+      do k = 2, km1
+        do i = 1, im
+         if(flg(i))then
+           if(k > kbcon(i) .and. k < kmax(i)) then
+             dz       = zi(i,k) - zi(i,k-1)
+             ptem     = 0.5_conv_wp*(xlamue(i,k)+xlamue(i,k-1))
+     &                 -xlamud(i)
+             eta(i,k) = eta(i,k-1) * (1.0_conv_wp + ptem * dz)
+             if(eta(i,k) <= 0.0_conv_wp) then
+               kmax(i) = k
+               kbm(i) = min(kbm(i),kmax(i))
+               flg(i) = .false.
+             endif
+           endif
+         endif
+        enddo
+      enddo
+c
+c  compute updraft cloud property
+c
+!> - Set cloud properties equal to the state variables at updraft starting level (kb).
+      do i = 1, im
+        if(cnvflg(i)) then
+          indx         = kb(i)
+          hcko(i,indx) = heo(i,indx)
+          ucko(i,indx) = uo(i,indx)
+          vcko(i,indx) = vo(i,indx)
+        endif
+      enddo
+!  for tracers
+      if (.not. hwrf_samfshal) then
+      do n = 1, ntr
+        do i = 1, im
+          if(cnvflg(i)) then
+            indx = kb(i)
+            ecko(i,indx,n) = ctro(i,indx,n)
+            ercko(i,indx,n) = ctro(i,indx,n)
+          endif
+        enddo
+      enddo
+      endif
+c
+!  cm is an enhancement factor in entrainment rates for momentum
+!
+!> - Calculate the cloud properties as a parcel ascends, modified by entrainment and detrainment. Discretization follows Appendix B of Grell (1993) \cite grell_1993 . Following Han and Pan (2006) \cite han_and_pan_2006, the convective momentum transport is reduced by the convection-induced pressure gradient force by the constant "pgcon", currently set to 0.55 after Zhang and Wu (2003) \cite zhang_and_wu_2003 .
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < kmax(i)) then
+              dz   = zi(i,k) - zi(i,k-1)
+              tem  = 0.5_conv_wp * (xlamue(i,k)+xlamue(i,k-1)) * dz
+              tem1 = 0.5_conv_wp * xlamud(i) * dz
+              factor = 1.0_conv_wp + tem - tem1
+              hcko(i,k) = ((1.0_conv_wp-tem1)*hcko(i,k-1)+tem
+     &                   *0.5_conv_wp*(heo(i,k)+heo(i,k-1)))/factor
+              dbyo(i,k) = hcko(i,k) - heso(i,k)
+!
+              tem  = 0.5_conv_wp * real(cm,kind=conv_wp) * tem
+              factor = 1.0_conv_wp + tem
+              ptem = tem + real(pgcon, kind=conv_wp)
+              ptem1= tem - real(pgcon, kind=conv_wp)
+              ucko(i,k) = ((1.0_conv_wp-tem)*ucko(i,k-1)+ptem*uo(i,k)
+     &                     +ptem1*uo(i,k-1))/factor
+              vcko(i,k) = ((1.0_conv_wp-tem)*vcko(i,k-1)+ptem*vo(i,k)
+     &                     +ptem1*vo(i,k-1))/factor
+            endif
+          endif
+        enddo
+      enddo
+
+      if (.not.hwrf_samfshal) then
+       if (do_aerosols) then
+         kk = itc -3
+       else
+         kk = ntr
+       endif
+       do n = 1, kk
+       do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < kmax(i)) then
+              dz   = zi(i,k) - zi(i,k-1)
+              tem  = 0.25_conv_wp * (xlamue(i,k)+xlamue(i,k-1)) * dz
+              tem  = cq * tem
+              factor = 1.0_conv_wp + tem
+              ecko(i,k,n) = ((1.0_conv_wp-tem)*ecko(i,k-1,n)+tem*
+     &                     (ctro(i,k,n)+ctro(i,k-1,n)))/factor
+              ercko(i,k,n) = ecko(i,k,n)
+            endif
+          endif
+        enddo
+       enddo
+       enddo
+       if (do_aerosols) then
+         do n = 1, ntc
+           kk = n + itc -3
+           do k = 2, km1
+             do i = 1, im
+               if (cnvflg(i)) then
+                 if(k > kb(i) .and. k < kmax(i)) then
+                   dz = zi(i,k) - zi(i,k-1)
+                   tem  = 0.25_conv_wp*(xlamue(i,k)+xlamue(i,k-1))*dz
+                   tem  = cq * tem
+                   factor = 1.0_conv_wp + tem
+                   ecko(i,k,kk) = ((1.0_conv_wp - tem) * ecko(i,k-1,kk)
+     &                 + tem *(ctro(i,k,kk) + ctro(i,k-1,kk))) / factor
+                   ercko(i,k,kk) = ecko(i,k,kk)
+                   chem_c(i,k,n) = escav * real(fscav(n), kind=conv_wp)
+     &                            * ecko(i,k,kk)
+                   tem = chem_c(i,k,n) / (1.0_conv_wp + c0t(i,k) * dz)
+                   chem_pw(i,k,n) = c0t(i,k) * dz * tem * eta(i,k-1)
+                   ecko(i,k,kk) = tem + ecko(i,k,kk) - chem_c(i,k,n)
+                 endif
+               endif
+             enddo
+           enddo
+         enddo
+         if(ntk > 2) then
+           kk = ntk -2
+           do k = 2, km1
+             do i = 1, im
+               if (cnvflg(i)) then
+                 if(k > kb(i) .and. k < kmax(i)) then
+                   dz = zi(i,k) - zi(i,k-1)
+                   tem  = 0.25_conv_wp*(xlamue(i,k)+xlamue(i,k-1))*dz
+                   tem  = cq * tem
+                   factor = 1.0_conv_wp + tem
+                   ecko(i,k,kk) = ((1.0_conv_wp - tem) * ecko(i,k-1,kk)
+     &                 + tem *(ctro(i,k,kk) + ctro(i,k-1,kk))) / factor
+                   ercko(i,k,kk) = ecko(i,k,kk)
+                 endif
+               endif
+             enddo
+           enddo
+         endif
+       endif
+      endif
+c
+c   taking account into convection inhibition due to existence of
+c    dry layers below cloud base
+c
+!> - With entrainment, recalculate the LFC as the first level where buoyancy is positive. The difference in pressure levels between LFCs calculated with/without entrainment must be less than a threshold (currently 25 hPa). Otherwise, convection is inhibited and the scheme returns to the calling routine without modifying the state variables. This is the subcloud dryness trigger modification discussed in Han and Pan (2011) \cite han_and_pan_2011.
+      do i=1,im
+        flg(i) = cnvflg(i)
+        kbcon1(i) = kmax(i)
+      enddo
+      do k = 2, km1
+      do i=1,im
+        if (flg(i) .and. k < kbm(i)) then
+          if(k >= kbcon(i) .and. dbyo(i,k) > 0.0_conv_wp) then
+            kbcon1(i) = k
+            flg(i)    = .false.
+          endif
+        endif
+      enddo
+      enddo
+      do i=1,im
+        if(cnvflg(i)) then
+          if(kbcon1(i) == kmax(i)) cnvflg(i) = .false.
+        endif
+      enddo
+      do i=1,im
+        if(cnvflg(i)) then
+          tem = pfld(i,kbcon(i)) - pfld(i,kbcon1(i))
+          if(tem > dthk) then
+             cnvflg(i) = .false.
+          endif
+        endif
+      enddo
+!!
+      if (.not. progomega) then
+         totflg = .true.
+         do i = 1, im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+c
+c  calculate convective inhibition
+c
+!> - Calculate additional trigger condition of the convective inhibition (CIN) according to Han et al.'s (2017) \cite han_et_al_2017 equation 13.
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < kbcon1(i)) then
+              dz1 = zo(i,k+1) - zo(i,k)
+              gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+              rfact =  1.0_conv_wp + real(fv, kind=conv_wp) * real(cp,
+     &                 kind=conv_wp) * gamma * to(i,k) / real(hvap,
+     &                 kind=conv_wp)
+              cina(i) = cina(i) +
+!    &                 dz1 * eta(i,k) * (grav / (cp * to(i,k)))
+     &                 dz1 * (real(grav, kind=conv_wp) / (real(cp,
+     &                 kind=conv_wp) * to(i,k))) * dbyo(i,k)
+     &                 / (1.0_conv_wp + gamma) * rfact
+              val = 0.0_conv_wp
+              cina(i) = cina(i) +
+!    &                 dz1 * eta(i,k) * grav * fv *
+     &                 dz1 * real(grav, kind=conv_wp) * real(fv,
+     &                 kind=conv_wp) * max(val,(qeso(i,k) - qo(i,k)))
+            endif
+          endif
+        enddo
+      enddo
+!!> - Turn off convection if the CIN is less than a critical value (cinacr) which is inversely proportional to the large-scale vertical velocity.
+
+      if (hwrf_samfshal) then
+       do i = 1, im
+        if(cnvflg(i)) then
+          cinacr = cinacrmx
+          if(cina(i) < cinacr) cnvflg(i) = .false.
+        endif
+       enddo
+      else
+       do i = 1, im
+        if(cnvflg(i)) then
+          if(islimsk(i) == 1) then
+            w1 = w1l
+            w2 = w2l
+            w3 = w3l
+            w4 = w4l
+          else
+            w1 = w1s
+            w2 = w2s
+            w3 = w3s
+            w4 = w4s
+          endif
+          if(pdot(i) <= w4) then
+            tem = (pdot(i) - w4) / (w3 - w4)
+          elseif(pdot(i) >= -w4) then
+            tem = - (pdot(i) + w4) / (w4 - w3)
+          else
+            tem = 0.0_conv_wp
+          endif
+
+          val1    =             -1.0_conv_wp
+          tem = max(tem,val1)
+          val2    =              1.0_conv_wp
+          tem = min(tem,val2)
+          tem = 1.0_conv_wp - tem
+          tem1= .5_conv_wp * (cinacrmx- cinacrmn)
+          cinacr = cinacrmx - tem * tem1
+          if(cina(i) < cinacr) cnvflg(i) = .false.
+         endif
+       enddo
+      endif
+!!
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+c
+c  determine first guess cloud top as the level of zero buoyancy
+c    limited to the level of P/Ps=0.7
+c
+!> - Calculate the cloud top as the first level where parcel buoyancy becomes negative; the maximum possible value is at \f$p=0.7p_{sfc}\f$.
+      do i = 1, im
+        flg(i) = cnvflg(i)
+        if(flg(i)) ktcon(i) = 1
+      enddo
+      do k = 2, km1
+      do i=1,im
+        if (flg(i) .and. k < kbm(i)) then
+          if(k > kbcon1(i) .and. dbyo(i,k) < 0.0_conv_wp) then
+             ktcon(i) = k
+             flg(i)    = .false.
+          endif
+        endif
+      enddo
+      enddo
+c
+c turn off shallow convection if cloud depth is larger than cthk or less than cthkmn
+c
+      do i = 1, im
+        if(cnvflg(i)) then
+          tem = pfld(i,kbcon(i))-pfld(i,ktcon(i))
+          if(tem > cthk .or. tem < cthkmn) then
+            cnvflg(i) = .false.
+          endif
+        endif
+      enddo
+
+c
+c  specify upper limit of mass flux at cloud base
+c
+!> - Calculate the maximum value of the cloud base mass flux using the CFL-criterion-based formula of Han and Pan (2011) \cite han_and_pan_2011, equation 7.
+      do i = 1, im
+        if(cnvflg(i)) then
+          k = kbcon(i)
+          dp = 1000.0_conv_wp * del(i,k)
+          xmbmax(i) = dp / (real(grav, kind=conv_wp) * dt2)
+        endif
+      enddo
+c
+c  compute cloud moisture property and precipitation
+c
+!> - Set cloud moisture property equal to the enviromental moisture at updraft starting level (kb).
+      do i = 1, im
+        if (cnvflg(i)) then
+          aa1(i) = 0.0_conv_wp
+          qcko(i,kb(i)) = qo(i,kb(i))
+          qrcko(i,kb(i)) = qo(i,kb(i))
+        endif
+      enddo
+!> - Calculate the moisture content of the entraining/detraining parcel (qcko) and the value it would have if just saturated (qrch), according to equation A.14 in Grell (1993) \cite grell_1993 . Their difference is the amount of convective cloud water (qlk = rain + condensate). Determine the portion of convective cloud water that remains suspended and the portion that is converted into convective precipitation (pwo). Calculate and save the negative cloud work function (aa1) due to water loading. Above the level of minimum moist static energy, some of the cloud water is detrained into the grid-scale cloud water from every cloud layer with a rate of 0.0005 \f$m^{-1}\f$ (dellal).
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < ktcon(i)) then
+              dz    = zi(i,k) - zi(i,k-1)
+              gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+              qrch = qeso(i,k)
+     &             + gamma * dbyo(i,k) / (real(hvap, kind=conv_wp)
+     &             * (1.0_conv_wp + gamma))
+cj
+              tem  = 0.25_conv_wp * (xlamue(i,k)+xlamue(i,k-1)) * dz
+              tem  = cq * tem
+              factor = 1.0_conv_wp + tem
+              qcko(i,k) = ((1.0_conv_wp - tem) * qcko(i,k-1) + tem
+     &                  * (qo(i,k) + qo(i,k-1))) / factor
+              qrcko(i,k) = qcko(i,k)
+cj
+              dq = eta(i,k) * (qcko(i,k) - qrch)
+c
+!              rhbar(i) = rhbar(i) + qo(i,k) / qeso(i,k)
+c
+c  below lfc check if there is excess moisture to release latent heat
+c
+              if(k >= kbcon(i) .and. dq > 0.0_conv_wp) then
+                etah = .5_conv_wp * (eta(i,k) + eta(i,k-1))
+                dp = 1000.0_conv_wp * del(i,k)
+                if(ncloud > 0) then
+                  ptem = c0t(i,k) + real(c1, kind=conv_wp)
+                  qlk = dq / (eta(i,k) + etah * ptem * dz)
+                  dellal(i,k) = etah * real(c1, kind=conv_wp) * dz * qlk
+     &                         * real(grav, kind=conv_wp) / dp
+                else
+                  qlk = dq / (eta(i,k) + etah * c0t(i,k) * dz)
+                endif
+                buo(i,k) = buo(i,k) - real(grav, kind=conv_wp) * qlk
+                qcko(i,k)= qlk + qrch
+                pwo(i,k) = etah * c0t(i,k) * dz * qlk
+                cnvwt(i,k) = etah * qlk * real(grav, kind=conv_wp) / dp
+                zdqca(i,k)=dq/eta(i,k)
+              endif
+!
+!  compute buoyancy and drag for updraft velocity
+!
+              if(k >= kbcon(i)) then
+                rfact = 1.0_conv_wp + real(fv, kind=conv_wp) * real(cp,
+     &                 kind=conv_wp) * gamma * to(i,k) / real(hvap,
+     &                 kind=conv_wp)
+                buo(i,k) = buo(i,k) + (real(grav, kind=conv_wp)
+     &                    / (real(cp, kind=conv_wp) * to(i,k)))
+     &                    * dbyo(i,k) / (1.0_conv_wp + gamma) * rfact
+                val = 0.0_conv_wp
+                buo(i,k) = buo(i,k) + real(grav, kind=conv_wp)
+     &                    * real(fv, kind=conv_wp) * max(val,(qeso(i,k)
+     &                    - qo(i,k)))
+                drag(i,k) = max(xlamue(i,k),xlamud(i))
+!
+                tem = ((uo(i,k)-uo(i,k-1))/dz)**2
+                tem = tem+((vo(i,k)-vo(i,k-1))/dz)**2
+                wush(i,k) = csmf * sqrt(tem)
+!
+              endif
+!
+            endif
+          endif
+        enddo
+      enddo
+c
+c  calculate cloud work function
+c
+!     do k = 2, km1
+!       do i = 1, im
+!         if (cnvflg(i)) then
+!           if(k >= kbcon(i) .and. k < ktcon(i)) then
+!             dz1 = zo(i,k+1) - zo(i,k)
+!             gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+!             rfact =  1. + fv * cp * gamma
+!    &                 * to(i,k) / hvap
+!             aa1(i) = aa1(i) +
+!!   &                 dz1 * eta(i,k) * (grav / (cp * to(i,k)))
+!    &                 dz1 * (grav / (cp * to(i,k)))
+!    &                 * dbyo(i,k) / (1. + gamma)
+!    &                 * rfact
+!             val = 0.
+!             aa1(i) = aa1(i) +
+!!   &                 dz1 * eta(i,k) * grav * fv *
+!    &                 dz1 * grav * fv *
+!    &                 max(val,(qeso(i,k) - qo(i,k)))
+!           endif
+!         endif
+!       enddo
+!     enddo
+!     do i = 1, im
+!       if(cnvflg(i) .and. aa1(i) <= 0.) cnvflg(i) = .false.
+!     enddo
+!
+!  calculate cloud work function
+!
+!> - Calculate the cloud work function according to Pan and Wu (1995) \cite pan_and_wu_1995 equation 4:
+!!  \f[
+!!  A_u=\int_{z_0}^{z_t}\frac{g}{c_pT(z)}\frac{\eta}{1 + \gamma}[h(z)-h^*(z)]dz
+!!  \f]
+!! (discretized according to Grell (1993) \cite grell_1993 equation B.10 using B.2 and B.3 of Arakawa and Schubert (1974) \cite arakawa_and_schubert_1974 and assuming \f$\eta=1\f$) where \f$A_u\f$ is the updraft cloud work function, \f$z_0\f$ and \f$z_t\f$ are cloud base and cloud top, respectively, \f$\gamma = \frac{L}{c_p}\left(\frac{\partial \overline{q_s}}{\partial T}\right)_p\f$ and other quantities are previously defined.
+      do i = 1, im
+        if (cnvflg(i)) then
+          aa1(i) = 0.0_conv_wp
+        endif
+      enddo
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k >= kbcon(i) .and. k < ktcon(i)) then
+              dz1 = zo(i,k+1) - zo(i,k)
+              aa1(i) = aa1(i) + buo(i,k) * dz1
+              dbyo1(i,k) = hcko(i,k) - heso(i,k)
+            endif
+          endif
+        enddo
+      enddo
+      do i = 1, im
+        if(cnvflg(i) .and. aa1(i) <= 0.0_conv_wp) cnvflg(i) = .false.
+      enddo
+!!
+!     > - If the updraft cloud work function is negative, convection does not occur, and the scheme returns to the calling routine.
+
+      if (.not. progomega) then
+         totflg = .true.
+         do i=1,im
+            totflg = totflg .and. (.not. cnvflg(i))
+         enddo
+         if(totflg) return
+      endif
+!!
+c
+c  estimate the onvective overshooting as the level
+c    where the [aafac * cloud work function] becomes zero,
+c    which is the final cloud top
+c    limited to the level of P/Ps=0.7
+c
+!> - Continue calculating the cloud work function past the point of neutral buoyancy to represent overshooting according to Han and Pan (2011) \cite han_and_pan_2011 . Convective overshooting stops when \f$ cA_u < 0\f$ where \f$c\f$ is currently 10%, or when 10% of the updraft cloud work function has been consumed by the stable buoyancy force. Overshooting is also limited to the level where \f$p=0.7p_{sfc}\f$.
+      do i = 1, im
+        if (cnvflg(i)) then
+          aa1(i) = aafac * aa1(i)
+        endif
+      enddo
+c
+      do i = 1, im
+        flg(i) = cnvflg(i)
+        ktcon1(i) = kbm(i)
+      enddo
+      do k = 2, km1
+        do i = 1, im
+          if (flg(i)) then
+            if(k >= ktcon(i) .and. k < kbm(i)) then
+              dz1 = zo(i,k+1) - zo(i,k)
+              gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+              rfact = 1.0_conv_wp + real(fv, kind=conv_wp) * real(cp,
+     &                kind=conv_wp) * gamma * to(i,k) / real(hvap,
+     &                kind=conv_wp)
+              aa1(i) = aa1(i) +
+!    &                 dz1 * eta(i,k) * (grav / (cp * to(i,k)))
+     &                 dz1 * (real(grav, kind=conv_wp) / (real(cp,
+     &                 kind=conv_wp) * to(i,k))) * dbyo(i,k)
+     &                 / (1.0_conv_wp + gamma) * rfact
+!              val = 0.
+!              aa1(i) = aa1(i) +
+!!    &                 dz1 * eta(i,k) * grav * fv *
+!    &                 dz1 * grav * fv *
+!    &                 max(val,(qeso(i,k) - qo(i,k)))
+              if(aa1(i) < 0.0_conv_wp) then
+                ktcon1(i) = k
+                flg(i) = .false.
+              endif
+            endif
+          endif
+        enddo
+      enddo
+c
+c  compute cloud moisture property, detraining cloud water
+c    and precipitation in overshooting layers
+c
+!> - For the overshooting convection, calculate the moisture content of the entraining/detraining parcel as before. Partition convective cloud water and precipitation and detrain convective cloud water in the overshooting layers.
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k >= ktcon(i) .and. k < ktcon1(i)) then
+              dz    = zi(i,k) - zi(i,k-1)
+              gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+              qrch = qeso(i,k)
+     &             + gamma * dbyo(i,k) / (real(hvap, kind=conv_wp)
+     &             * (1.0_conv_wp + gamma))
+cj
+              tem  = 0.25_conv_wp * (xlamue(i,k)+xlamue(i,k-1)) * dz
+              tem  = cq * tem
+              factor = 1.0_conv_wp + tem
+              qcko(i,k) = ((1.0_conv_wp - tem) * qcko(i,k-1) + tem
+     &                  * (qo(i,k) + qo(i,k-1))) / factor
+              qrcko(i,k) = qcko(i,k)
+cj
+              dq = eta(i,k) * (qcko(i,k) - qrch)
+c
+c  check if there is excess moisture to release latent heat
+c
+              if(dq > 0.0_conv_wp) then
+                etah = .5_conv_wp * (eta(i,k) + eta(i,k-1))
+                dp = 1000.0_conv_wp * del(i,k)
+                if(ncloud > 0) then
+                  ptem = c0t(i,k) + real(c1, kind=conv_wp)
+                  qlk = dq / (eta(i,k) + etah * ptem * dz)
+                  dellal(i,k) = etah * real(c1, kind=conv_wp) * dz * qlk
+     &                         * real(grav, kind=conv_wp) / dp
+                else
+                  qlk = dq / (eta(i,k) + etah * c0t(i,k) * dz)
+                endif
+                qcko(i,k) = qlk + qrch
+                pwo(i,k) = etah * c0t(i,k) * dz * qlk
+                cnvwt(i,k) = etah * qlk * real(grav, kind=conv_wp) / dp
+                zdqca(i,k)=dq/eta(i,k)
+              endif
+            endif
+          endif
+        enddo
+      enddo
+!
+!  compute updraft velocity square(wu2)
+!> - Calculate updraft velocity square(wu2) according to Han et al.'s (2017) \cite han_et_al_2017 equation 7.
+!!> - if progomega = true, calculate prognostic updraft velocity (Pa/s) according to progomega routine.
+      if (hwrf_samfshal) then
+      do i = 1, im
+       if (cnvflg(i)) then
+         k = kbcon1(i)
+         tem = po(i,k) / (real(rd, kind=conv_wp) * to(i,k))
+         wucb = -0.01_conv_wp * real(dot(i,k), kind=conv_wp)
+     &         / (tem * real(grav, kind=conv_wp))
+         if(wucb > 0.0_conv_wp) then
+           wu2(i,k) = wucb * wucb
+         else
+           wu2(i,k) = 0.0_conv_wp
+         endif
+       endif
+      enddo
+      endif
+!
+      if (progomega) then
+         if (present(omegaout)) then
+            omegaout_loc(:,:) = real(omegaout(:,:), kind=conv_wp)
+         else
+            omegaout_loc(:,:) = 0.0_conv_wp
+         endif
+         if (present(omegain)) then
+            omegain_loc(:,:) = real(omegain(:,:), kind=conv_wp)
+         else
+            omegain_loc(:,:) = 0.0_conv_wp
+         endif
+
+         call progomega_calc(first_time_step,restart,im,km,kbcon1,ktcon,
+     &                       omegain_loc,real(delt, kind=conv_wp),
+     &                       del,zi,cnvflg,omegaout_loc,
+     &                       real(grav, kind=conv_wp),buo,drag,wush,
+     &        real(lbb1,kind=conv_wp),real(lbb2,kind=conv_wp),
+     &        real(lbb3,kind=conv_wp),real(dt_decay,kind=conv_wp))
+
+!      Copy back output if needed
+         if(present(omegaout)) then
+            omegaout(:,:) = real(omegaout_loc(:,:), kind=kind_phys)
+         endif
+
+         do k = 1, km
+            do i = 1, im
+               if (cnvflg(i)) then
+                  if(k >= kbcon1(i) .and. k < ktcon(i)) then
+                     omega_u(i,k)=omegaout_loc(i,k)
+                     omega_u(i,k)=MAX(omega_u(i,k),-80.0_conv_wp)
+!      Convert to m/s for use in convective time-scale:
+                     rho = po(i,k)*100.0_conv_wp / (real(rd,
+     &                     kind=conv_wp) * to(i,k))
+                     tem = (-omega_u(i,k)) / ((rho * real(grav,
+     &                     kind=conv_wp)))
+                     wu2(i,k) = tem**2
+                     wu2(i,k) = max(wu2(i,k), 0.0_conv_wp)
+                  endif
+               endif
+            enddo
+         enddo
+         
+      else
+!      diagnostic updraft velocity
+         do k = 2, km1
+            do i = 1, im
+               if (cnvflg(i)) then
+                  if(k > kbcon1(i) .and. k < ktcon(i)) then
+                     dz    = zi(i,k) - zi(i,k-1)
+                     tem  = 0.25_conv_wp * bb1 * (drag(i,k-1)+drag(i,k))
+     &                     * dz
+                     tem1 = 0.5_conv_wp * bb2 * (buo(i,k-1)+buo(i,k))
+                     tem2 = wush(i,k) * sqrt(wu2(i,k-1))
+                     tem2 = (tem1 - tem2) * dz
+                     ptem = (1.0_conv_wp - tem) * wu2(i,k-1)
+                     ptem1 = 1.0_conv_wp + tem
+                     wu2(i,k) = (ptem + tem2) / ptem1
+                     wu2(i,k) = max(wu2(i,k), 0.0_conv_wp)
+                  endif
+               endif
+            enddo
+         enddo
+!convert to Pa/s for use in closure
+         do k = 2, km1
+            do i = 1, im
+               if (cnvflg(i)) then
+                  if(k > kbcon1(i) .and. k < ktcon(i)) then
+                     rho = po(i,k)*100.0_conv_wp/(real(rd, kind=conv_wp)
+     &                    * to(i,k))
+                     omega_u(i,k)=-1.0_conv_wp*sqrt(wu2(i,k))*rho
+     &                           *real(grav, kind=conv_wp)
+                     omega_u(i,k)=MAX(omega_u(i,k),-80.0_conv_wp)
+                  endif
+               endif
+            enddo
+         enddo
+
+      endif !progomega
+!  compute updraft velocity averaged over the whole cumulus
+!
+!> - Calculate the mean updraft velocity within the cloud (wc).
+      do i = 1, im
+        wc(i) = 0.0_conv_wp
+        sumx(i) = 0.0_conv_wp
+      enddo
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kbcon1(i) .and. k < ktcon(i)) then
+              dz = zi(i,k) - zi(i,k-1)
+              tem = 0.5_conv_wp * (sqrt(wu2(i,k)) + sqrt(wu2(i,k-1)))
+              wc(i) = wc(i) + tem * dz
+              sumx(i) = sumx(i) + dz
+            endif
+          endif
+        enddo
+      enddo
+      do i = 1, im
+        if(cnvflg(i)) then
+          if(sumx(i) == 0.0_conv_wp) then
+             cnvflg(i)=.false.
+          else
+             wc(i) = wc(i) / sumx(i)
+          endif
+          val = 1.e-4_conv_wp
+          if (wc(i) < val) cnvflg(i)=.false.
+        endif
+      enddo
+c
+!> - For progsigma =T, calculate the mean updraft velocity in pressure coordinates within the cloud (wc).
+      if(progsigma)then
+         do i = 1, im
+            omegac(i) = 0.0_conv_wp
+            sumx(i) = 0.0_conv_wp
+         enddo
+         do k = 2, km1
+            do i = 1, im
+               if (cnvflg(i)) then
+                  if(k >= kbcon1(i) .and. k < ktcon(i)) then
+                     dp = 1000.0_conv_wp * del(i,k)
+                     tem = 0.5_conv_wp * (omega_u(i,k) + omega_u(i,k-1))
+                     omegac(i) = omegac(i) + tem * dp
+                     sumx(i) = sumx(i) + dp
+                  endif
+               endif
+            enddo
+         enddo
+         do i = 1, im
+            if(cnvflg(i)) then
+               if(sumx(i) == 0.0_conv_wp) then
+                  cnvflg(i)=.false.
+               else
+                  omegac(i) = omegac(i) / sumx(i)
+               endif
+               val = -1.2_conv_wp
+               if (omegac(i) > val) cnvflg(i)=.false.
+            endif
+         enddo
+
+!> - For progsigma = T, calculate the xi term in Bengtsson et al. 2022 \cite Bengtsson_2022 (equation 8)
+         do k = 2, km1
+            do i = 1, im
+               if (cnvflg(i)) then
+                  if(k >= kbcon1(i) .and. k < ktcon(i)) then
+                     if(omega_u(i,k) .ne. 0.0_conv_wp)then
+                        zeta(i,k)=eta(i,k)*(omegac(i)/omega_u(i,k))
+                     else
+                        zeta(i,k)=0.0_conv_wp
+                     endif
+                     zeta(i,k)=MAX(0.0_conv_wp,zeta(i,k))
+                     zeta(i,k)=MIN(1.0_conv_wp,zeta(i,k))
+                  endif
+               endif
+            enddo
+         enddo
+      endif !if progsigma
+
+c exchange ktcon with ktcon1
+c
+      do i = 1, im
+        if(cnvflg(i)) then
+          kk = ktcon(i)
+          ktcon(i) = ktcon1(i)
+          ktcon1(i) = kk
+        endif
+      enddo
+c
+c  this section is ready for cloud water
+c
+      if(ncloud > 0) then
+c
+c  compute liquid and vapor separation at cloud top
+c
+!> - => Separate the total updraft cloud water at cloud top into vapor and condensate.
+      do i = 1, im
+        if(cnvflg(i)) then
+          k = ktcon(i) - 1
+          gamma = el2orc * qeso(i,k) / (to(i,k)**2)
+          qrch = qeso(i,k)
+     &         + gamma * dbyo(i,k) / (real(hvap, kind=conv_wp)
+     &         * (1.0_conv_wp + gamma))
+          dq = qcko(i,k) - qrch
+c
+c  check if there is excess moisture to release latent heat
+c
+          if(dq > 0.0_conv_wp) then
+            qlko_ktcon(i) = dq
+            qcko(i,k) = qrch
+            zdqca(i,k) = dq
+          endif
+        endif
+      enddo
+      endif
+c
+c--- compute precipitation efficiency in terms of windshear
+c
+!! - Calculate the wind shear and precipitation efficiency according to equation 58 in Fritsch and Chappell (1980) \cite fritsch_and_chappell_1980 :
+!! \f[
+!! E = 1.591 - 0.639\frac{\Delta V}{\Delta z} + 0.0953\left(\frac{\Delta V}{\Delta z}\right)^2 - 0.00496\left(\frac{\Delta V}{\Delta z}\right)^3
+!! \f]
+!! where \f$\Delta V\f$ is the integrated horizontal shear over the cloud depth, \f$\Delta z\f$, (the ratio is converted to units of \f$10^{-3} s^{-1}\f$). The variable "edt" is \f$1-E\f$ and is constrained to the range \f$[0,0.9]\f$.
+!      do i = 1, im
+!        if(cnvflg(i)) then
+!          vshear(i) = 0.
+!        endif
+!      enddo
+!      do k = 2, km
+!        do i = 1, im
+!          if (cnvflg(i)) then
+!            if(k > kb(i) .and. k <= ktcon(i)) then
+!              shear= sqrt((uo(i,k)-uo(i,k-1)) ** 2
+!     &                   + (vo(i,k)-vo(i,k-1)) ** 2)
+!              vshear(i) = vshear(i) + shear
+!            endif
+!          endif
+!        enddo
+!      enddo
+!      do i = 1, im
+!        if(cnvflg(i)) then
+!          vshear(i) = 1.e3 * vshear(i) / (zi(i,ktcon(i))-zi(i,kb(i)))
+!          e1=1.591-.639*vshear(i)
+!     &        +.0953*(vshear(i)**2)-.00496*(vshear(i)**3)
+!          edt(i)=1.-e1
+!          val =          .9
+!          edt(i) = min(edt(i),val)
+!          val =          .0
+!          edt(i) = max(edt(i),val)
+!        endif
+!      enddo
+c
+c--- what would the change be, that a cloud with unit mass
+c--- will do to the environment?
+c
+!> ## Calculate the tendencies of the state variables (per unit cloud base mass flux) and the cloud base mass flux.
+!> - Calculate the change in moist static energy, moisture mixing ratio, and horizontal winds per unit cloud base mass flux for all layers below cloud top from equations B.14 and B.15 from Grell (1993) \cite grell_1993, and for the cloud top from B.16 and B.17.
+      do k = 1, km
+        do i = 1, im
+          if(cnvflg(i) .and. k <= kmax(i)) then
+            dellah(i,k) = 0.0_conv_wp
+            dellaq(i,k) = 0.0_conv_wp
+            dellau(i,k) = 0.0_conv_wp
+            dellav(i,k) = 0.0_conv_wp
+          endif
+        enddo
+      enddo
+      if (.not.hwrf_samfshal) then
+       do n = 1, ntr
+       do k = 1, km
+        do i = 1, im
+          if(cnvflg(i) .and. k <= kmax(i)) then
+            dellae(i,k,n) = 0.0_conv_wp
+          endif
+        enddo
+       enddo
+       enddo
+      endif
+c
+c--- changed due to subsidence and entrainment
+c
+      do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < ktcon(i)) then
+              dp = 1000.0_conv_wp * del(i,k)
+              dz = zi(i,k) - zi(i,k-1)
+c
+              dv1h = heo(i,k)
+              dv2h = .5_conv_wp * (heo(i,k) + heo(i,k-1))
+              dv3h = heo(i,k-1)
+c
+              tem  = 0.5_conv_wp * (xlamue(i,k)+xlamue(i,k-1))
+              tem1 = xlamud(i)
+
+              factor = real(grav, kind=conv_wp) / dp
+cj
+              dellah(i,k) = dellah(i,k)+(eta(i,k)*dv1h-eta(i,k-1)*dv3h
+     &                     -tem*eta(i,k-1)*dv2h*dz+tem1*eta(i,k-1)
+     &                     *.5_conv_wp*(hcko(i,k)+hcko(i,k-1))*dz)
+     &                     *factor
+cj
+              tem1 = -eta(i,k) * qrcko(i,k)
+              tem2 = -eta(i,k-1) * qcko(i,k-1)
+              dellaq(i,k) = dellaq(i,k) + (tem1-tem2) * factor
+cj
+              tem1=eta(i,k)*(uo(i,k)-ucko(i,k))
+              tem2=eta(i,k-1)*(uo(i,k-1)-ucko(i,k-1))
+              dellau(i,k) = dellau(i,k) + (tem1-tem2) * factor
+cj
+              tem1=eta(i,k)*(vo(i,k)-vcko(i,k))
+              tem2=eta(i,k-1)*(vo(i,k-1)-vcko(i,k-1))
+              dellav(i,k) = dellav(i,k) + (tem1-tem2) * factor
+cj
+            endif
+          endif
+        enddo
+      enddo
+      if(.not.hwrf_samfshal) then
+       do n = 1, ntr
+       do k = 2, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k < ktcon(i)) then
+              dp = 1000.0_conv_wp * del(i,k)
+cj
+              tem1 = -eta(i,k) * ercko(i,k,n)
+              tem2 = -eta(i,k-1) * ecko(i,k-1,n)
+              dellae(i,k,n) = dellae(i,k,n) + (tem1-tem2)
+     &                      * real(grav, kind=conv_wp)/dp
+cj
+            endif
+          endif
+        enddo
+       enddo
+       enddo
+      endif
+c
+c------- cloud top
+c
+      do i = 1, im
+        if(cnvflg(i)) then
+          indx = ktcon(i)
+          dp = 1000.0_conv_wp * del(i,indx)
+          tem = eta(i,indx-1) * real(grav, kind=conv_wp) / dp
+          dellah(i,indx) = tem * (hcko(i,indx-1) - heo(i,indx-1))
+          dellaq(i,indx) = tem * qcko(i,indx-1)
+          dellau(i,indx) = tem * (ucko(i,indx-1) - uo(i,indx-1))
+          dellav(i,indx) = tem * (vcko(i,indx-1) - vo(i,indx-1))
+c
+c  cloud water
+c
+          dellal(i,indx) = tem * qlko_ktcon(i)
+        endif
+      enddo
+      if (.not.hwrf_samfshal) then
+      do n = 1, ntr
+      do i = 1, im
+        if(cnvflg(i)) then
+          indx = ktcon(i)
+          dp = 1000.0_conv_wp * del(i,indx)
+          dellae(i,indx,n) = eta(i,indx-1) *
+     &             ecko(i,indx-1,n) * real(grav, kind=conv_wp) / dp
+        endif
+      enddo
+      enddo
+      endif
+!
+! compute change rates due to environmental subsidence & uplift
+!      using a positive definite TVD flux-limiter scheme
+!
+!  for moisture
+!
+      do k=1,km1
+        do i=1,im
+          if(cnvflg(i) .and. k <= ktcon(i)) then
+            q_diff(i,k) = real(q1(i,k), kind=conv_wp) - real(q1(i,k+1),
+     &                    kind=conv_wp)
+          endif
+        enddo
+      enddo
+      do i=1,im
+        if(cnvflg(i)) then
+          if(real(q1(i,1), kind=conv_wp) >= 0.0_conv_wp) then
+            q_diff(i,0) = max(0.0_conv_wp,2.0_conv_wp*real(q1(i,1),
+     &                    kind=conv_wp)-real(q1(i,2), kind=conv_wp))-
+     &                    real(q1(i,1), kind=conv_wp)
+          else
+            q_diff(i,0) = min(0.0_conv_wp,2.0_conv_wp*real(q1(i,1),
+     &                    kind=conv_wp)-real(q1(i,2), kind=conv_wp))-
+     &                    real(q1(i,1), kind=conv_wp)
+          endif
+        endif
+      enddo
+!
+      flxtvd = 0.0_conv_wp
+      do k = 1, km1
+        do i = 1, im
+          if(cnvflg(i) .and.
+     &      (k >= kb(i) .and. k < ktcon(i))) then
+            if(eta(i,k) > 0.0_conv_wp) then
+              rrkp = 0.0_conv_wp
+              if(abs(q_diff(i,k)) > 1.e-22_conv_wp)
+     &               rrkp = q_diff(i,k+1) / q_diff(i,k)
+              phkp = (rrkp+abs(rrkp)) / (1.0_conv_wp+abs(rrkp))
+              tem1 = real(q1(i,k+1), kind=conv_wp) + phkp
+     &             * (qo(i,k) - real(q1(i,k+1), kind=conv_wp))
+              flxtvd(i,k) = eta(i,k) * tem1
+              if(k == kb(i)) flxtvd(i,k) = eta(i,k) * qo(i,k)
+            endif
+          endif
+        enddo
+      enddo
+!
+      do k = 2, km1
+        do i = 1, im
+          if(cnvflg(i) .and.
+     &      (k > kb(i) .and. k <= ktcon(i))) then
+             dp = 1000.0_conv_wp * del(i,k)
+             dellaq(i,k) = dellaq(i,k) + (flxtvd(i,k)
+     &                   - flxtvd(i,k-1)) * real(grav, kind=conv_wp)/dp
+          endif
+        enddo
+      enddo
+!
+!  for tracers including TKE & ozone
+!
+      if (.not.hwrf_samfshal) then
+!
+      do n=1,ntr
+        do k=1,km1
+          do i=1,im
+            if(cnvflg(i) .and. k <= ktcon(i)) then
+              e_diff(i,k,n) = ctr(i,k,n) - ctr(i,k+1,n)
+            endif
+          enddo
+        enddo
+        do i=1,im
+          if(cnvflg(i)) then
+            if(ctr(i,1,n) >= 0.0_conv_wp) then
+              e_diff(i,0,n) = max(0.0_conv_wp, 2.0_conv_wp * ctr(i,1,n)
+     &                      - ctr(i,2,n)) - ctr(i,1,n)
+            else
+              e_diff(i,0,n) = min(0.0_conv_wp, 2.0_conv_wp * ctr(i,1,n)
+     &                      - ctr(i,2,n)) - ctr(i,1,n)
+            endif
+          endif
+        enddo
+      enddo
+!
+      do n=1,ntr
+!
+        flxtvd = 0.0_conv_wp
+        do k= 1, km1
+          do i = 1, im
+            if(cnvflg(i) .and.
+     &        (k >= kb(i) .and. k < ktcon(i))) then
+              if(eta(i,k) > 0.0_conv_wp) then
+                rrkp = 0.0_conv_wp
+                if(abs(e_diff(i,k,n)) > 1.e-22_conv_wp)
+     &                 rrkp = e_diff(i,k+1,n) / e_diff(i,k,n)
+                phkp = (rrkp+abs(rrkp)) / (1.0_conv_wp+abs(rrkp))
+                tem1 = ctr(i,k+1,n) +
+     &                     phkp*(ctro(i,k,n)-ctr(i,k+1,n))
+                flxtvd(i,k) = eta(i,k) * tem1
+                if(k == kb(i)) flxtvd(i,k) = eta(i,k) * ctro(i,k,n)
+              endif
+            endif
+          enddo
+        enddo
+!
+        do k = 2, km1
+          do i = 1, im
+            if(cnvflg(i) .and.
+     &        (k > kb(i) .and. k <= ktcon(i))) then
+               dp = 1000.0_conv_wp * del(i,k)
+               dellae(i,k,n) = dellae(i,k,n) + (flxtvd(i,k)
+     &                       - flxtvd(i,k-1)) * real(grav, kind=conv_wp)
+     &                       /dp
+            endif
+          enddo
+        enddo
+!
+      enddo
+!
+      endif
+!
+!  compute convective turn-over time
+!
+!> - Following Bechtold et al. (2008) \cite bechtold_et_al_2008, calculate the convective turnover time using the mean updraft velocity (wc) and the cloud depth. It is also proportional to the grid size (gdx).
+      do i = 1, im
+         if (cnvflg(i)) then
+            tem = zi(i,ktcon1(i)) - zi(i,kbcon1(i))
+            if (progomega) then
+               wc_eff = max(wc(i), wc_min)
+               dtconv(i) = tem / wc_eff
+            else
+               dtconv(i) = tem / wc(i)
+            endif
+! - grid spacing scaling (disabled for HWRF shallow option)
+            if (.not. hwrf_samfshal) then
+               tfac = 1.0_conv_wp + gdx(i) / 75000.0_conv_wp
+               dtconv(i) = tfac * dtconv(i)
+            endif
+! - limits
+            dtconv(i) = max(dtconv(i), dtmin)
+            dtconv(i) = max(dtconv(i),dt2)
+            dtconv(i) = min(dtconv(i), dtmax)
+         endif
+      enddo
+!     
+!     > - Calculate advective time scale (tauadv) using a mean cloud layer wind speed.
+      do i= 1, im
+        if(cnvflg(i)) then
+          sumx(i) = 0.0_conv_wp
+          umean(i) = 0.0_conv_wp
+        endif
+      enddo
+      do k = 2, km1
+        do i = 1, im
+          if(cnvflg(i)) then
+            if(k >= kbcon1(i) .and. k < ktcon1(i)) then
+              dz = zi(i,k) - zi(i,k-1)
+              tem = sqrt(real(u1(i,k),kind=conv_wp)*real(u1(i,k),
+     &              kind=conv_wp) + real(v1(i,k),kind=conv_wp)
+     &             *real(v1(i,k),kind=conv_wp))
+              umean(i) = umean(i) + tem * dz
+              sumx(i) = sumx(i) + dz
+            endif
+          endif
+        enddo
+      enddo
+      do i= 1, im
+        if(cnvflg(i)) then
+           umean(i) = umean(i) / sumx(i)
+           umean(i) = max(umean(i), 1.0_conv_wp)
+           tauadv = gdx(i) / umean(i)
+           advfac(i) = tauadv / dtconv(i)
+           advfac(i) = min(real(cat_adj_shal, kind=conv_wp) * advfac(i)
+     &               , 1.0_conv_wp)
+        endif
+      enddo
+c
+c  compute cloud base mass flux as a function of the mean
+c      updraft velcoity
+c
+!> - From Bengtsson et al. (2022) \cite Bengtsson_2022 prognostic closure scheme, equation 8, call progsigma_calc() to compute updraft area fraction based on a moisture budget
+      if(progsigma)then
+         if (present(sigmaout)) then
+            sigmaout_loc(:,:) = real(sigmaout(:,:), kind=conv_wp)
+         else
+            sigmaout_loc(:,:) = 0.0_conv_wp
+         endif
+         if (present(qmicro)) then
+            qmicro_loc(:,:) = real(qmicro(:,:), kind=conv_wp)
+         else
+            qmicro_loc(:,:) = 0.0_conv_wp
+         endif
+         if (present(sigmain)) then
+            sigmain_loc(:,:) = real(sigmain(:,:), kind=conv_wp)
+         else
+            sigmain_loc(:,:) = 0.0_conv_wp
+         endif
+!      Initial computations, dynamic q-tendency
+         if(first_time_step .and. .not.restart)then
+            do k = 1,km
+               do i = 1,im
+                  qadv(i,k)=0.0_conv_wp
+               enddo
+            enddo
+         else
+            do k = 1,km
+               do i = 1,im
+                  qadv(i,k) = (real(q(i,k), kind=conv_wp)
+     &                      - real(prevsq(i,k), kind=conv_wp))*invdelt
+               enddo
+            enddo
+         endif
+
+         do k = 1,km
+            do i = 1,im
+               tmfq(i,k)=real(tmf(i,k,1), kind=conv_wp)
+            enddo
+         enddo
+
+         flag_shallow = .true.
+         flag_mid = .false.
+         call progsigma_calc(im,km,first_time_step,restart,flag_shallow,
+     &        flag_mid,del,tmfq,qmicro_loc,dbyo1,zdqca,
+     &        omega_u,zeta,real(hvap, kind=conv_wp),real(delt,
+     &        kind=conv_wp),qadv,kb,kbcon1,ktcon,cnvflg,real(betascu,
+     &        kind=conv_wp),real(betamcu, kind=conv_wp),real(betadcu,
+     &        kind=conv_wp),sigmind,sigminm,sigmins,sigmain_loc,
+     &        sigmaout_loc,sigmab)
+
+         if(present(sigmaout)) then
+           sigmaout(:,:) = real(sigmaout_loc(:,:),kind=kind_phys)
+         endif
+      endif
+
+!> - From Han et al.'s (2017) \cite han_et_al_2017 equation 6, calculate cloud base mass flux as a function of the mean updraft velcoity.
+!!  As discussed in Han et al. (2017) \cite han_et_al_2017 , when dtconv is larger than tauadv, the convective mixing is not fully conducted before the cumulus cloud is advected out of the grid cell. In this case, therefore, the cloud base mass flux is further reduced in proportion to the ratio of tauadv to dtconv.
+
+      do i= 1, im
+        if(cnvflg(i)) then
+          k = kbcon(i)
+          rho = po(i,k)*100.0_conv_wp / (real(rd, kind=conv_wp)*to(i,k))
+          if(progsigma .and. gdx(i) < dxcrtas)then
+             xmb(i) = advfac(i)*sigmab(i)*((-1.0_conv_wp*omegac(i))
+     &               *gravinv)
+          else
+             xmb(i) = advfac(i)*betaw*rho*wc(i)
+          endif
+        endif
+      enddo
+!
+!> - For scale-aware parameterization, the updraft fraction (sigmagfm) is first computed as a function of the lateral entrainment rate at cloud base (see Han et al.'s (2017) \cite han_et_al_2017 equation 4 and 5), following the study by Grell and Freitas (2014) \cite grell_and_freitas_2014.
+      do i = 1, im
+        if(cnvflg(i)) then
+          tem = min(max(xlamue(i,kbcon(i)), 2.e-4_conv_wp),
+     &          6.e-4_conv_wp)
+          tem = 0.2_conv_wp / tem
+          tem1 = 3.14_conv_wp * tem * tem
+          sigmagfm(i) = tem1 / real(garea(i), kind=conv_wp)
+          sigmagfm(i) = max(sigmagfm(i), 0.001_conv_wp)
+          sigmagfm(i) = min(sigmagfm(i), 0.999_conv_wp)
+        endif
+      enddo
+!
+!> - Then, calculate the reduction factor (scaldfunc) of the vertical convective eddy transport of mass flux as a function of updraft fraction from the studies by Arakawa and Wu (2013) \cite arakawa_and_wu_2013 (also see Han et al.'s (2017) \cite han_et_al_2017 equation 1 and 2). The final cloud base mass flux with scale-aware parameterization is obtained from the mass flux when sigmagfm << 1, multiplied by the reduction factor (Han et al.'s (2017) \cite han_et_al_2017 equation 2).
+      do i = 1, im
+        if(cnvflg(i)) then
+          if (gdx(i) < dxcrt) then
+             if(progsigma)then
+              scaldfunc(i) = (1.0_conv_wp-sigmab(i)) * (1.0_conv_wp
+     &                      -sigmab(i))
+             else
+              scaldfunc(i) = (1.0_conv_wp-sigmagfm(i)) * (1.0_conv_wp
+     &                      -sigmagfm(i))
+             endif
+             scaldfunc(i) = max(min(scaldfunc(i), 1.0_conv_wp),
+     &                      0.0_conv_wp)
+          else
+            scaldfunc(i) = 1.0_conv_wp
+          endif
+          xmb(i) = xmb(i) * scaldfunc(i)
+          xmb(i) = min(xmb(i),xmbmax(i))
+        endif
+      enddo
+!
+!> - Transport aerosols if present
+!
+!      if (.not.hwrf_samfshal) then
+!       if (do_aerosols)
+!     &  call samfshalcnv_aerosols(im, im, km, itc, ntc, ntr, delt,
+!!     &  xlamde, xlamdd, cnvflg, jmin, kb, kmax, kbcon, ktcon, fscav,
+!     &  cnvflg, kb, kmax, ktcon, fscav,
+!!     &  edto, xlamd, xmb, c0t, eta, etad, zi, xlamue, xlamud, delp,
+!     &  xmb, c0t, eta, zi, xlamue, xlamud, delp,
+!     &  qtr, qaero)
+!      endif
+!
+!> ## For the "feedback control", calculate updated values of the state variables by multiplying the cloud base mass flux and the tendencies calculated per unit cloud base mass flux from the static control.
+!! - Recalculate saturation specific humidity.
+c
+c!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+c
+      do k = 1, km
+        do i = 1, im
+          if (cnvflg(i) .and. k <= kmax(i)) then
+            qeso(i,k) = real(0.01_kind_phys * fpvs(t1(i,k)),
+     &                  kind=conv_wp) ! fpvs is in pa
+            qeso(i,k) = real(eps, kind=conv_wp) * qeso(i,k)
+     &                / (pfld(i,k) + real(epsm1, kind=conv_wp)
+     &                * qeso(i,k))
+            val       = 1.e-8_conv_wp
+            qeso(i,k) = max(qeso(i,k), val)
+          endif
+        enddo
+      enddo
+c!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+c
+!> - Calculate the temperature tendency from the moist static energy and specific humidity tendencies.
+!> - Update the temperature, specific humidity, and horiztonal wind state variables by multiplying the cloud base mass flux-normalized tendencies by the cloud base mass flux.
+!> - Accumulate column-integrated tendencies.
+      do i = 1, im
+        delhbar(i) = 0.0_conv_wp
+        delqbar(i) = 0.0_conv_wp
+        deltbar(i) = 0.0_conv_wp
+        delubar(i) = 0.0_conv_wp
+        delvbar(i) = 0.0_conv_wp
+        qcond(i) = 0.0_conv_wp
+      enddo
+      if (.not. hwrf_samfshal) then
+       do n = 1, ntr
+       do i = 1, im
+        delebar(i,n) = 0.0_conv_wp
+       enddo
+       enddo
+      endif
+      do k = 1, km
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              dellat = (dellah(i,k) - real(hvap, kind=conv_wp)
+     &               * dellaq(i,k)) / real(cp, kind=conv_wp)
+              new_t1(i,k) = real(t1(i,k), kind=conv_wp) + dellat
+     &                    * xmb(i) * dt2
+              new_q1(i,k) = real(q1(i,k), kind=conv_wp) + dellaq(i,k)
+     &                    * xmb(i) * dt2
+!              tem = 1./rcs(i)
+!              u1(i,k) = u1(i,k) + dellau(i,k) * xmb(i) * dt2 * tem
+!              v1(i,k) = v1(i,k) + dellav(i,k) * xmb(i) * dt2 * tem
+              new_u1(i,k) = real(u1(i,k), kind=conv_wp) + dellau(i,k)
+     &                    * xmb(i) * dt2
+              new_v1(i,k) = real(v1(i,k), kind=conv_wp) + dellav(i,k)
+     &                    * xmb(i) * dt2
+              dp = 1000.0_conv_wp * del(i,k)
+              tem = xmb(i) * dp / real(grav, kind=conv_wp)
+              delhbar(i) = delhbar(i) + tem * dellah(i,k)
+              delqbar(i) = delqbar(i) + tem * dellaq(i,k)
+              deltbar(i) = deltbar(i) + tem * dellat
+              delubar(i) = delubar(i) + tem * dellau(i,k)
+              delvbar(i) = delvbar(i) + tem * dellav(i,k)
+            endif
+          endif
+        enddo
+      enddo
+!
+! Negative moisture is set to zero after borrowing it from
+!    positive values within the mass-flux transport layers
+!
+      do i = 1,im
+        tsumn(i) = 0.0_conv_wp
+        tsump(i) = 0.0_conv_wp
+        rtnp(i) = 1.0_conv_wp
+      enddo
+      do k = 1,km1
+        do i = 1,im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              tem = new_q1(i,k) * real(delp(i,k), kind=conv_wp)
+     &            / real(grav, kind=conv_wp)
+              if(new_q1(i,k) < 0.0_conv_wp) tsumn(i) = tsumn(i) + tem
+              if(new_q1(i,k) > 0.0_conv_wp) tsump(i) = tsump(i) + tem
+            endif
+          endif
+        enddo
+      enddo
+      do i = 1,im
+        if(cnvflg(i)) then
+          if(tsump(i) > 0.0_conv_wp .and. tsumn(i) < 0.0_conv_wp) then
+            if(tsump(i) > abs(tsumn(i))) then
+              rtnp(i) = tsumn(i) / tsump(i)
+            else
+              rtnp(i) = tsump(i) / tsumn(i)
+            endif
+          endif
+        endif
+      enddo
+      do k = 1,km1
+        do i = 1,im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              if(rtnp(i) < 0.0_conv_wp) then
+                if(tsump(i) > abs(tsumn(i))) then
+                  if(new_q1(i,k) < 0.0_conv_wp) 
+     &              new_q1(i,k) = 0.0_conv_wp
+                  if(new_q1(i,k) > 0.0_conv_wp)
+     &              new_q1(i,k) = (1.0_conv_wp + rtnp(i)) * new_q1(i,k)
+                else
+                  if(new_q1(i,k) < 0.0_conv_wp)
+     &              new_q1(i,k) = (1.0_conv_wp + rtnp(i)) * new_q1(i,k)
+                  if(new_q1(i,k) > 0.0_conv_wp)
+     &              new_q1(i,k) = 0.0_conv_wp
+                endif
+              endif
+            endif
+          endif
+        enddo
+      enddo
+!
+      if (.not.hwrf_samfshal) then
+!
+      indx = ntk - 2
+      do n = 1, ntr
+!
+       do k = 1, km
+         do i = 1, im
+           if (cnvflg(i)) then
+             if(k > kb(i) .and. k <= ktcon(i)) then
+               ctr(i,k,n) = ctr(i,k,n) + dellae(i,k,n) * xmb(i) * dt2
+               dp = 1000.0_conv_wp * del(i,k)
+               delebar(i,n)=delebar(i,n)+dellae(i,k,n)*xmb(i)*dp
+     &                     /real(grav, kind=conv_wp)
+             endif
+           endif
+         enddo
+       enddo
+!
+! Negative TKE, ozone, and aerosols are set to zero after borrowing them
+!      from positive values within the mass-flux transport layers
+!
+        do i = 1,im
+          tsumn(i) = 0.0_conv_wp
+          tsump(i) = 0.0_conv_wp
+          rtnp(i) = 1.0_conv_wp
+        enddo
+        do k = 1,km1
+          do i = 1,im
+            if (cnvflg(i)) then
+              if(k > kb(i) .and. k <= ktcon(i)) then
+                if(n == indx) then
+                  if(k > 1) then
+                    dz = zi(i,k) - zi(i,k-1)
+                  else
+                    dz = zi(i,k)
+                  endif
+                  tem = ctr(i,k,n) * dz
+                else
+                  tem = ctr(i,k,n) * real(delp(i,k), kind=conv_wp)
+     &                / real(grav, kind=conv_wp)
+                endif
+                if(ctr(i,k,n) < 0.0_conv_wp) tsumn(i) = tsumn(i) + tem
+                if(ctr(i,k,n) > 0.0_conv_wp) tsump(i) = tsump(i) + tem
+              endif
+            endif
+          enddo
+        enddo
+        do i = 1,im
+          if(cnvflg(i)) then
+            if(tsump(i) > 0.0_conv_wp .and. tsumn(i) < 0.0_conv_wp) then
+              if(tsump(i) > abs(tsumn(i))) then
+                rtnp(i) = tsumn(i) / tsump(i)
+              else
+                rtnp(i) = tsump(i) / tsumn(i)
+              endif
+            endif
+          endif
+        enddo
+        do k = 1,km1
+        do i = 1,im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              if(rtnp(i) < 0.0_conv_wp) then
+                if(tsump(i) > abs(tsumn(i))) then
+                  if(ctr(i,k,n) < 0.0_conv_wp) ctr(i,k,n) = 0.0_conv_wp
+                  if(ctr(i,k,n) > 0.0_conv_wp) then
+                    ctr(i,k,n) = (1.0_conv_wp + rtnp(i)) * ctr(i,k,n)
+                  endif
+                else
+                  if(ctr(i,k,n) < 0.0_conv_wp) then
+                    ctr(i,k,n) = (1.0_conv_wp + rtnp(i)) * ctr(i,k,n)
+                  endif
+                  if(ctr(i,k,n) > 0.0_conv_wp) ctr(i,k,n) = 0.0_conv_wp
+                endif
+              endif
+            endif
+          endif
+        enddo
+        enddo
+!
+        kk = n+2
+        do k = 1, km
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              new_qtr(i,k,kk) = ctr(i,k,n)
+            endif
+          endif
+        enddo
+        enddo
+!
+      enddo
+!
+       if (do_aerosols) then
+!
+        do n = 1, ntc
+!
+!  convert wet deposition to total mass deposited over dt2 and dp
+          do k = 2, km1
+            do i = 1, im
+              if (cnvflg(i)) then
+                if(k > kb(i) .and. k < ktcon(i)) then
+                  dp = 1000.0_conv_wp * del(i,k)
+                  wet_dep(i,k,n) = chem_pw(i,k,n)*real(grav,
+     &                             kind=conv_wp)/dp
+                  wet_dep(i,k,n) = wet_dep(i,k,n)*xmb(i)*dt2*dp
+                endif
+              endif
+            enddo
+          enddo
+!
+          kk = n + itc - 1
+          do k = 2, km1
+            do i = 1, im
+              if (cnvflg(i)) then
+                if(k > kb(i) .and. k < ktcon(i)) then
+                  dp = 1000.0_conv_wp * del(i,k)
+                  if (new_qtr(i,k,kk) < 0.0_conv_wp) then
+!   borrow negative mass from wet deposition
+                    tem = -new_qtr(i,k,kk) * dp
+                    if(wet_dep(i,k,n) >= tem) then
+                      wet_dep(i,k,n) = wet_dep(i,k,n) - tem
+                      new_qtr(i,k,kk) = 0.0_conv_wp
+                    else
+                      wet_dep(i,k,n) = 0.0_conv_wp
+                      new_qtr(i,k,kk) = new_qtr(i,k,kk) + wet_dep(i,k,n)
+     &                                / dp
+                    endif
+                  endif
+                endif
+              endif
+            enddo
+          enddo
+!
+        enddo
+!
+       endif
+!
+      endif
+!
+!> - Recalculate saturation specific humidity using the updated temperature.
+      do k = 1, km
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k > kb(i) .and. k <= ktcon(i)) then
+              qeso(i,k) = real(0.01_kind_phys * fpvs(real(new_t1(i,k),
+     &                  kind=kind_phys)), kind=conv_wp) ! fpvs is in pa
+              qeso(i,k) = real(eps, kind=conv_wp) * qeso(i,k)
+     &                  / (pfld(i,k) + real(epsm1, kind=conv_wp)
+     &                  * qeso(i,k))
+              val       = 1.e-8_conv_wp
+              qeso(i,k) = max(qeso(i,k), val )
+            endif
+          endif
+        enddo
+      enddo
+c
+!> - Add up column-integrated convective precipitation by multiplying the normalized value by the cloud base mass flux.
+      do i = 1, im
+        rntot(i) = 0.0_conv_wp
+        delqev(i) = 0.0_conv_wp
+        delq2(i) = 0.0_conv_wp
+        flg(i) = cnvflg(i)
+      enddo
+      do k = km, 1, -1
+        do i = 1, im
+          if (cnvflg(i)) then
+            if(k < ktcon(i) .and. k > kb(i)) then
+              rntot(i) = rntot(i) + pwo(i,k) * xmb(i) * .001_conv_wp
+     &                 * dt2
+            endif
+          endif
+        enddo
+      enddo
+c
+c evaporating rain
+c
+!> - Determine the evaporation of the convective precipitation and update the integrated convective precipitation.
+!> - Update state temperature and moisture to account for evaporation of convective precipitation.
+!> - Update column-integrated tendencies to account for evaporation of convective precipitation.
+      do k = km, 1, -1
+        do i = 1, im
+          if (k <= kmax(i)) then
+            deltv(i) = 0.0_conv_wp
+            delq(i) = 0.0_conv_wp
+            qevap(i) = 0.0_conv_wp
+            if(cnvflg(i)) then
+              if(k < ktcon(i) .and. k > kb(i)) then
+                rn(i) = real(real(rn(i), kind=conv_wp) + pwo(i,k)
+     &                * xmb(i) * 0.001_conv_wp * dt2, kind=kind_phys)
+              endif
+            endif
+            if(flg(i) .and. k < ktcon(i)) then
+!              evef = edt(i) * evfact
+!              if(islimsk(i) == 1) evef=edt(i) * evfactl
+!              if(islimsk(i) == 1) evef=.07
+              qcond(i) = shevf * real(evef, kind=conv_wp)
+     &                 * (new_q1(i,k) - qeso(i,k)) / (1.0_conv_wp
+     &                 + el2orc * qeso(i,k) / new_t1(i,k)**2)
+              dp = 1000.0_conv_wp * del(i,k)
+              factor = dp / real(grav, kind=conv_wp)
+              if(real(rn(i), kind=conv_wp) > 0.0_conv_wp .and. qcond(i)
+     &          < 0.0_conv_wp) then
+                qevap(i) = -qcond(i) * (1.0_conv_wp -exp(-.32_conv_wp
+     &                   * sqrt(dt2 * real(rn(i), kind=conv_wp))))
+                qevap(i) = min(qevap(i), real(rn(i), kind=conv_wp)
+     &                   * 1000.0_conv_wp*real(grav, kind=conv_wp)/dp)
+                delq2(i) = delqev(i) + .001_conv_wp * qevap(i) * factor
+              endif
+              if(real(rn(i), kind=conv_wp) > 0.0_conv_wp .and. qcond(i)
+     &          < 0.0_conv_wp .and.delq2(i) > rntot(i)) then
+                qevap(i) = 1000.0_conv_wp* real(grav, kind=conv_wp)
+     &                   * (rntot(i) - delqev(i)) / dp
+                flg(i) = .false.
+              endif
+              if(real(rn(i), kind=conv_wp) > 0.0_conv_wp .and. qevap(i)
+     &          > 0.0_conv_wp) then
+                tem  = .001_conv_wp * factor
+                tem1 = qevap(i) * tem
+                if (tem1 > real(rn(i), kind=conv_wp)) then
+                  qevap(i) = real(rn(i), kind=conv_wp) / tem
+                  rn(i) = 0.0_kind_phys
+                else
+                  rn(i) = real(real(rn(i), kind=conv_wp) - tem1,
+     &                    kind=kind_phys)
+                endif
+                new_q1(i,k) = new_q1(i,k) + qevap(i)
+                new_t1(i,k) = new_t1(i,k) - elocp * qevap(i)
+                deltv(i) = - elocp * qevap(i) / dt2
+                delq(i) = + qevap(i) / dt2
+                delqev(i) = delqev(i) + tem * qevap(i)
+              endif
+              delqbar(i) = delqbar(i) + delq(i)  * factor
+              deltbar(i) = deltbar(i) + deltv(i) * factor
+            endif
+          endif
+        enddo
+      enddo
+cj
+!      do i = 1, im
+!      if(me == 31 .and. cnvflg(i)) then
+!      if(cnvflg(i)) then
+!        print *, ' shallow delhbar, delqbar, deltbar = ',
+!     &             delhbar(i),hvap*delqbar(i),cp*deltbar(i)
+!        print *, ' shallow delubar, delvbar = ',delubar(i),delvbar(i)
+!        print *, ' precip =', hvap*rn(i)*1000./dt2
+!        print*,'pdif= ',pfld(i,kbcon(i))-pfld(i,ktcon(i))
+!      endif
+!      enddo
+!      do n = 1, ntr
+!      do i = 1, im
+!      if(me == 31 .and. cnvflg(i)) then
+!      if(cnvflg(i)) then
+!        print *, ' tracer delebar = ',delebar(i,n)
+!      endif
+!      enddo
+!      enddo
+cj
+      do i = 1, im
+        if(cnvflg(i)) then
+          if(real(rn(i), kind=conv_wp) < 0.0_conv_wp .or. .not.flg(i))
+     &      rn(i) = 0.0_kind_phys
+          ktop(i) = ktcon(i)
+          kbot(i) = kbcon(i)
+          kcnv(i) = 2
+        endif
+      enddo
+c
+c      convective cloud water
+      do k = 1, km
+         do i = 1, im
+            if (cnvflg(i)) then
+               if (k >= kbcon(i) .and. k < ktcon(i)) then
+                  cnvw(i,k) = real(cnvwt(i,k) * xmb(i) * dt2,
+     &                        kind=kind_phys)
+                  if (progsigma) then
+                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+     &                    real(cscale, kind=conv_wp), kind=kind_phys)
+                  else
+                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+     &                    real(cscale, kind=conv_wp), kind=kind_phys)
+                  endif
+               endif
+            endif
+         enddo
+      enddo
+c
+c  convective cloud cover
+c
+!> - Calculate convective cloud cover, which is used when pdf-based cloud fraction is used (i.e., pdfcld=.true.).
+      do k = 1, km
+        do i = 1, im
+          if (cnvflg(i)) then
+            if (k >= kbcon(i) .and. k < ktcon(i)) then
+              cnvc(i,k) = real(0.04_conv_wp * log(1.0_conv_wp
+     &                  + 675.0_conv_wp * eta(i,k) * xmb(i)),
+     &                    kind=kind_phys)
+              cnvc(i,k) = real(min(real(cnvc(i,k), kind=conv_wp),
+     &                    0.2_conv_wp), kind=kind_phys)
+              cnvc(i,k) = real(max(real(cnvc(i,k), kind=conv_wp),
+     &                    0.0_conv_wp), kind=kind_phys)
+            endif
+          endif
+        enddo
+      enddo
+c
+c  cloud water
+c
+!> - Separate detrained cloud water into liquid and ice species as a function of temperature only.
+      if (ncloud > 0) then
+!
+      do k = 1, km1
+        do i = 1, im
+          if (cnvflg(i)) then
+!            if (k > kb(i) .and. k <= ktcon(i)) then
+            if (k >= kbcon(i) .and. k <= ktcon(i)) then
+              tem  = dellal(i,k) * xmb(i) * dt2
+              tem1 = max(0.0_conv_wp, min(1.0_conv_wp, (tcr
+     &             - new_t1(i,k)) * tcrf))
+              if (new_qtr(i,k,2) > -999.0_conv_wp) then
+                ! Ice
+                new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1
+                ! Water
+                new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+     &                         - tem1)
+              else
+                new_qtr(i,k,1) = new_qtr(i,k,1) + tem 
+              endif
+            endif
+          endif
+        enddo
+      enddo
+!
+      endif
+!> - Store aerosol concentrations if present
+!      if (.not. hwrf_samfshal) then
+!       if (do_aerosols) then
+!        do n = 1, ntc
+!          kk = n + itc - 1
+!          do k = 1, km
+!            do i = 1, im
+!              if(cnvflg(i) .and. rn(i) > 0.) then
+!                if (k <= kmax(i)) new_qtr(i,k,kk) = qaero(i,k,n)
+!              endif
+!            enddo
+!          enddo
+!        enddo
+!       endif
+!      endif
+!
+! hchuang code change
+!
+!> - Calculate and retain the updraft mass flux for dust transport by cumulus convection.
+!
+!> - Calculate the updraft convective mass flux.
+      do k = 1, km
+        do i = 1, im
+          if(cnvflg(i)) then
+            if(k >= kb(i) .and. k < ktop(i)) then
+              ud_mf(i,k) = real(eta(i,k) * xmb(i) * dt2, kind=kind_phys)
+            endif
+          endif
+        enddo
+      enddo
+!> - save the updraft convective mass flux at cloud top.
+      do i = 1, im
+        if(cnvflg(i)) then
+           k = ktop(i)-1
+           dt_mf(i,k) = real(ud_mf(i,k),kind=kind_phys)
+        endif
+      enddo
+!
+!   include TKE contribution from shallow convection
+!
+      if (.not.hwrf_samfshal) then
+      if (ntk > 0) then
+!
+      do k = 2, km1
+        do i = 1, im
+          if(cnvflg(i)) then
+            if(k > kb(i) .and. k < ktop(i)) then
+              tem = 0.5_conv_wp * (eta(i,k-1) + eta(i,k)) * xmb(i)
+              tem1 = pfld(i,k) * 100.0_conv_wp / (real(rd,kind=conv_wp)
+     &             * new_t1(i,k))
+              if(progsigma)then
+                 tem2 = sigmab(i)
+              else
+                 tem2 = max(sigmagfm(i), betaw)
+              endif
+              ptem = tem / (tem2 * tem1)
+              new_qtr(i,k,ntk) = new_qtr(i,k,ntk) + 0.5_conv_wp * tem2
+     &                         * ptem * ptem
+            endif
+          endif
+        enddo
+      enddo
+!
+      endif
+      endif
+!!
+      ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+     &        kind=conv_wp), kind=kind_phys)
+      ten_u = real((new_u1 - real(u1, kind=conv_wp)) / real(delt,
+     &        kind=conv_wp), kind=kind_phys)
+      ten_v = real((new_v1 - real(v1, kind=conv_wp)) / real(delt,
+     &        kind=conv_wp), kind=kind_phys)
+      ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+     &             / real(delt, kind=conv_wp), kind=kind_phys)
+      dqtr  = real((new_qtr - real(qtr, kind=conv_wp)) / real(delt,
+     &        kind=conv_wp), kind=kind_phys)
+
+      return
+      end subroutine samfshalcnv_run
+!> @}
+      end module samfshalcnv

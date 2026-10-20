@@ -1,0 +1,25 @@
+diff -ruN a/UFSATM/ccpp/CMakeLists.txt b/UFSATM/ccpp/CMakeLists.txt
+--- a/UFSATM/ccpp/CMakeLists.txt	2026-10-17 23:30:56
++++ b/UFSATM/ccpp/CMakeLists.txt	2026-10-17 23:31:15
+@@ -441,10 +441,20 @@
+   set(SAMF_FORTRAN_FILES)
+ 
+   foreach(NAME IN LISTS SAMF_NAMES)
+-    set(TMP_LIST ${SCHEME_FORTRAN_FILES})
++    set(TMP_LIST ${SCHEME_FORTRAN_FILES} ${CAPGEN_DEPENDENCIES})
+     list(FILTER TMP_LIST INCLUDE REGEX ".*${NAME}$")
+     list(APPEND SAMF_FORTRAN_FILES ${TMP_LIST})
+   endforeach()
++
++  if(SAMF_FORTRAN_FILES)
++    list(REMOVE_DUPLICATES SAMF_FORTRAN_FILES)
++    list(LENGTH SAMF_FORTRAN_FILES N_SAMF_FOUND)
++    list(LENGTH SAMF_NAMES N_SAMF_NAMES)
++    if(NOT N_SAMF_FOUND EQUAL N_SAMF_NAMES)
++      message(FATAL_ERROR "SAMFCNV_32BIT: found ${N_SAMF_FOUND} of ${N_SAMF_NAMES} SAMF files: ${SAMF_FORTRAN_FILES}")
++    endif()
++    message(STATUS "SAMFCNV_32BIT files: ${SAMF_FORTRAN_FILES}")
++  endif()
+ 
+   if(SAMF_FORTRAN_FILES)
+     if(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")

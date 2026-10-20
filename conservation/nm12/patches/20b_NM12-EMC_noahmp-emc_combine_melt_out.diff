@@ -1,0 +1,22 @@
+--- a/src/module_sf_noahmp_glacier.F90
++++ b/src/module_sf_noahmp_glacier.F90
+@@ -2908,7 +2908,7 @@
+                 snliq(j+1) = snliq(j+1) + snliq(j)
+                 snice(j+1) = snice(j+1) + snice(j)
+              else
+-               if (isnow_old < -1) then
++               if (isnow < -1) then
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                else
+--- a/src/module_sf_noahmplsm.F90
++++ b/src/module_sf_noahmplsm.F90
+@@ -7640,7 +7640,7 @@
+                 snice(j+1) = snice(j+1) + snice(j)
+                 dzsnso(j+1) = dzsnso(j+1) + dzsnso(j)
+              else
+-               if (isnow_old < -1) then    ! mb/km: change to isnow
++               if (isnow < -1) then
+                 snliq(j-1) = snliq(j-1) + snliq(j)
+                 snice(j-1) = snice(j-1) + snice(j)
+                 dzsnso(j-1) = dzsnso(j-1) + dzsnso(j)

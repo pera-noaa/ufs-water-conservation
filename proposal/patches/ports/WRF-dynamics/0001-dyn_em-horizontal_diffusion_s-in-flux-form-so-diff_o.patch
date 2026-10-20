@@ -1,0 +1,124 @@
+From e7ac377423f846f5c071f2e8d053d926b7fdae21 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:13:52 -0600
+Subject: [PATCH 1/3] dyn_em: horizontal_diffusion_s in flux form, so
+ diff_opt=2 conserves scalar mass
+
+What was wrong: the tendency multiplied a difference of face fluxes by the
+cell-centre column factor g/(dnw*rdzw), i.e. the cell-centre depth, and the
+coordinate-slope terms multiplied a vertical difference of the averaged flux by
+a cell-centre slope zx_at_m. Neither sums to zero over the domain when layer
+depth varies horizontally, so diff_opt=2 created or destroyed moisture,
+scalars, chem, tracers (and mu*theta).
+
+Fix: each face flux carries its own face depth (1/rdzu, 1/rdzv, already
+computed in the routine) and face length (1/msfuy, 1/msfvx; zero where msfvx
+is zero at the poles of a global grid), the cell factor is msftx*msfty as in
+the diff_opt=1 horizontal_diffusion, and the slope terms are differences of
+w-level fluxes zx_w*H1avg, zy_w*H2avg with the slope at the column's w levels.
+This is the exact flux form of the same operator: H1, H2, K, rho and the
+gradients are unchanged, and with flat eta levels and unit map factors the
+tendencies are identical to the old ones. Conserved: the sum over the domain
+of (c1h*mu+c2h)*dnw*q*dx*dy/(msftx*msfty)/g = rho_d*dz*q*area, the quantity
+rk_update_scalar advances. The face-flux differences telescope over i and j;
+the slope terms telescope over k because H1avg, H2avg are zero at the ground
+and the lid. Fields touched: theta, TKE, all moist species and numbers, chem,
+tracers, scalars when diff_opt=2.
+
+Measured in em_quarter_ss (supercell, doubly periodic, no surface fluxes,
+2 h, Thompson with the water-closure series): domain water change outside
+the microphysics, as a fraction of precipitation, before -> after
+  diff_opt=2 km_opt=2         -1.07e-3 -> +9.8e-6
+  diff_opt=2 km_opt=1         -4.4e-5  -> -2.3e-5 (domain total -2.7e-5 -> -6.9e-6;
+                                          the microphysics itself is +1.6e-5)
+  mix_full_fields=.false.     -1.03e-3 -> +6.1e-7
+  diff_opt=0                  bit-identical output
+Storm at 2 h (km_opt=2): precipitation 4.578 -> 4.580 kg/m2, max w
+44.8 -> 44.7 m/s, theta' rms 2.906 -> 2.908 K, coldest surface theta'
+-5.13 -> -5.12 K.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ dyn_em/module_diffusion_em.F | 31 ++++++++++++++++++++-----------
+ 1 file changed, 20 insertions(+), 11 deletions(-)
+
+diff --git a/dyn_em/module_diffusion_em.F b/dyn_em/module_diffusion_em.F
+index 21d602fd..1f2c0f55 100644
+--- a/dyn_em/module_diffusion_em.F
++++ b/dyn_em/module_diffusion_em.F
+@@ -3772,8 +3772,10 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+                                                                      H1, &
+                                                                      H2, &
+                                                                  xkxavg, &
+-                                                                zx_at_m, &
+-                                                                zy_at_m
++                                                                zx_at_w, &
++                                                                zy_at_w, &
++                                                                     F1, &
++                                                                     F2
+ 
+    REAL , DIMENSION( its:ite, kts:kte, jts:jte)            ::  tmptendf
+ 
+@@ -3875,6 +3877,7 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H1(i,k,j)=-msfux(i,j)*xkxavg(i,k,j)*(                      &
+                  rdx*(var(i,k,j)-var(i-1,k,j)) - tmpzx*         &
+                      (H1avg(i,k+1,j)-H1avg(i,k,j))*rdzu )
++      F1(i,k,j)=H1(i,k,j)/(rdzu*msfuy(i,j))  ! flux through the u face (face depth, face length)
+ 
+ !      tmpzeta_z = 0.5*(zeta_z(i,j)+zeta_z(i-1,j))
+ !      H1(i,k,j)=-msfuy(i,j)*xkxavg(i,k,j)*(                         &
+@@ -3924,6 +3927,8 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H2(i,k,j)=-msfvy(i,j)*xkxavg(i,k,j)*(                       &
+                  rdy*(var(i,k,j)-var(i,k,j-1)) - tmpzy*          &
+                      (H2avg(i ,k+1,j)-H2avg(i,k,j))*rdzv)
++      F2(i,k,j)=0.                           ! msfvx is 0 at the poles of a global grid
++      IF (msfvx(i,j) .NE. 0.) F2(i,k,j)=H2(i,k,j)/(rdzv*msfvx(i,j))
+ 
+ !      tmpzeta_z = 0.5*(zeta_z(i,j)+zeta_z(i,j-1))
+ !      H2(i,k,j)=-msfvy(i,j)*xkxavg(i,k,j)*(                         &
+@@ -3947,8 +3952,8 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+ ! H1avg(i,k,j)=zx*H1avg*zeta_z
+ ! H2avg(i,k,j)=zy*H2avg*zeta_z
+ 
+-      zx_at_m(i, k, j) = 0.25*(zx(i,k,j)+ zx(i+1,k,j) + zx(i,k+1,j)+ zx(i+1,k+1,j))
+-      zy_at_m(i, k, j) = 0.25*(zy(i,k,j)+ zy(i,k,j+1) + zy(i,k+1,j)+ zy(i,k+1,j+1))
++      zx_at_w(i, k, j) = 0.5*(zx(i,k,j)+ zx(i+1,k,j))
++      zy_at_w(i, k, j) = 0.5*(zy(i,k,j)+ zy(i,k,j+1))
+ 
+ !      H1avg(i,k,j)=H1avg(i,k,j)*tmpzx*zeta_z(i,j)
+ !      H2avg(i,k,j)=H2avg(i,k,j)*tmpzy*zeta_z(i,j)
+@@ -3962,8 +3967,10 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       H1avg(i,ktf+1,j)=0.
+       H2avg(i,kts  ,j)=0.
+       H2avg(i,ktf+1,j)=0.
+-      zx_at_m(i, kts, j) = 0.25*(zx(i,kts,j)+ zx(i+1,kts,j) + zx(i,kts+1,j)+ zx(i+1,kts+1,j))
+-      zy_at_m(i, kts, j) = 0.25*(zy(i,kts,j)+ zy(i,kts,j+1) + zy(i,kts+1,j)+ zy(i,kts+1,j+1))
++      zx_at_w(i, kts  , j) = 0.5*(zx(i,kts  ,j)+ zx(i+1,kts  ,j))
++      zy_at_w(i, kts  , j) = 0.5*(zy(i,kts  ,j)+ zy(i,kts  ,j+1))
++      zx_at_w(i, ktf+1, j) = 0.5*(zx(i,ktf+1,j)+ zx(i+1,ktf+1,j))
++      zy_at_w(i, ktf+1, j) = 0.5*(zy(i,ktf+1,j)+ zy(i,ktf+1,j+1))
+ 
+    ENDDO
+    ENDDO
+@@ -3975,11 +3982,13 @@ SUBROUTINE horizontal_diffusion_s (tendency, config_flags,                &
+       mrdx=msftx(i,j)*rdx
+       mrdy=msfty(i,j)*rdy
+ 
+-      tendency(i,k,j)=tendency(i,k,j) +   g/(dnw(k)*rdzw(i,k,j)) * &
+-           (mrdx*(H1(i+1,k,j)-H1(i  ,k,j)) +                       &
+-            mrdy*(H2(i,k,j+1)-H2(i,k,j  )) -                       &
+-            msftx(i,j)*zx_at_m(i, k, j)*(H1avg(i,k+1,j)-H1avg(i,k,j))*rdzw(i,k,j) - &
+-            msfty(i,j)*zy_at_m(i, k, j)*(H2avg(i,k+1,j)-H2avg(i,k,j))*rdzw(i,k,j)   &
++! flux form, so the sum of mu*dnw*var over the domain telescopes:
++! face fluxes carry the face depth, the slope terms are differences of w-level fluxes
++      tendency(i,k,j)=tendency(i,k,j) +   g/dnw(k) *                           &
++           (msfty(i,j)*mrdx*(F1(i+1,k,j)-F1(i  ,k,j)) +                        &
++            msftx(i,j)*mrdy*(F2(i,k,j+1)-F2(i,k,j  )) -                        &
++            msftx(i,j)*(zx_at_w(i,k+1,j)*H1avg(i,k+1,j)-zx_at_w(i,k,j)*H1avg(i,k,j)) - &
++            msfty(i,j)*(zy_at_w(i,k+1,j)*H2avg(i,k+1,j)-zy_at_w(i,k,j)*H2avg(i,k,j))   &
+            )
+    ENDDO
+    ENDDO
+-- 
+2.55.0
+

@@ -1,0 +1,13 @@
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+@@ -780,7 +780,9 @@
+       enddo
+ !>  - Compute \f$\frac{\Delta t}{\Delta z}\f$ , \f$u_*\f$
+       do i=1,im
+-         dtdz1(i)  = dt2 / (zi(i,2)-zi(i,1))
++!  surface fluxes are kinematic with rho_a: apply them to the host layer mass del/g
++!  (rho_a*(zi(2)-zi(1)) differs from del/g by the nonhydrostatic dz)
++         dtdz1(i)  = dt2 * rho_a(i) * g / del(i,1)
+       enddo
+ !
+       do i=1,im

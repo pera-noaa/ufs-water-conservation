@@ -1,0 +1,303 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:46.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:47.000000000 -0500
+@@ -1088,7 +1088,6 @@
+     integer              :: thompson_ext_ndiag3d=37 !< number of 3d arrays for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner        !< time step for the inner loop in s
+     logical              :: sedi_semi       !< flag for semi Lagrangian sedi of rain
+-    logical              :: thompson_sed_actual !< Thompson sedimentation moves actual mass, not the R1 placeholder
+     logical              :: thompson_kirchhoff !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff  !< SAMF latent heat of condensation L_v(T) of the host energy frame
+@@ -3804,7 +3803,6 @@
+     logical              :: ext_diag_thompson = .false.         !< flag for extended diagnostic output from Thompson
+     real(kind=kind_phys) :: dt_inner       = -999.0             !< time step for the inner loop
+     logical              :: sedi_semi      = .false.            !< flag for semi Lagrangian sedi of rain
+-    logical              :: thompson_sed_actual = .false.
+     logical              :: thompson_kirchhoff = .false.        !< Thompson latent heats/heat capacity of the host energy frame
+     logical              :: thompson_frame_heat = .false.       !< Thompson heating = frame-F latent heat of its net phase change
+     logical              :: samf_kirchhoff = .false.            !< SAMF latent heat of condensation L_v(T) of the host energy frame
+@@ -4368,7 +4366,6 @@
+                                ssati_min, Nt_i_max, rr_min, fs_fac_rain, fs_fac_snow,       &
+                                dt_inner, lgfdlmprad,                                        &
+                                sedi_semi, decfl, thompson_kirchhoff, samf_kirchhoff, thompson_frame_heat, mynn_mix_sl, mynn_sfc_heat, gf_closure,                   &
+-                               thompson_sed_actual,                                                                         &
+                                nssl_cccn, nssl_alphah, nssl_alphahl,                        &
+                                nssl_alphar, nssl_ehw0, nssl_ehlw0,                          &
+                                nssl_invertccn, nssl_hail_on, nssl_ccn_on, nssl_3moment,     &
+@@ -5124,7 +5121,6 @@
+     endif
+     Model%sedi_semi        = sedi_semi
+     Model%thompson_kirchhoff = thompson_kirchhoff
+-    Model%thompson_sed_actual = thompson_sed_actual
+     Model%thompson_frame_heat = thompson_frame_heat
+     Model%samf_kirchhoff = samf_kirchhoff
+     Model%mynn_mix_sl = mynn_mix_sl
+@@ -7251,7 +7247,6 @@
+         print *, ' dt_inner          : ', Model%dt_inner
+         print *, ' sedi_semi         : ', Model%sedi_semi
+         print *, ' thompson_kirchhoff: ', Model%thompson_kirchhoff
+-        print *, ' thompson_sed_actual: ', Model%thompson_sed_actual
+         print *, ' decfl             : ', Model%decfl
+         print *, ' nt_c_l            : ', Model%nt_c_l
+         print *, ' nt_c_o            : ', Model%nt_c_o
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 13:12:46.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 13:12:47.000000000 -0500
+@@ -5292,12 +5292,6 @@
+   units = flag
+   dimensions = ()
+   type = logical
+-[thompson_sed_actual]
+-  standard_name = flag_for_thompson_sedimenting_actual_mass
+-  long_name = flag: Thompson flux-form sedimentation moves actual mass, not the R1 placeholder
+-  units = flag
+-  dimensions = ()
+-  type = logical
+ [thompson_kirchhoff]
+   standard_name = flag_for_thompson_kirchhoff_latent_heat
+   long_name = flag for Thompson latent heats and heat capacity of the host energy frame
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 13:12:46.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 13:12:47.000000000 -0500
+@@ -217,8 +217,6 @@
+    real(wp),            private :: olfus        !set in thompson_init
+ !..Latent heat slopes and moist heat capacity factor; thompson_kirchhoff: those of the host's (FV3) frame
+    logical                      :: thompson_kirchhoff = .false.
+-!..thompson_sed_actual: floored layers sediment their actual mass, not the R1 placeholder
+-   logical                      :: thompson_sed_actual = .false.
+    real(wp), public, save :: tsf(2, 200, 4096) = 0.   ! sedimented mass through layer bottoms (kg m-2): liquid, ice
+    real(wp),            private :: dlv = 2106.0 - 4218.0, dls = 0., dlf = 0., cpq = 0.887
+ 
+@@ -2046,7 +2044,7 @@
+       real(wp) :: r_frac, g_frac
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+-      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon, sfloor
++      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
+       real(wp) :: msl0(kts:kte), msi0(kts:kte), fsl, fsi
+       real(wp) :: xcl
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+@@ -4017,17 +4015,14 @@
+          msl0(k) = (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzq(k)
+          msi0(k) = (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzq(k)
+       enddo
+-      sfloor = R1
+-      if (thompson_sed_actual) sfloor = 0._wp
+       if (ANY(L_qr .eqv. .true.)) then
+          nstep = nint(1./onstep(1))
+ 
+          if(.not. sedi_semi) then
+-            if (thompson_sed_actual) then  ! the R1 placeholder is not sedimented as mass
+-               do k = kts, kte
+-                  if (rr(k) .le. R1) rr(k) = max(0._wp, (qr1d(k) + qrten(k)*DT)*rho(k))
+-               enddo
+-            endif
++            ! floored layers carry their actual rain, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rr(k) .le. R1) rr(k) = max(0._wp, (qr1d(k) + qrten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_r(k) = vtrk(k)*rr(k)
+@@ -4038,7 +4033,7 @@
+                orho = 1./rho(k)
+                qrten(k) = qrten(k) - sed_r(k)*odzq*onstep(1)*orho
+                nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+-               rr(k) = max(sfloor, rr(k) - sed_r(k)*odzq*DT*onstep(1))
++               rr(k) = max(0._wp, rr(k) - sed_r(k)*odzq*DT*onstep(1))
+                nr(k) = max(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
+                pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                do k = ksed1(1), kts, -1
+@@ -4048,16 +4043,15 @@
+                                                       *odzq*onstep(1)*orho
+                   nrten(k) = nrten(k) + (sed_n(k+1)-sed_n(k))                &
+                                                       *odzq*onstep(1)*orho
+-                  rr(k) = max(sfloor, rr(k) + (sed_r(k+1)-sed_r(k)) &
++                  rr(k) = max(0._wp, rr(k) + (sed_r(k+1)-sed_r(k)) &
+                                                 *odzq*DT*onstep(1))
+                   nr(k) = max(R2, nr(k) + (sed_n(k+1)-sed_n(k)) &
+                                                 *odzq*DT*onstep(1))
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rr(kts) > R1*rr_min)
+-                  pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+-               endif 
++               ! all of the flux out of the lowest layer reaches the surface
++               pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+             enddo
+          else !if(.not. sedi_semi)
+             niter = 1
+@@ -4139,11 +4133,10 @@
+ 
+       if (ANY(L_qi .eqv. .true.)) then
+          nstep = nint(1./onstep(2))
+-         if (thompson_sed_actual) then  ! the R1 placeholder is not sedimented as mass
+-            do k = kts, kte
+-               if (ri(k) .le. R1) ri(k) = max(0._wp, (qi1d(k) + qiten(k)*DT)*rho(k))
+-            enddo
+-         endif
++         ! floored layers carry their actual ice, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (ri(k) .le. R1) ri(k) = max(0._wp, (qi1d(k) + qiten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_i(k) = vtik(k)*ri(k)
+@@ -4154,7 +4147,7 @@
+             orho = 1./rho(k)
+             qiten(k) = qiten(k) - sed_i(k)*odzq*onstep(2)*orho
+             niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+-            ri(k) = max(sfloor, ri(k) - sed_i(k)*odzq*DT*onstep(2))
++            ri(k) = max(0._wp, ri(k) - sed_i(k)*odzq*DT*onstep(2))
+             ni(k) = max(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
+             pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             do k = ksed1(2), kts, -1
+@@ -4164,16 +4157,15 @@
+                                                 *odzq*onstep(2)*orho
+                niten(k) = niten(k) + (sed_n(k+1)-sed_n(k))                 &
+                                                 *odzq*onstep(2)*orho
+-               ri(k) = max(sfloor, ri(k) + (sed_i(k+1)-sed_i(k)) &
++               ri(k) = max(0._wp, ri(k) + (sed_i(k+1)-sed_i(k)) &
+                                              *odzq*DT*onstep(2))
+                ni(k) = max(R2, ni(k) + (sed_n(k+1)-sed_n(k)) &
+                                              *odzq*DT*onstep(2))
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was ri(kts) > R1*rr_min)
+-               pptice = pptice + sed_i(kts)*DT*onstep(2)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptice = pptice + sed_i(kts)*DT*onstep(2)
+          enddo
+       endif
+ 
+@@ -4181,11 +4173,10 @@
+ 
+       if (ANY(L_qs .eqv. .true.)) then
+          nstep = nint(1./onstep(3))
+-         if (thompson_sed_actual) then  ! the R1 placeholder is not sedimented as mass
+-            do k = kts, kte
+-               if (rs(k) .le. R1) rs(k) = max(0._wp, (qs1d(k) + qsten(k)*DT)*rho(k))
+-            enddo
+-         endif
++         ! floored layers carry their actual snow, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (rs(k) .le. R1) rs(k) = max(0._wp, (qs1d(k) + qsten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_s(k) = vtsk(k)*rs(k)
+@@ -4194,21 +4185,20 @@
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+             qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+-            rs(k) = max(sfloor, rs(k) - sed_s(k)*odzq*DT*onstep(3))
++            rs(k) = max(0._wp, rs(k) - sed_s(k)*odzq*DT*onstep(3))
+             pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             do k = ksed1(3), kts, -1
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qsten(k) = qsten(k) + (sed_s(k+1)-sed_s(k))                 &
+                                                 *odzq*onstep(3)*orho
+-               rs(k) = max(sfloor, rs(k) + (sed_s(k+1)-sed_s(k)) &
++               rs(k) = max(0._wp, rs(k) + (sed_s(k+1)-sed_s(k)) &
+                                              *odzq*DT*onstep(3))
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rs(kts) > R1*rr_min)
+-               pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+          enddo
+       endif
+ 
+@@ -4217,11 +4207,10 @@
+       if (ANY(L_qg .eqv. .true.)) then
+          nstep = nint(1./onstep(4))
+          if(.not. sedi_semi) then 
+-            if (thompson_sed_actual) then  ! the R1 placeholder is not sedimented as mass
+-               do k = kts, kte
+-                  if (rg(k) .le. R1) rg(k) = max(0._wp, (qg1d(k) + qgten(k)*DT)*rho(k))
+-               enddo
+-            endif
++            ! floored layers carry their actual graupel, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rg(k) .le. R1) rg(k) = max(0._wp, (qg1d(k) + qgten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_g(k) = vtgk(k)*rg(k)
+@@ -4230,21 +4219,20 @@
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+-               rg(k) = max(sfloor, rg(k) - sed_g(k)*odzq*DT*onstep(4))
++               rg(k) = max(0._wp, rg(k) - sed_g(k)*odzq*DT*onstep(4))
+                pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                do k = ksed1(4), kts, -1
+                   odzq = 1./dzq(k)
+                   orho = 1./rho(k)
+                   qgten(k) = qgten(k) + (sed_g(k+1)-sed_g(k))                 &
+                                                 *odzq*onstep(4)*orho
+-                  rg(k) = max(sfloor, rg(k) + (sed_g(k+1)-sed_g(k)) &
++                  rg(k) = max(0._wp, rg(k) + (sed_g(k+1)-sed_g(k)) &
+                                                 *odzq*DT*onstep(4))
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rg(kts) > R1*rr_min)
+-                  pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+-               endif
++               ! all of the flux out of the lowest layer reaches the surface
++               pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+             enddo
+          else ! if(.not. sedi_semi) then 
+             niter = 1
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-18 13:12:46.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90	2026-10-18 13:12:47.000000000 -0500
+@@ -46,9 +46,9 @@
+                                   nwfa, nifa, tgrs, prsl, phil, area,      &
+                                   aerfld, mpicomm, mpirank, mpiroot,       &
+                                   threads, ext_diag, diag3d,               &
+-                                  is_initialized, kirchhoff, sed_actual, errmsg, errflg)
++                                  is_initialized, kirchhoff, errmsg, errflg)
+          use module_mp_thompson, only : PI, T_0, Rv, R, RoverRv, Cp
+-         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus, thompson_kirchhoff, thompson_sed_actual
++         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus, thompson_kirchhoff
+          use module_mp_thompson, only : av_i, av_s, D0s, bv_s, bv_i
+          use module_mp_thompson, only : nt_c_l, nt_c_o, xnc_max, ssati_min, Nt_i_max, rr_min
+          
+@@ -58,7 +58,6 @@
+          integer,                   intent(in   ) :: ncol
+          integer,                   intent(in   ) :: nlev
+          logical,                   intent(in   ) :: kirchhoff
+-         logical,                   intent(in   ) :: sed_actual
+          real(kind_phys),           intent(in   ) :: con_pi, con_t0c, con_rv, con_cp, con_rgas, &
+                                                      con_boltz, con_amd, con_amw, con_avgd,     &
+                                                      con_hvap, con_hfus, con_g, con_rd, con_eps
+@@ -136,7 +135,6 @@
+          lvap0 = con_hvap
+          lfus = con_hfus
+          thompson_kirchhoff = kirchhoff
+-         thompson_sed_actual = sed_actual
+          
+          if (present(con_nt_c_l)) nt_c_l = con_nt_c_l
+          if (present(con_nt_c_o)) nt_c_o = con_nt_c_o
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-18 13:12:46.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta	2026-10-18 13:12:47.000000000 -0500
+@@ -440,13 +440,6 @@
+   dimensions = ()
+   type = logical
+   intent = inout
+-[sed_actual]
+-  standard_name = flag_for_thompson_sedimenting_actual_mass
+-  long_name = flag: Thompson flux-form sedimentation moves actual mass, not the R1 placeholder
+-  units = flag
+-  dimensions = ()
+-  type = logical
+-  intent = in
+ [kirchhoff]
+   standard_name = flag_for_thompson_kirchhoff_latent_heat
+   long_name = flag for Thompson latent heats and heat capacity of the host energy frame

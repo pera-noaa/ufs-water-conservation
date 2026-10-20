@@ -1,0 +1,65 @@
+From a25b4886377acdda5b721a732d8612b358b7621e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Thu, 15 Oct 2026 00:33:18 -0600
+Subject: [PATCH 08/13] Thompson: count all sedimentation out of the lowest
+ layer as precipitation
+
+The sedimentation flux out of the lowest layer always leaves the column,
+but was counted as surface precipitation only when the remaining mass
+exceeded R1*1000. Count all of it.
+
+Held: port of ufs-community/ccpp-physics M2 (-2e-7 of precipitation in
+UFS), kept out of the series together with the next commit. Counting all
+of it also books the R1 placeholder that flux-form sedimentation
+transports as if it were mass (next commit), and genuine sub-threshold
+traces; in UFS the latter reach Noah-MP's canopy, where any intercepted
+ice hides the liquid.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../physics/physics_wrf/module_mp_thompson.F              | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+index 65a2e3a..abd7518 100644
+--- a/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
++++ b/src/core_atmosphere/physics/physics_wrf/module_mp_thompson.F
+@@ -3468,7 +3468,7 @@
+                                            *odzq*DT*onstep(1))
+          enddo
+ 
+-         if (rr(kts).gt.R1*1000.) &
++         ! all of the flux out of the lowest layer reaches the surface
+          pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+       enddo
+       endif
+@@ -3530,7 +3530,7 @@
+                                            *odzq*DT*onstep(2))
+          enddo
+ 
+-         if (ri(kts).gt.R1*1000.) &
++         ! all of the flux out of the lowest layer reaches the surface
+          pptice = pptice + sed_i(kts)*DT*onstep(2)
+       enddo
+       endif
+@@ -3557,7 +3557,7 @@
+                                            *odzq*DT*onstep(3))
+          enddo
+ 
+-         if (rs(kts).gt.R1*1000.) &
++         ! all of the flux out of the lowest layer reaches the surface
+          pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+       enddo
+       endif
+@@ -3584,7 +3584,7 @@
+                                            *odzq*DT*onstep(4))
+          enddo
+ 
+-         if (rg(kts).gt.R1*1000.) &
++         ! all of the flux out of the lowest layer reaches the surface
+          pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+       enddo
+       endif
+-- 
+2.55.0
+

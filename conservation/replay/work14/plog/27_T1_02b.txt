@@ -1,0 +1,8 @@
+patching file physics/CONV/SAMF/samfdeepcnv.f
+Hunk #1 succeeded at 308 (offset 10 lines).
+Hunk #2 succeeded at 3443 (offset 12 lines).
+Hunk #3 succeeded at 4117 (offset 90 lines).
+patching file physics/CONV/SAMF/samfshalcnv.f
+Hunk #1 succeeded at 266 (offset 11 lines).
+Hunk #2 succeeded at 2380 (offset 13 lines).
+Hunk #3 succeeded at 2936 (offset 91 lines).

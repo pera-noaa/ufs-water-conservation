@@ -1,0 +1,35 @@
+steps 119
+SOIL  R = dH - B (energy fluxes only)            +1.048813e+01
+      booked water/air enthalpy at its T (soil+gw) +1.043057e+01  evaporated-ice content +5.127624e-04
+      R3 = R - booked                              +5.704885e-02
+        R_E (energy column, Kirchhoff)             +2.816733e-08
+        R_S -(canhs+erreng)                        -3.057013e-17
+        R_P precipitation segment                  +6.167734e-04
+        snowwater segment dHs/dHl                  -1.009389e-02 / -3.252104e-01
+        new snow layer content                     -9.541087e-05   PAH clipped -2.070739e-05
+        soilwater+gw residual after booking        +2.516553e-03
+        precipitation stored in snow at layer T    -1.070381e-02 (snowfall -1.042e-02, rain -1.839e-04, new layer -9.541e-05)
+      R3' = R3 - precipitation stored in snow      +6.775267e-02
+        canopy melt/freeze latent returned as soil heat (internal, counted by B via lheat) -2.049562e-02
+        hfus x ice deficit: frozen-ground (NM11 returns; B over-books) +2.434129e-03, snowh2o (not returned) +2.527299e-23
+      R_final = R3' - E19 + d65 + d66                +9.068241e-02
+AQUIFER groundwater dHs +1.015067e+01 - exchange +1.021451e+01 - subsurface -2.284067e-05 - watmin -6.325512e-03 = -5.749009e-02; pore air (gw) -2.448788e-03; diff -5.504e-02
+EV    booked +1.297484e-01 applied +1.297966e-01 diff +4.820e-05
+LW    applied -1.268203e-02  booked land +2.019320e+01 ice +1.655969e+00 water +3.966709e+01 rad +6.147872e+01  booked-rad-applied +5.021e-02
+PH    host-frozen hfus*m +7.279978e-02 applied +7.279978e-02 diff +0.000e+00
+      land frozen received soil +4.238561e-01 (host srflag +4.238561e-01) diff +1.512e-13
+      glacier received +5.506022e-02 host +5.506022e-02 diff +0.000e+00
+SW    land-only cells fsa +1.978104e+01 atm +1.978716e+01 diff -6.123e-03; soil fsa +3.941135e+01 A +3.939280e+01
+ICE   ice3lay residual -1.109e-13; snow-ice dH -7.521e-14
+CONV  disagreement: fraction of convective column-steps 0.0587; mass T1-snow/host-rain 2.5345e-08, T1-rain/host-snow 1.6662e-08 of 3.8013e-06 kg m-2 s-1 -> hfus x net +2.8966e-03 W m-2
+== round 4
+SOIL  R3' +6.775267e-02; EP heat +3.810198e-02, LW2 kept +5.003800e-02, AIR1 kept +2.516553e-03
+      R_final4 = R3' - E19 + d65 + d66 - EP - LW2 - AIR1 = +2.587822e-05
+      EP: target +5.046301e-01 = PAH -1.230133e-02 + stored +4.788294e-01 + applied +3.810198e-02 (diff +2.706e-16)
+GLAC  R +8.883603e-03; reset content change (glacier flow, booked) +1.435410e-02; EP +1.268030e-03; LW2 +1.755442e-04
+      R_final = R - reset - EP - LW2 = -6.914068e-03
+      EP: target -5.538518e-03 = stored -6.806547e-03 + applied +1.268030e-03 (diff +2.602e-18)
+EV    applied +1.297966e-01 = soil +1.297484e-01 + glacier +4.819723e-05 (diff +6.498e-18)
+LW2   cells kept by land +5.021354e-02 vs soil+glacier kept +5.021354e-02 (diff +2.209e-17)
+      LW applied to lowest layer -1.268203e-02; booked - rad - land kept - applied -1.109e-14
+ICE   EP heat -6.555751e-03; post-ice3lay dH -6.555751e-03 (diff -4.903e-13)

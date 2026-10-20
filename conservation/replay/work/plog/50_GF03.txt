@@ -1,0 +1,11 @@
+patching file UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.F90
+patching file UFSATM/ccpp/physics/physics/CONV/Grell_Freitas/cu_gf_driver.meta
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+Hunk #1 succeeded at 1092 (offset 3 lines).
+Hunk #2 succeeded at 3806 (offset 14 lines).
+Hunk #3 FAILED at 4343.
+Hunk #4 FAILED at 5099.
+2 out of 4 hunks FAILED -- saving rejects to file UFSATM/ccpp/data/GFS_typedefs.F90.rej
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+Hunk #1 succeeded at 5268 (offset 14 lines).
+stage REJ re-anchored: GFS_typedefs.F90 (replace), GFS_typedefs.F90 (insert) | rejects left: none

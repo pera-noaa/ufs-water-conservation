@@ -1,0 +1,161 @@
+From 120347f25ce1b9298e38fee74024ceb3873cf946 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:04:22 -0600
+Subject: [PATCH 06/18] mp_thompson: take the layer depth from the host's layer
+ mass
+
+dz came from phii, which get_phi_fv3 computes before deep and shallow
+convection heat the column, so Thompson's rho*dz differed slightly from
+dp*(1-spechum)/g and sedimentation lost host water. Pass the interface
+pressure and give mp_gt_driver the layer mass dm = dp*(1-spechum)/g; at
+every inner step (dt_inner < dt) it sets each layer's width to dm over
+the density the column routine then uses. Each species' mass in Thompson
+(mixing ratio times rho*dz) is then the host's dp*q/g on every inner
+step. phii is no longer used by the scheme.
+
+Measured (C96 control_p8_ugwpv1, with the other water-conservation
+fixes): total water residual -0.00003 -> 0.00000 kg/m2 per 6 h with one
+inner step. With dt_inner = 150 (five inner steps), a width fixed for the
+whole step lost 7.1e-4 kg/m2 in 24 h (0.026 % of precipitation); setting
+it at every inner step removes that. Adds prsi to mp_thompson.meta.
+
+Adapted to production/AQM.v7 (67d069ad6) from ufs/dev c7dc705.
+This branch's Thompson keeps its own R = 287.04 and a literal 0.622 (ufs/dev sets
+them to con_rd and con_eps in mp_thompson_init), so the width uses Thompson's
+density, not the driver's rho: with the driver's rho its rho*dz exceeded the
+host's dry-air mass by 3.5e-5.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ physics/module_mp_thompson.F90 | 11 +++++++++--
+ physics/mp_thompson.F90        | 16 +++++++++++-----
+ physics/mp_thompson.meta       |  8 ++++++++
+ 3 files changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/physics/module_mp_thompson.F90 b/physics/module_mp_thompson.F90
+index 6cd97b48..674b4196 100644
+--- a/physics/module_mp_thompson.F90
++++ b/physics/module_mp_thompson.F90
+@@ -1022,7 +1022,7 @@ MODULE module_mp_thompson
+                               tprr_rcs, tprv_rev, tten3, qvten3,      &
+                               qrten3, qsten3, qgten3, qiten3, niten3, &
+                               nrten3, ncten3, qcten3,                 &
+-                              pfils, pflls)
++                              pfils, pflls, dm)
+ 
+       implicit none
+ 
+@@ -1054,6 +1054,8 @@ MODULE module_mp_thompson
+ #endif
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN):: &
+                           p, w, dz
++      ! host dry-air layer mass (kg m-2): if present, sets dz1d at each inner step
++      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: dm
+       REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT):: &
+                           RAINNC, RAINNCV, SR
+       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(INOUT)::      &
+@@ -1361,7 +1363,6 @@ MODULE module_mp_thompson
+             end if
+             p1d(k) = p(i,k,j)
+             w1d(k) = w(i,k,j)
+-            dz1d(k) = dz(i,k,j)
+             qv1d(k) = qv(i,k,j)
+             qc1d(k) = qc(i,k,j)
+             qi1d(k) = qi(i,k,j)
+@@ -1371,6 +1372,12 @@ MODULE module_mp_thompson
+             ni1d(k) = ni(i,k,j)
+             nr1d(k) = nr(i,k,j)
+             rho(k) = 0.622*p1d(k)/(R*t1d(k)*(qv1d(k)+0.622))
++            if (present(dm)) then
++               ! width at this inner step's density, as the column routine computes it, so rho*dz stays the host's mass
++               dz1d(k) = dm(i,k,j) / (0.622*p1d(k)/(R*t1d(k)*(max(1.E-10, qv1d(k))+0.622)))
++            else
++               dz1d(k) = dz(i,k,j)
++            endif
+ 
+             ! These arrays are always allocated and must be initialized
+             !vtsk1(k) = 0.
+diff --git a/physics/mp_thompson.F90 b/physics/mp_thompson.F90
+index 49eb93cd..698d7844 100644
+--- a/physics/mp_thompson.F90
++++ b/physics/mp_thompson.F90
+@@ -321,7 +321,7 @@ module mp_thompson
+                               is_aerosol_aware,                    &
+                               merra2_aerosol_aware, nc, nwfa, nifa,&
+                               nwfa2d, nifa2d, aero_ind_fdb,        &
+-                              tgrs, prsl, phii, omega,             &
++                              tgrs, prsl, prsi, phii, omega,       &
+                               sedi_semi, decfl, islmsk, dtp,       &
+                               dt_inner,                            &
+                               first_time_step, istep, nsteps,      &
+@@ -369,6 +369,7 @@ module mp_thompson
+          ! State variables and timestep information
+          real(kind_phys),           intent(inout) :: tgrs(:,:)
+          real(kind_phys),           intent(in   ) :: prsl(:,:)
++         real(kind_phys),           intent(in   ) :: prsi(:,:)
+          real(kind_phys),           intent(in   ) :: phii(:,:)
+          real(kind_phys),           intent(in   ) :: omega(:,:)
+          integer,                   intent(in   ) :: islmsk(:)
+@@ -427,6 +428,7 @@ module mp_thompson
+          ! Vertical velocity and level width
+          real(kind_phys) :: w(1:ncol,1:nlev)                !< m s-1
+          real(kind_phys) :: dz(1:ncol,1:nlev)               !< m
++         real(kind_phys) :: dm(1:ncol,1:nlev)               !< kg m-2
+          ! Rain/snow/graupel fall amounts
+          real(kind_phys) :: rain_mp(1:ncol)                 ! mm, dummy, not used
+          real(kind_phys) :: graupel_mp(1:ncol)              ! mm, dummy, not used
+@@ -588,8 +590,12 @@ module mp_thompson
+          !> - Convert omega in Pa s-1 to vertical velocity w in m s-1
+          w = -omega/(rho*con_g)
+ 
+-         !> - Layer width in m from geopotential in m2 s-2
+-         dz = (phii(:,2:nlev+1) - phii(:,1:nlev)) / con_g
++         !> - Layer width in m from the host's layer mass, so that Thompson's rho*dz is exactly the host's dry air;
++         !! this branch's Thompson keeps its own R = 287.04 and 0.622, so its density is used here, not rho
++         ! host's dry-air layer mass: mp_gt_driver sets each layer's width from it at every inner step
++         dm = (prsi(:,1:nlev) - prsi(:,2:nlev+1)) * (1.0_kind_phys - spechum) / con_g
++         dz = (prsi(:,1:nlev) - prsi(:,2:nlev+1)) * (1.0_kind_phys - spechum) * 287.04_kind_phys * tgrs &
++              * (max(1.e-10_kind_phys, qv) + 0.622_kind_phys) / (con_g * 0.622_kind_phys * prsl)
+ 
+          ! Accumulated values inside Thompson scheme, not used;
+          ! only use delta and add to inout variables (different units)
+@@ -688,7 +694,7 @@ module mp_thompson
+          if (is_aerosol_aware .or. merra2_aerosol_aware) then
+             call mp_gt_driver(qv=qv, qc=qc, qr=qr, qi=qi, qs=qs, qg=qg, ni=ni, nr=nr,        &
+                               nc=nc, nwfa=nwfa, nifa=nifa, nwfa2d=nwfa2d, nifa2d=nifa2d,     &
+-                              tt=tgrs, p=prsl, w=w, dz=dz, dt_in=dtstep, dt_inner=dt_inner,  &
++                              tt=tgrs, p=prsl, w=w, dz=dz, dm=dm, dt_in=dtstep, dt_inner=dt_inner,  &
+                               sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,                  &
+                               rainnc=rain_mp, rainncv=delta_rain_mp,                         &
+                               snownc=snow_mp, snowncv=delta_snow_mp,                         &
+@@ -728,7 +734,7 @@ module mp_thompson
+                               qcten3=qcten3, pfils=pfils, pflls=pflls)
+          else
+             call mp_gt_driver(qv=qv, qc=qc, qr=qr, qi=qi, qs=qs, qg=qg, ni=ni, nr=nr,        &
+-                              tt=tgrs, p=prsl, w=w, dz=dz, dt_in=dtstep, dt_inner=dt_inner,  &
++                              tt=tgrs, p=prsl, w=w, dz=dz, dm=dm, dt_in=dtstep, dt_inner=dt_inner,  &
+                               sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,                  &
+                               rainnc=rain_mp, rainncv=delta_rain_mp,                         &
+                               snownc=snow_mp, snowncv=delta_snow_mp,                         &
+diff --git a/physics/mp_thompson.meta b/physics/mp_thompson.meta
+index 1f459bb8..e1ed6589 100644
+--- a/physics/mp_thompson.meta
++++ b/physics/mp_thompson.meta
+@@ -480,6 +480,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [phii]
+   standard_name = geopotential_at_interface
+   long_name = geopotential at model layer interfaces
+-- 
+2.55.0
+

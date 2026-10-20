@@ -1,0 +1,51 @@
+From 554f8b9329db5bb01f6c9d8aabddf71f47717d65 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:52 -0500
+Subject: [PATCH 1/2] ccpp CMake: compile SAMF's capgen dependencies in single
+ precision too
+
+-DSAMFCNV_32BIT=ON filtered SCHEME_FORTRAN_FILES only, but
+mo_conv_kind.F90, progsigma_calc.f90 and progomega_calc.f90 are capgen
+dependencies: conv_wp stayed 8-byte and the option did nothing.
+
+Filter CAPGEN_DEPENDENCIES as well, and stop at configure when only some of
+the SAMF files are found.
+
+Files compiled with -real-size 32 -DSAMFCNV_USE_SP: 2 -> 5. OFF: flags
+identical, runs bitwise. ON: answers change (SAMF now single precision);
+C96 24 h runs complete, tracer mass ~1e-10/day.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ ccpp/CMakeLists.txt | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/ccpp/CMakeLists.txt b/ccpp/CMakeLists.txt
+index 38ea292..9040e96 100644
+--- a/ccpp/CMakeLists.txt
++++ b/ccpp/CMakeLists.txt
+@@ -440,11 +440,21 @@ if(SAMFCNV_32BIT)
+   set(SAMF_FORTRAN_FILES)
+ 
+   foreach(NAME IN LISTS SAMF_NAMES)
+-    set(TMP_LIST ${SCHEME_FORTRAN_FILES})
++    set(TMP_LIST ${SCHEME_FORTRAN_FILES} ${CAPGEN_DEPENDENCIES})
+     list(FILTER TMP_LIST INCLUDE REGEX ".*${NAME}$")
+     list(APPEND SAMF_FORTRAN_FILES ${TMP_LIST})
+   endforeach()
+ 
++  if(SAMF_FORTRAN_FILES)
++    list(REMOVE_DUPLICATES SAMF_FORTRAN_FILES)
++    list(LENGTH SAMF_FORTRAN_FILES N_SAMF_FOUND)
++    list(LENGTH SAMF_NAMES N_SAMF_NAMES)
++    if(NOT N_SAMF_FOUND EQUAL N_SAMF_NAMES)
++      message(FATAL_ERROR "SAMFCNV_32BIT: found ${N_SAMF_FOUND} of ${N_SAMF_NAMES} SAMF files: ${SAMF_FORTRAN_FILES}")
++    endif()
++    message(STATUS "SAMFCNV_32BIT files: ${SAMF_FORTRAN_FILES}")
++  endif()
++
+   if(SAMF_FORTRAN_FILES)
+     if(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+       set_property(SOURCE ${SAMF_FORTRAN_FILES} APPEND PROPERTY COMPILE_OPTIONS "-real-size;32;-DSAMFCNV_USE_SP")

@@ -1,0 +1,49 @@
+From e3f2dea2675f672fa557089663c491fe7475c9b6 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:04:21 -0600
+Subject: [PATCH 03/19] Thompson: count settled cloud water as precipitation;
+ re-close graupel gains after the limiters
+
+C1: cloud water sedimenting out of the lowest layer (sed_c(kts)) left the
+column without being added to any precipitation total. Add it to pptrain.
+
+C2: rain collecting ice and cold rain collecting snow conserve water by
+construction (prg_rci = pri_rci + prr_rci; prr_rcs + prs_rcs + prg_rcs = 0)
+until the clips and the ice/rain/snow rate limiters rescale the losses but
+not the graupel gains. Recompute prg_rci and (below 0 C) prg_rcs after the
+limiters.
+
+Measured (C96 control_p8_ugwpv1, on top of the mass-basis fix): C1 takes
+Thompson from -0.30 % to -0.15 % of grid-scale precipitation. C2 removes a
+source that is large during spin-up (0.76 % of grid-scale precipitation in the
+first 6 h of a cold start) and about 0.03 % afterwards.
+---
+ physics/MP/Thompson/module_mp_thompson.F90 | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
+index 358558e3..bb59090f 100644
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -3188,6 +3188,9 @@ module module_mp_thompson
+          ratio = min( ABS(prr_rcg(k)), ABS(prg_rcg(k)) )
+          prr_rcg(k) = ratio * SIGN(1.0, SNGL(prr_rcg(k)))
+          prg_rcg(k) = -prr_rcg(k)
++         ! graupel gains must match the (possibly limited) losses that feed them
++         prg_rci(k) = pri_rci(k) + prr_rci(k)
++         if (temp(k).lt.T_0) prg_rcs(k) = -(prr_rcs(k) + prs_rcs(k))
+          if (temp(k).gt.T_0) then
+             ratio = min( ABS(prr_rcs(k)), ABS(prs_rcs(k)) )
+             prr_rcs(k) = ratio * SIGN(1.0, SNGL(prr_rcs(k)))
+@@ -4043,6 +4046,8 @@ module module_mp_thompson
+             rc(k) = max(R1, rc(k) + (sed_c(k+1)-sed_c(k)) *odzq*DT)
+             nc(k) = max(10., nc(k) + (sed_n(k+1)-sed_n(k)) *odzq*DT)
+          enddo
++         ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++         if (ksed1(5) .ge. kts) pptrain = pptrain + sed_c(kts)*DT
+       endif
+ 
+ !+---+-----------------------------------------------------------------+
+-- 
+2.55.0
+

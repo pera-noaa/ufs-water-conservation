@@ -1,0 +1,58 @@
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index 6a797ceb..6282c4b7 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -1301,6 +1301,7 @@ endif   ! croptype == 0
+ ! ------------------------ local variables ---------------------------
+   real (kind=kind_phys)                :: maxsno  !canopy capacity for snow interception (mm)
+   real (kind=kind_phys)                :: maxliq  !canopy capacity for rain interception (mm)
++  real (kind=kind_phys)                :: cwat    !canopy liquid plus ice (mm)
+   real (kind=kind_phys)                :: ft      !temperature factor for unloading rate
+   real (kind=kind_phys)                :: fv      !wind factor for unloading rate
+   real (kind=kind_phys)                :: pah_ac  !precipitation advected heat - air to canopy (w/m2)
+@@ -1394,12 +1395,14 @@ endif   ! croptype == 0
+ !      print*, "precip_heat canopy through:",3600.0*(fveg * snow - qints)
+ !      print*, "precip_heat canopy drip:",3600.0*max(0.,canice) * (fv+ft)
+ 
+-! wetted fraction of canopy
++! wetted fraction of canopy: each phase's fill fraction, weighted by its share of the canopy water
+ 
+-      if(canice.gt.0.) then
+-           fwet = max(0.,canice) / max(maxsno,1.e-06)
++      cwat = max(0.,canice) + max(0.,canliq)
++      if(cwat.gt.0.) then
++           fwet = ( max(0.,canice) * min(max(0.,canice) / max(maxsno,1.e-06), 1.)   &
++                  + max(0.,canliq) * min(max(0.,canliq) / max(maxliq,1.e-06), 1.) ) / cwat
+       else
+-           fwet = max(0.,canliq) / max(maxliq,1.e-06)
++           fwet = 0.
+       endif
+       fwet = min(fwet, 1.) ** 0.667
+ 
+@@ -7323,6 +7326,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ ! ------------------------ local variables ---------------------------
+   real (kind=kind_phys)                :: maxsno  !canopy capacity for snow interception (mm)
+   real (kind=kind_phys)                :: maxliq  !canopy capacity for rain interception (mm)
++  real (kind=kind_phys)                :: cwat    !canopy liquid plus ice (mm)
+   real (kind=kind_phys)                :: qevac   !evaporation rate (mm/s)
+   real (kind=kind_phys)                :: qdewc   !dew rate (mm/s)
+   real (kind=kind_phys)                :: qfroc   !frost rate (mm/s)
+@@ -7383,12 +7387,14 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+         canice = 0.
+       end if
+      
+-! wetted fraction of canopy
++! wetted fraction of canopy: each phase's fill fraction, weighted by its share of the canopy water
+ 
+-      if(canice.gt.0.) then
+-           fwet = max(0.,canice) / max(maxsno,1.e-06)
++      cwat = max(0.,canice) + max(0.,canliq)
++      if(cwat.gt.0.) then
++           fwet = ( max(0.,canice) * min(max(0.,canice) / max(maxsno,1.e-06), 1.)   &
++                  + max(0.,canliq) * min(max(0.,canliq) / max(maxliq,1.e-06), 1.) ) / cwat
+       else
+-           fwet = max(0.,canliq) / max(maxliq,1.e-06)
++           fwet = 0.
+       endif
+       fwet = min(fwet, 1.) ** 0.667
+ 

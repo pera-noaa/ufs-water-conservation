@@ -1,0 +1,302 @@
+
+--- a/UFSATM/ccpp/CMakeLists.txt	2026-10-17 13:39:10.000000000 -0500
++++ b/UFSATM/ccpp/CMakeLists.txt	2026-10-17 19:06:04.000000000 -0500
+@@ -90,6 +90,7 @@
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta"
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta"
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_gw.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_ccpp.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_post.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_pre.meta"
+
+--- a/UFSATM/ccpp/config/ccpp_prebuild_config_fv3.py	2026-10-17 13:30:23.000000000 -0500
++++ b/UFSATM/ccpp/config/ccpp_prebuild_config_fv3.py	2026-10-17 19:06:04.000000000 -0500
+@@ -140,6 +140,7 @@
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/sgscloud_radpre.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/sgscloud_radpost.F90',
+     'physics/physics/CONV/Chikira_Sugiyama/cs_conv_pre.F90',
+
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90	1969-12-31 18:00:00.000000000 -0600
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.F90	2026-10-17 19:06:04.000000000 -0500
+@@ -0,0 +1,65 @@
++!> \file em_gw.F90
++!! GWD-segment split meter (diagnostic builds only).
++module em_gw
++  use machine, only: kind_phys
++  use energy_meter_common, only: emy
++  implicit none
++contains
++!> \section arg_table_em_gw_run Argument Table
++!! \htmlinclude em_gw_run.html
++!!
++  subroutine em_gw_run(im, levs, dtp, gu0, gv0, dudt, dvdt, dudt_gw, dvdt_gw, dtdt_gw, dudt_ngw,  &
++       dvdt_ngw, dtdt_ngw, prsi, garea, con_g, con_cp, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: dudt_gw(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt_gw(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt_gw(:,:)
++    real(kind=kind_phys), intent(in) :: dudt_ngw(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt_ngw(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt_ngw(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    real(kind=kind_phys), intent(in) :: garea(:)
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: i, k
++    real(kind=8) :: m, a, u0, v0, ue, ve, du, dv, dug, dvg, dun, dvn, kg, hg, e(8)
++    do i = 1, im
++       e = 0.d0
++       a = garea(i)
++       do k = 1, levs
++          m = (prsi(i,k) - prsi(i,k+1))/con_g
++          u0 = gu0(i,k)
++          v0 = gv0(i,k)
++          ue = u0 + dtp*dudt(i,k)
++          ve = v0 + dtp*dvdt(i,k)
++          du = dtp*dudt_gw(i,k)
++          dv = dtp*dvdt_gw(i,k)
++          dun = dtp*dudt_ngw(i,k)
++          dvn = dtp*dvdt_ngw(i,k)
++          dug = dtp*(dudt_gw(i,k) - dudt_ngw(i,k))
++          dvg = dtp*(dvdt_gw(i,k) - dvdt_ngw(i,k))
++          kg = dug*(u0 + 0.5d0*dug) + dvg*(v0 + 0.5d0*dvg)
++          hg = con_cp*dtp*(dtdt_gw(i,k) - dtdt_ngw(i,k))
++          e(1) = e(1) + m*(du*(ue + 0.5d0*du) + dv*(ve + 0.5d0*dv))
++          e(2) = e(2) + m*kg
++          e(3) = e(3) + m*(dun*(u0 + 0.5d0*dun) + dvn*(v0 + 0.5d0*dvn))
++          e(4) = e(4) + m*hg
++          e(5) = e(5) + m*con_cp*dtp*dtdt_ngw(i,k)
++          e(6) = e(6) + m*(du*(ue - u0) + dv*(ve - v0))
++          e(7) = e(7) + m*(dug*dun + dvg*dvn)
++          e(8) = e(8) + m*abs(hg + kg)
++       enddo
++       emy = emy + e*a
++    enddo
++    errmsg = ''
++    errflg = 0
++  end subroutine em_gw_run
++end module em_gw
+
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.meta	1969-12-31 18:00:00.000000000 -0600
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_gw.meta	2026-10-17 19:06:04.000000000 -0500
+@@ -0,0 +1,157 @@
++[ccpp-table-properties]
++  name = em_gw
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_gw_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt_gw]
++  standard_name = tendency_of_x_wind
++  long_name = tendency of x wind calculated by one physics scheme
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt_gw]
++  standard_name = tendency_of_y_wind
++  long_name = tendency of y wind calculated by one physics scheme
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt_gw]
++  standard_name = tendency_of_air_temperature
++  long_name = tendency of air temperature calculated by one physics scheme
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt_ngw]
++  standard_name = tendency_of_x_wind_due_to_nonorographic_gravity_wave_drag
++  long_name = zonal wind tendency due to non-stationary GWs
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt_ngw]
++  standard_name = tendency_of_y_wind_due_to_nonorographic_gravity_wave_drag
++  long_name = meridional wind tendency due to non-stationary GWs
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt_ngw]
++  standard_name = tendency_of_air_temperature_due_to_nonorographic_gravity_wave_drag
++  long_name = air temperature tendency due to non-stationary GWs
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[garea]
++  standard_name = cell_area
++  long_name = grid cell area
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 14:14:52.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 19:06:04.000000000 -0500
+@@ -47,6 +47,17 @@
+     real(kind=8) :: d(7), e0, e1, f, w, frad, fpbl, fmp, wpbl, wmp, wcv, a
+     integer :: s, jj, ierr
+     real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12)
++    real(kind=8) :: gbuf(8), grbuf(8)
++    if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
++       gbuf = emy
++       if (mpirank == mpiroot) then
++          call MPI_Reduce(MPI_IN_PLACE, gbuf, 8, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          write(*,'(a,i6,8es25.16)') 'EMG ', emkdt(12), gbuf
++       else
++          call MPI_Reduce(gbuf, grbuf, 8, MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       endif
++       emy = 0.d0
++    endif
+     if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
+        buf(1:10*emnp) = reshape(emg, (/10*emnp/))
+        buf(10*emnp+1:) = emx
+
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	2026-10-17 14:14:50.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	2026-10-17 19:06:04.000000000 -0500
+@@ -4,12 +4,13 @@
+   use machine, only: kind_phys
+   implicit none
+   private
+-  public :: em_probe, emc, emg, emx, emkdt, emf
++  public :: em_probe, emc, emg, emx, emkdt, emf, emy
+   integer, parameter, public :: emnp = 12, emnc = 8192
+   real(kind=8), save :: emc(7, emnp, emnc) = 0.d0
+   real(kind=8), allocatable, save :: emd(:,:)
+   real(kind=8), save :: emg(10, emnp) = 0.d0, emx(12) = 0.d0, emf(12, emnc) = 0.d0
+   integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
++  real(kind=8), save :: emy(8) = 0.d0
+ contains
+   subroutine em_probe(p, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                       ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
+
+--- a/UFSATM/ccpp/suites/suite_FV3_GFS_v17_p8_ugwpv1.xml	2026-10-17 13:30:23.000000000 -0500
++++ b/UFSATM/ccpp/suites/suite_FV3_GFS_v17_p8_ugwpv1.xml	2026-10-17 19:06:04.000000000 -0500
+@@ -61,6 +61,7 @@
+       <scheme>GFS_GWD_generic_pre</scheme>
+       <scheme>ugwpv1_gsldrag</scheme>
+       <scheme>ugwpv1_gsldrag_post</scheme>
++      <scheme>em_gw</scheme>
+       <scheme>GFS_GWD_generic_post</scheme>
+       <scheme>em_p06</scheme>
+     </subcycle>

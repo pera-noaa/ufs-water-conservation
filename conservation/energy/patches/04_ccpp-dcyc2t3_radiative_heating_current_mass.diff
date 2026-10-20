@@ -1,0 +1,179 @@
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.F90 b/UFSATM/ccpp/data/GFS_typedefs.F90
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 18:49:57
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-17 18:49:57
+@@ -1969,6 +1969,8 @@
+ !--- Out (radiation only)
+     real (kind=kind_phys), pointer :: htrsw (:,:)  => null()  !< swh  total sky sw heating rate in k/sec
+     real (kind=kind_phys), pointer :: htrlw (:,:)  => null()  !< hlw  total sky lw heating rate in k/sec
++    real (kind=kind_phys), pointer :: dpsw  (:,:)  => null()  !< layer pressure thickness at the last sw call (Pa)
++    real (kind=kind_phys), pointer :: dplw  (:,:)  => null()  !< layer pressure thickness at the last lw call (Pa)
+     real (kind=kind_phys), pointer :: sfalb (:)    => null()  !< mean surface diffused sw albedo
+ 
+     real (kind=kind_phys), pointer :: coszen(:)    => null()  !< mean cos of zenith angle over rad call period
+@@ -7892,6 +7894,8 @@
+ 
+     allocate (Radtend%htrsw  (IM,Model%levs))
+     allocate (Radtend%htrlw  (IM,Model%levs))
++    allocate (Radtend%dpsw   (IM,Model%levs))
++    allocate (Radtend%dplw   (IM,Model%levs))
+     allocate (Radtend%sfalb  (IM))
+     allocate (Radtend%coszen (IM))
+     allocate (Radtend%tsflw  (IM))
+@@ -7900,6 +7904,8 @@
+ 
+     Radtend%htrsw  = clear_val
+     Radtend%htrlw  = clear_val
++    Radtend%dpsw   = clear_val
++    Radtend%dplw   = clear_val
+     Radtend%sfalb  = clear_val
+     Radtend%coszen = clear_val
+     Radtend%tsflw  = clear_val
+diff -ruN a/UFSATM/ccpp/data/GFS_typedefs.meta b/UFSATM/ccpp/data/GFS_typedefs.meta
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 18:49:57
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-17 18:49:57
+@@ -9051,6 +9051,20 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
++[dpsw]
++  standard_name = air_pressure_difference_between_interfaces_on_sw_radiation_timestep
++  long_name = layer pressure thickness at the last sw radiation call
++  units = Pa
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++[dplw]
++  standard_name = air_pressure_difference_between_interfaces_on_lw_radiation_timestep
++  long_name = layer pressure thickness at the last lw radiation call
++  units = Pa
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
+ [sfalb]
+   standard_name = surface_albedo_for_diffused_shortwave_on_radiation_timestep
+   long_name = mean surface diffused sw albedo
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f	2026-10-17 18:49:57
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f	2026-10-17 18:49:57
+@@ -190,7 +190,7 @@
+      &       adjnirbmu,adjnirdfu,adjvisbmu,adjvisdfu,                   &
+      &       adjnirbmd,adjnirdfd,adjvisbmd,adjvisdfd,                   &
+      &       gu0, gv0, gt0, gq0, dudt, dvdt, dtdt, dqdt, ten_t, ten_u,  &
+-     &       ten_v, ten_q, errmsg,errflg)
++     &       ten_v, ten_q, lsswr, lslwr, dpsw, dplw, errmsg,errflg)
+ !
+       use machine,         only : kind_phys
+ 
+@@ -234,6 +234,9 @@
+      &                                     swhc, hlwc, p_lay
+ 
+       real(kind=kind_phys), dimension(:,:), intent(in) :: p_lev
++      logical, intent(in) :: lsswr, lslwr
++      real(kind=kind_phys), dimension(:,:), intent(inout) :: dpsw, dplw
++      real(kind=kind_phys) :: wsw(im,levs), wlw(im,levs)
+       real(kind=kind_phys), dimension(:,:), intent(in), optional ::     &
+      &     flux2D_lwUP, flux2D_lwDOWN, fluxlwUP_jac
+ 
+@@ -297,6 +300,19 @@
+       ten_u = 0.0
+       ten_v = 0.0
+       ten_q = 0.0
++!  heating rates are per layer mass at the radiation call: rescale
++!  to the current mass so the column gets the flux divergence
++      do k = 1, levs
++        do i = 1, im
++          tem1 = abs(p_lev(i,k) - p_lev(i,k+1))
++          if (lsswr) dpsw(i,k) = tem1
++          if (lslwr) dplw(i,k) = tem1
++          wsw(i,k) = one
++          wlw(i,k) = one
++          if (dpsw(i,k) > zero) wsw(i,k) = dpsw(i,k) / tem1
++          if (dplw(i,k) > zero) wlw(i,k) = dplw(i,k) / tem1
++        enddo
++      enddo
+       
+ !     Vertical ordering?
+       if (p_lev(1,1) .lt.  p_lev(1, levs)) then 
+@@ -455,14 +471,15 @@
+                else
+                   lfnc = 1.
+                endif
+-               ten_t(i,k) = swh(i,k)*xmu(i) +                           &
+-     &              htrlw(i,k)*lfnc + (1.-lfnc)*hlw(i,k)
++               ten_t(i,k) = swh(i,k)*xmu(i)*wsw(i,k) +                  &
++     &              htrlw(i,k)*lfnc + (1.-lfnc)*hlw(i,k)*wlw(i,k)
+             enddo
+          enddo
+       else
+          do k = 1, levs
+             do i = 1, im
+-               ten_t(i,k)  = swh(i,k)*xmu(i)  + hlw(i,k)
++               ten_t(i,k)  = swh(i,k)*xmu(i)*wsw(i,k)                   &
++     &                     + hlw(i,k)*wlw(i,k)
+             enddo
+          enddo
+       endif
+@@ -550,11 +567,12 @@
+             do k=1,levs
+                do i=1,im
+                  dtend(i,k,idtend) = dtend(i,k,idtend) + (ten_t(i,k) -  &
+-     &                               swh(i,k)*xmu(i))*deltim
++     &                               swh(i,k)*xmu(i)*wsw(i,k))*deltim
+                end do
+             end do
+           else
+-            dtend(:,:,idtend) = dtend(:,:,idtend) + hlw(:,:)*deltim
++            dtend(:,:,idtend) = dtend(:,:,idtend)                       &
++     &                          + hlw(:,:)*wlw(:,:)*deltim
+           endif
+         endif
+ 
+@@ -563,7 +581,7 @@
+            do k=1,levs
+               do i=1,im
+                  dtend(i,k,idtend) = dtend(i,k,idtend)                  &
+-     &                               + swh(i,k)*xmu(i)*deltim
++     &                               + swh(i,k)*xmu(i)*wsw(i,k)*deltim
+               enddo
+            enddo
+         endif
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.meta b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.meta
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.meta	2026-10-17 18:49:57
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.meta	2026-10-17 18:49:57
+@@ -811,6 +811,36 @@
+   type = real
+   kind = kind_phys
+   intent = out
++[lsswr]
++  standard_name = flag_for_calling_shortwave_radiation
++  long_name = logical flags for sw radiation calls
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[lslwr]
++  standard_name = flag_for_calling_longwave_radiation
++  long_name = logical flags for lw radiation calls
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[dpsw]
++  standard_name = air_pressure_difference_between_interfaces_on_sw_radiation_timestep
++  long_name = layer pressure thickness at the last sw radiation call
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[dplw]
++  standard_name = air_pressure_difference_between_interfaces_on_lw_radiation_timestep
++  long_name = layer pressure thickness at the last lw radiation call
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP

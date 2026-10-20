@@ -1,0 +1,667 @@
+From 4108dc201a78a7a5b603fb4390978e6b91d643b7 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 19:56:13 -0600
+Subject: [PATCH 3/3] TEMPO: water at or below r1 goes to vapour instead of
+ being deleted
+
+Each hydrometeor *_check_and_update routine, when q1d + qten*dt <= r1,
+overwrote qten so the species ended the step at zero. What was left was
+deleted, or created when an overshoot had left it negative. Give the
+routines optional qvten, tten and lat_ocp arguments and move that amount to
+vapour with its latent heat before the overwrite. Every call in tempo_main
+up to the final update passes them, with latent heat over cp from the entry
+state (lvap for cloud and rain, lsub for ice, snow, graupel), including the
+checks between semi-Lagrangian substeps. The calls after the final update do
+not: qv1d and t1d are final there, and the clip exchange (M1, first commit)
+has already moved everything at or below r1. Nor does the diagnostic copy of
+cloud plus PBL cloud used for the effective radii. The routines and M1 also
+record the vapour they take to fill a negative (qvneg) and its heating
+(tneg), for the floor below.
+
+Vapour floor. An exchange can take more vapour than its level holds (a
+negative in a dry layer), and the host can pass vapour below min_qv; the
+final update then clipped it at min_qv, creating water. Vapour that would
+end the step below min_qv is now refilled first from the same layer's
+condensate (with its latent heat, numbers scaled with mass), then from the
+column's vapour, every level above min_qv giving the same fraction of its
+excess, as the vapour floor of fix M1 does in Thompson. Only a column with
+no vapour to spare is still floored: that water is created and counted in
+tempo_main_diags%vapour_floor_water (kg m-2), and the latent heat of the
+negatives it filled is taken back, so heat always matches the water that
+actually changed phase. -1e-4 kg/kg of cloud in three dry layers above rain:
+the previous commit deleted it at entry (0.127 kg/m2 created); version 2 of
+this commit filled it from vapour that was not there (0.25 K of latent heat,
+and the clip still created the water); now it is filled from the column's
+vapour (0.25 K, nothing created). A column that cannot pay has every level
+at or below min_qv: none of 30,880 test calls, including 3,000 random
+columns, had one; a constructed one (no vapour, -1e-6 kg/kg of cloud at two
+levels) creates 8.7e-4 kg/m2, counted, with no heat.
+
+Early return (no hydrometeor above r1, not supersaturated). The routines
+zero q1d in place at entry and leave the matching vapour and heat in qvten
+and tten; those were dropped. They are now applied where they acted, with
+the same vapour floor; elsewhere the column is returned exactly as it came.
+A column with no tendencies is returned bit for bit, also where the host
+passed vapour below min_qv (version 2 of this commit raised it there,
+creating 1.24e-3 kg/m2 per call for -1e-6 kg/kg at three levels). A
+subsaturated 10-level column with 5e-13 kg/kg of rain, -1e-8 kg/kg of cloud
+at one level and traces of ice, snow and graupel at or below r1: the call
+created 2.1e-6 kg/m2 of water; now 9e-16.
+
+Semi-Lagrangian sedimentation books in its tendency the r1 floor it applies
+to the transported state, which created water. That floor is now condensed
+from vapour, with its latent heat (rain and graupel mass; numbers and
+graupel volume are not water), and the routine keeps its order. Taking the
+tendency before the floor instead (version 2 of this commit) also removes
+the floored mass from levels the precipitation has just left, and that mass
+is what the fall-speed routines see there: a floored level holds
+(r1/rho)*rho, just above or below r1 depending on rounding, and is given its
+own fall speed or the one copied from above. Without it the velocity above
+the precipitation top was zero and rain and graupel fell slower (a single
+graupel layer at 300 s delivered 48 % instead of 79 % of its total by 900
+s). Now the first call's precipitation is bit for bit the previous commit's
+in every semi-Lagrangian case tested (70 single columns, each also with the
+initial vapour perturbed by 1e-15 to 1e-12). Later steps start from states
+that differ by the exchanged vapour and so differ by about as much as such
+perturbations make the previous commit differ from itself (because of that
+rounding edge; on main and v3.0.5 the mean of nine perturbed runs moves by a
+median 0.1 of the previous commit's own spread over those cases, against 0.5
+to 1 with version 2).
+
+The flux-form sedimentation routine transported every level, including the
+r1 and r2 placeholders the check routines leave in empty levels, into which
+the fall-speed routines copy the fall speed from above. That mass was booked
+as precipitation and paid for from vapour by the exchanges. It now leaves
+inputs at or below limit in place (r1-sized changes only: its fall speeds
+are fixed for the step).
+
+Port of ufs-community/ccpp-physics fix M5, which does the same for Thompson
+(2e-8 of the precipitation in UFS). In TEMPO's 59-level test column (closure
+as in the first commit, gfortran, double precision, 20 s x 180 / 60 s x 60),
+after the previous two commits the residual was 2.9e-8 / 4.3e-8 (standard)
+and 3.0e-8 / 4.4e-8 (semi-Lagrangian) of the precipitation, water created at
+up to 2.4e-8 kg/m2 per step (on average 4.8e-9 at 20 s and 2.2e-8 at 60 s);
+with this commit |sum(W1 - W0 + P)|/sum(P) is at most 2.9e-15 with either
+sedimentation scheme and time step (largest single step 5.4e-14 kg/m2,
+double-precision rounding). The hour's precipitation against the previous
+commit: standard -1.4e-7 and -8.9e-8 kg/m2 at 20 and 60 s; semi-Lagrangian
+at 60 s -1.6e-4 kg/m2 (-5.1e-6), where 1e-14 to 1e-9 relative perturbations
+of the initial vapour move the previous commit by -1.6e-7 to +6.4e-4 kg/m2.
+Semi-Lagrangian at 20 s: +0.17 kg/m2 (+5.6e-3), far outside the range
+(+-1.2e-2 kg/m2) but not specific to this commit: the run shifts as far with
+the exchanges alone (+5.1e-3) or the floor payment alone (+5.8e-3), and by
++1.6e-2 when instead 1e-9 K is added to (or taken from) every level at every
+step. That run is this sensitive to any change that persists from step to
+step; version 2 of this commit moved it by +5.2e-3.
+
+Over 30,880 one-column calls (adversarial cases: negative, tiny and r1-sized
+condensate, dry and supersaturated layers, thin layers and large Courant
+numbers, hail-aware on and off; and 3,000 random columns) the largest
+residual is 2.1e-13 kg/m2, from 300-600 s semi-Lagrangian steps whose remap
+rounds at that level (the same calls in version 2); no negative condensate
+is left, and at every level the latent heat matches the condensate gained or
+lost (to 1.2e-4, the temperature dependence of Lv).
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_mp_tempo_main.F90 | 248 +++++++++++++++++++++++++++++++----
+ 1 file changed, 223 insertions(+), 25 deletions(-)
+
+diff --git a/src/module_mp_tempo_main.F90 b/src/module_mp_tempo_main.F90
+index 11bbef6..bd58dba 100644
+--- a/src/module_mp_tempo_main.F90
++++ b/src/module_mp_tempo_main.F90
+@@ -3,7 +3,7 @@ module module_mp_tempo_main
+   use module_mp_tempo_cfgs, only : ty_tempo_cfgs
+   use module_mp_tempo_params, only : wp, sp, dp, &
+     min_qv, roverrv, rdry, r1, r2, nt_c_max, t0, nrhg, rho_g, &
+-    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default, lsub
++    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default, lsub, lvap0, cp
+   use module_mp_tempo_utils, only : get_nuc, get_constant_cloud_number, snow_moments, calc_rslf, calc_rsif
+   use module_mp_tempo_diags, only : reflectivity_10cm, effective_radius, max_hail_diam, &
+     freezing_rain
+@@ -35,6 +35,7 @@ module module_mp_tempo_main
+     real(wp) :: graupel_liquid_equiv_precip
+     real(wp) :: frozen_fraction
+     real(wp) :: frz_rain_precip
++    real(wp) :: vapour_floor_water !! water created by the vapour floor where the column had none to spare [kg m-2]
+     real(wp), dimension(:), allocatable :: rain_med_vol_diam
+     real(wp), dimension(:), allocatable :: graupel_med_vol_diam
+     real(wp), dimension(:), allocatable :: refl10cm
+@@ -126,6 +127,10 @@ module module_mp_tempo_main
+     real(wp), dimension(kts:kte) :: temp, pres, qv !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: rho, rhof, rhof2 !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: rhon !! density after latent heating, for fall speeds only
++    real(wp), dimension(kts:kte) :: lvocp, lsocp !! latent heat over cp, for water sent to vapour
++    real(wp), dimension(kts:kte) :: qvneg, tneg !! vapour taken to fill negatives, and its heating
++    real(wp) :: xliq, xice, frc
++    logical, dimension(kts:kte) :: l_act !! levels the vapour floor may refill
+     real(wp) :: xcl
+     real(wp), dimension(kts:kte) :: qvs, qvsi, delqvs !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: satw, sati, ssatw, ssati !! thermodynamic variables
+@@ -245,6 +250,8 @@ module module_mp_tempo_main
+     do k = 1, nz
+       tten(k) = 0._wp
+       qvten(k) = 0._wp
++      qvneg(k) = 0._wp
++      tneg(k) = 0._wp
+       qcten(k) = 0._wp
+       qiten(k) = 0._wp
+       qrten(k) = 0._wp
+@@ -289,6 +296,7 @@ module module_mp_tempo_main
+     tempo_main_diags%snow_liquid_equiv_precip = 0._wp
+     tempo_main_diags%graupel_liquid_equiv_precip = 0._wp
+     tempo_main_diags%frz_rain_precip = 0._wp
++    tempo_main_diags%vapour_floor_water = 0._wp
+   
+     ! initialization -----------------------------------------------------------------------------
+     do k = 1, nz
+@@ -298,6 +306,11 @@ module module_mp_tempo_main
+       rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+     enddo
+ 
++    do k = 1, nz
++      lvocp(k) = (lvap0 + (2106.0_wp - 4218.0_wp)*(temp(k) - t0))/(cp*(1._wp + 0.887_wp*qv(k)))
++      lsocp(k) = lsub/(cp*(1._wp + 0.887_wp*qv(k)))
++    enddo
++
+     if (present(nwfa1d)) then
+       if (first_call_main) then
+         if (sum(nwfa1d) < eps) call init_water_friendly_aerosols(dz1d, nwfa)
+@@ -317,11 +330,14 @@ module module_mp_tempo_main
+     call aerosol_check_and_update(rho=rho, nwfa1d=nwfa1d, nifa1d=nifa1d, &
+       nwfa=nwfa, nifa=nifa, nwfaten=nwfaten, nifaten=nifaten)
+ 
+-    call rain_check_and_update(rho, l_qr, qr1d, nr1d, rr, nr, qrten, nrten, ilamr, mvd_r)
++    call rain_check_and_update(rho, l_qr, qr1d, nr1d, rr, nr, qrten, nrten, ilamr, mvd_r, &
++      qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+   
+-    call ice_check_and_update(rho, l_qi, qi1d, ni1d, ri, ni, qiten, niten, ilami)
++    call ice_check_and_update(rho, l_qi, qi1d, ni1d, ri, ni, qiten, niten, ilami, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+   
+-    call snow_check_and_update(rho, l_qs, qs1d, rs, qsten)
++    call snow_check_and_update(rho, l_qs, qs1d, rs, qsten, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+     ! snow moments
+     do k = 1, nz
+       if (l_qs(k)) then
+@@ -349,7 +365,8 @@ module module_mp_tempo_main
+     endif
+ 
+     call cloud_check_and_update(rho=rho, l_qc=l_qc, qc1d=qc1d, nc1d=nc1d, &
+-      ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c)
++      ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c, &
++      qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+ 
+     ! init ng and qb
+     if (first_call_main) then
+@@ -361,7 +378,8 @@ module module_mp_tempo_main
+     endif 
+     call graupel_check_and_update(rho=rho, l_qg=l_qg, qg1d=qg1d, ng1d=ng1d, &
+       qb1d=qb1d, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+-      qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
++      qbten=qbten, ilamg=ilamg, mvd_g=mvd_g, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+ 
+     ! re-zero tendencies after initial check zero tendencies
+     do k = 1, nz
+@@ -385,7 +403,20 @@ module module_mp_tempo_main
+ 
+     ! check for hydrometeors or supersaturation --------------------------------------------------
+     do_micro = any(l_qc) .or. any(l_qr) .or. any(l_qi) .or. any(l_qs) .or. any(l_qg)
+-    if (.not. do_micro .and. .not. supersaturated) return
++    if (.not. do_micro .and. .not. supersaturated) then
++      ! the entry checks changed q1d in place and left the matching vapour and heat in qvten, tten: apply
++      ! them where they acted (refilling vapour they took below min_qv); elsewhere the state is untouched
++      do k = 1, nz
++        l_act(k) = qvten(k) /= 0._wp .or. tten(k) /= 0._wp
++      enddo
++      call vapour_floor(rho, dz1d, qv1d, qvten, tten, qvneg, tneg, l_act, global_dt, global_inverse_dt, &
++        tempo_main_diags%vapour_floor_water)
++      do k = 1, nz
++        t1d(k)  = t1d(k) + tten(k)*global_dt
++        qv1d(k) = qv1d(k) + qvten(k)*global_dt
++      enddo
++      return
++    endif
+ 
+     ! main microphysical processes ---------------------------------------------------------------
+     if (.not. tempo_cfgs%turn_off_micro_flag) then
+@@ -448,18 +479,22 @@ module module_mp_tempo_main
+       xncx = nc1d
+     endif 
+     call cloud_check_and_update(rho=rho, l_qc=l_qc, qc1d=xrx, nc1d=xncx, &
+-      ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c)
++      ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c, &
++      qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+ 
+     xrx = qr1d
+     xnx = nr1d
+-    call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r)
++    call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r, &
++      qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+ 
+     xrx = qi1d
+     xnx = ni1d
+-    call ice_check_and_update(rho, l_qi, xrx, xnx, ri, ni, qiten, niten, ilami)
++    call ice_check_and_update(rho, l_qi, xrx, xnx, ri, ni, qiten, niten, ilami, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+ 
+     xrx = qs1d
+-    call snow_check_and_update(rho, l_qs, xrx, rs, qsten)
++    call snow_check_and_update(rho, l_qs, xrx, rs, qsten, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+     ! snow moments
+     do k = 1, nz
+       smo0(k) = 0._dp
+@@ -488,7 +523,8 @@ module module_mp_tempo_main
+     endif 
+     call graupel_check_and_update(rho=rho, l_qg=l_qg, qg1d=xrx, ng1d=xngx, &
+       qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+-      qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
++      qbten=qbten, ilamg=ilamg, mvd_g=mvd_g, &
++      qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+ 
+     call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+       satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+@@ -514,7 +550,8 @@ module module_mp_tempo_main
+         xncx = nc1d
+       endif 
+       call cloud_check_and_update(rho=rho, l_qc=l_qc, qc1d=xrx, nc1d=xncx, &
+-        ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c)
++        ncsave=ncsave, rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c, &
++        qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+ 
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*global_dt)
+@@ -542,7 +579,8 @@ module module_mp_tempo_main
+ 
+       xrx = qr1d
+       xnx = nr1d
+-      call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r)
++      call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r, &
++        qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+ 
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*global_dt)
+@@ -569,14 +607,16 @@ module module_mp_tempo_main
+         substeps_sedi = max(int(substeps_sedi/semi_sedi_factor) + 1, 1)
+         do n = 1, substeps_sedi
+           call semilagrangian_sedimentation(dz1d=dz1d, rho=rho, xr=rr, xten=qrten, &
+-            vt=vtrr, steps=substeps_sedi, limit=r1, precip=tempo_main_diags%rain_precip)
++            vt=vtrr, steps=substeps_sedi, limit=r1, precip=tempo_main_diags%rain_precip, &
++            qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+           call semilagrangian_sedimentation(dz1d=dz1d, rho=rho, xr=nr, xten=nrten, &
+             vt=vtnr, steps=substeps_sedi, limit=r2)
+           vtrr = 0._wp
+           vtnr = 0._wp
+           xrx = qr1d
+           xnx = nr1d
+-          call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r) 
++          call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r, &
++            qvten=qvten, tten=tten, lat_ocp=lvocp, qvneg=qvneg, tneg=tneg)
+           call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
+             vt=vtrr, vtn=vtnr)
+         enddo 
+@@ -612,7 +652,8 @@ module module_mp_tempo_main
+         substeps_sedi = max(int(substeps_sedi/semi_sedi_factor) + 1, 1)
+         do n = 1, substeps_sedi
+           call semilagrangian_sedimentation(dz1d=dz1d, rho=rho, xr=rg, xten=qgten, &
+-            vt=vtrg, steps=substeps_sedi, limit=r1, precip=tempo_main_diags%graupel_liquid_equiv_precip)
++            vt=vtrg, steps=substeps_sedi, limit=r1, precip=tempo_main_diags%graupel_liquid_equiv_precip, &
++            qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+           call semilagrangian_sedimentation(dz1d=dz1d, rho=rho, xr=ng, xten=ngten, &
+             vt=vtng, steps=substeps_sedi, limit=r2)
+           call semilagrangian_sedimentation(dz1d=dz1d, rho=rho, xr=rb, xten=qbten, &
+@@ -628,7 +669,8 @@ module module_mp_tempo_main
+           endif 
+           call graupel_check_and_update(rho=rho, l_qg=l_qg, qg1d=xrx, ng1d=xngx, &
+             qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+-            qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
++            qbten=qbten, ilamg=ilamg, mvd_g=mvd_g, &
++            qvten=qvten, tten=tten, lat_ocp=lsocp, qvneg=qvneg, tneg=tneg)
+           call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
+             l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
+             vt=vtrg, vtn=vtng)
+@@ -712,6 +754,34 @@ module module_mp_tempo_main
+         qcten=qcten, ncten=ncten, tten=tten, ncsave=ncsave)
+     endif 
+ 
++    ! vapour that would end the step below min_qv is refilled first from the same layer's condensate, with its
++    ! latent heat (numbers scaled with mass), then by vapour_floor from the column's vapour
++    do k = 1, nz
++      xcl = qv1d(k) + qvten(k)*dt
++      if (xcl < min_qv) then
++        xliq = max(qc1d(k) + qcten(k)*dt, 0._wp) + max(qr1d(k) + qrten(k)*dt, 0._wp)
++        xice = max(qi1d(k) + qiten(k)*dt, 0._wp) + max(qs1d(k) + qsten(k)*dt, 0._wp) + &
++          max(qg1d(k) + qgten(k)*dt, 0._wp)
++        if (xliq + xice > 0._wp) then
++          frc = min(1._wp, (min_qv - xcl)/(xliq + xice))
++          qvten(k) = qvten(k) + frc*(xliq + xice)*global_inverse_dt
++          tten(k) = tten(k) - frc*ocp(k)*(lvap(k)*xliq + lsub*xice)*global_inverse_dt
++          qcten(k) = qcten(k) - frc*max(qc1d(k) + qcten(k)*dt, 0._wp)*global_inverse_dt
++          qrten(k) = qrten(k) - frc*max(qr1d(k) + qrten(k)*dt, 0._wp)*global_inverse_dt
++          qiten(k) = qiten(k) - frc*max(qi1d(k) + qiten(k)*dt, 0._wp)*global_inverse_dt
++          qsten(k) = qsten(k) - frc*max(qs1d(k) + qsten(k)*dt, 0._wp)*global_inverse_dt
++          qgten(k) = qgten(k) - frc*max(qg1d(k) + qgten(k)*dt, 0._wp)*global_inverse_dt
++          nrten(k) = nrten(k) - frc*(nr1d(k) + nrten(k)*dt)*global_inverse_dt
++          niten(k) = niten(k) - frc*(ni1d(k) + niten(k)*dt)*global_inverse_dt
++          if (present(nc1d)) ncten(k) = ncten(k) - frc*(nc1d(k) + ncten(k)*dt)*global_inverse_dt
++          if (present(ng1d) .and. present(qb1d)) then
++            ngten(k) = ngten(k) - frc*(ng1d(k) + ngten(k)*dt)*global_inverse_dt
++            qbten(k) = qbten(k) - frc*(qb1d(k) + qbten(k)*dt)*global_inverse_dt
++          endif
++        endif
++      endif
++    enddo
++
+     ! condensate the final clips would delete is exchanged with vapour (with its latent heat) instead
+     do k = 1, nz
+       xcl = qc1d(k) + qcten(k)*dt
+@@ -719,33 +789,58 @@ module module_mp_tempo_main
+         qcten(k) = qcten(k) - xcl*global_inverse_dt
+         qvten(k) = qvten(k) + xcl*global_inverse_dt
+         tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*global_inverse_dt
++        if (xcl < 0._wp) then
++          qvneg(k) = qvneg(k) - xcl
++          tneg(k) = tneg(k) - lvap(k)*ocp(k)*xcl
++        endif
+       endif
+       xcl = qr1d(k) + qrten(k)*dt
+       if (xcl <= r1) then
+         qrten(k) = qrten(k) - xcl*global_inverse_dt
+         qvten(k) = qvten(k) + xcl*global_inverse_dt
+         tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*global_inverse_dt
++        if (xcl < 0._wp) then
++          qvneg(k) = qvneg(k) - xcl
++          tneg(k) = tneg(k) - lvap(k)*ocp(k)*xcl
++        endif
+       endif
+       xcl = qi1d(k) + qiten(k)*dt
+       if (xcl <= r1) then
+         qiten(k) = qiten(k) - xcl*global_inverse_dt
+         qvten(k) = qvten(k) + xcl*global_inverse_dt
+         tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++        if (xcl < 0._wp) then
++          qvneg(k) = qvneg(k) - xcl
++          tneg(k) = tneg(k) - lsub*ocp(k)*xcl
++        endif
+       endif
+       xcl = qs1d(k) + qsten(k)*dt
+       if (xcl <= r1) then
+         qsten(k) = qsten(k) - xcl*global_inverse_dt
+         qvten(k) = qvten(k) + xcl*global_inverse_dt
+         tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++        if (xcl < 0._wp) then
++          qvneg(k) = qvneg(k) - xcl
++          tneg(k) = tneg(k) - lsub*ocp(k)*xcl
++        endif
+       endif
+       xcl = qg1d(k) + qgten(k)*dt
+       if (xcl <= r1) then
+         qgten(k) = qgten(k) - xcl*global_inverse_dt
+         qvten(k) = qvten(k) + xcl*global_inverse_dt
+         tten(k) = tten(k) - lsub*ocp(k)*xcl*global_inverse_dt
++        if (xcl < 0._wp) then
++          qvneg(k) = qvneg(k) - xcl
++          tneg(k) = tneg(k) - lsub*ocp(k)*xcl
++        endif
+       endif
+     enddo
+ 
++    ! vapour still below min_qv is refilled from the column's vapour; only a column with none to spare is floored
++    l_act = .true.
++    call vapour_floor(rho, dz1d, qv1d, qvten, tten, qvneg, tneg, l_act, dt, global_inverse_dt, &
++      tempo_main_diags%vapour_floor_water)
++
+     ! final update -------------------------------------------------------------------------------
+     do k = 1, nz
+       t1d(k)  = t1d(k) + tten(k)*global_dt
+@@ -901,13 +996,15 @@ module module_mp_tempo_main
+ 
+ 
+   subroutine cloud_check_and_update(rho, l_qc, qc1d, nc1d, ncsave, rc, nc, &
+-    qcten, ncten, ilamc, mvd_c, dt)
++    qcten, ncten, ilamc, mvd_c, dt, qvten, tten, lat_ocp, qvneg, tneg)
+     !! computes cloud water contents, ilamc, and mvd_c and checks bounds
+     use module_mp_tempo_params, only : r1, nt_c_max, nt_c_min, nu_c_scale, &
+       am_r, bm_r, cce, ccg, d0c, d0r, ocg1, ocg2, obmr, nt_c_l, d0r, nt_c_l
+ 
+     real(wp), intent(in), optional :: dt
+     real(wp), dimension(:), intent(in) :: rho
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(inout) :: qc1d, qcten, ncten, rc, nc
+     real(wp), dimension(:), intent(out) :: mvd_c
+     real(dp), dimension(:), intent(out) :: ilamc
+@@ -982,6 +1079,14 @@ module module_mp_tempo_main
+         nc(k) = nt_c_min
+         mvd_c(k) = d0c
+         ilamc(k) = 0._dp
++        if (present(qvten)) then ! at or below r1: to vapour with its latent heat, not deleted
++          qvten(k) = qvten(k) + (qc1d(k) + qcten(k)*dt_)*odt_
++          tten(k) = tten(k) - lat_ocp(k)*(qc1d(k) + qcten(k)*dt_)*odt_
++          if ((qc1d(k) + qcten(k)*dt_) < 0._wp) then ! a negative filled from vapour: recorded for vapour_floor
++            qvneg(k) = qvneg(k) - (qc1d(k) + qcten(k)*dt_)
++            tneg(k) = tneg(k) - lat_ocp(k)*(qc1d(k) + qcten(k)*dt_)
++          endif
++        endif
+         qcten(k) = -qc1d(k) * odt_
+         qc1d(k) = 0.0_wp
+         if (present(nc1d)) then
+@@ -994,12 +1099,14 @@ module module_mp_tempo_main
+ 
+ 
+   subroutine rain_check_and_update(rho, l_qr, qr1d, nr1d, rr, nr, &
+-      qrten, nrten, ilamr, mvd_r)
++      qrten, nrten, ilamr, mvd_r, qvten, tten, lat_ocp, qvneg, tneg)
+     !! computes rain water contents, ilamr, and mvd_r and checks bounds
+     use module_mp_tempo_params, only : r1, r2, mu_r, crg, &
+       am_r, bm_r, obmr, d0r, d0r_max, org2, org3, rho_g
+ 
+     real(wp), dimension(:), intent(in) :: rho
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(inout) :: qr1d, nr1d, qrten, nrten, rr, nr
+     real(wp), dimension(:), intent(out) :: mvd_r
+     real(dp), dimension(:), intent(out) :: ilamr
+@@ -1052,6 +1159,14 @@ module module_mp_tempo_main
+         nr(k) = r2
+         mvd_r(k) = d0r
+         ilamr(k) = 0._dp
++        if (present(qvten)) then ! at or below r1: to vapour with its latent heat, not deleted
++          qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*global_dt)*global_inverse_dt
++          tten(k) = tten(k) - lat_ocp(k)*(qr1d(k) + qrten(k)*global_dt)*global_inverse_dt
++          if ((qr1d(k) + qrten(k)*global_dt) < 0._wp) then ! a negative filled from vapour: recorded for vapour_floor
++            qvneg(k) = qvneg(k) - (qr1d(k) + qrten(k)*global_dt)
++            tneg(k) = tneg(k) - lat_ocp(k)*(qr1d(k) + qrten(k)*global_dt)
++          endif
++        endif
+         qrten(k) = -qr1d(k) * global_inverse_dt
+         nrten(k) = -nr1d(k) * global_inverse_dt
+         qr1d(k) = 0.0_wp
+@@ -1062,13 +1177,15 @@ module module_mp_tempo_main
+ 
+ 
+  subroutine ice_check_and_update(rho, l_qi, qi1d, ni1d, ri, ni, &
+-      qiten, niten, ilami, dt)
++      qiten, niten, ilami, dt, qvten, tten, lat_ocp, qvneg, tneg)
+     !! computes ice contents, ilami and checks bounds
+     use module_mp_tempo_params, only : max_ni, r1, r2, cie, cig, &
+       mu_i, am_i, bm_i, oig1, oig2, obmi , d0s
+ 
+     real(wp), intent(in), optional :: dt
+     real(wp), dimension(:), intent(in) :: rho
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(inout) :: qi1d, ni1d, qiten, niten, ri, ni
+     real(dp), dimension(:), intent(out) :: ilami
+     logical, dimension(:), intent(inout) :: l_qi
+@@ -1125,6 +1242,14 @@ module module_mp_tempo_main
+         ri(k) = r1
+         ni(k) = r2
+         ilami(k) = 0._dp
++        if (present(qvten)) then ! at or below r1: to vapour with its latent heat, not deleted
++          qvten(k) = qvten(k) + (qi1d(k) + qiten(k)*dt_)*odt_
++          tten(k) = tten(k) - lat_ocp(k)*(qi1d(k) + qiten(k)*dt_)*odt_
++          if ((qi1d(k) + qiten(k)*dt_) < 0._wp) then ! a negative filled from vapour: recorded for vapour_floor
++            qvneg(k) = qvneg(k) - (qi1d(k) + qiten(k)*dt_)
++            tneg(k) = tneg(k) - lat_ocp(k)*(qi1d(k) + qiten(k)*dt_)
++          endif
++        endif
+         qiten(k) = -qi1d(k) * odt_
+         niten(k) = -ni1d(k) * odt_
+         qi1d(k) = 0.0_wp
+@@ -1134,12 +1259,14 @@ module module_mp_tempo_main
+   end subroutine ice_check_and_update
+ 
+ 
+-  subroutine snow_check_and_update(rho, l_qs, qs1d, rs, qsten, dt)
++  subroutine snow_check_and_update(rho, l_qs, qs1d, rs, qsten, dt, qvten, tten, lat_ocp, qvneg, tneg)
+     !! computes snow mass
+     use module_mp_tempo_params, only : max_ni, r1, r2
+ 
+     real(wp), intent(in), optional :: dt
+     real(wp), dimension(:), intent(in) :: rho
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(inout) :: qs1d, rs, qsten
+     logical, dimension(:), intent(inout) :: l_qs
+     real(wp) :: dt_, odt_
+@@ -1162,6 +1289,14 @@ module module_mp_tempo_main
+       else
+         l_qs(k) = .false.
+         rs(k) = r1
++        if (present(qvten)) then ! at or below r1: to vapour with its latent heat, not deleted
++          qvten(k) = qvten(k) + (qs1d(k) + qsten(k)*dt_)*odt_
++          tten(k) = tten(k) - lat_ocp(k)*(qs1d(k) + qsten(k)*dt_)*odt_
++          if ((qs1d(k) + qsten(k)*dt_) < 0._wp) then ! a negative filled from vapour: recorded for vapour_floor
++            qvneg(k) = qvneg(k) - (qs1d(k) + qsten(k)*dt_)
++            tneg(k) = tneg(k) - lat_ocp(k)*(qs1d(k) + qsten(k)*dt_)
++          endif
++        endif
+         qsten(k) = -qs1d(k) * odt_
+         qs1d(k) = 0.0_wp
+       endif
+@@ -1170,13 +1305,15 @@ module module_mp_tempo_main
+ 
+ 
+  subroutine graupel_check_and_update(rho, l_qg, qg1d, ng1d, qb1d, rg, ng, rb, &
+-      idx, qgten, ngten, qbten, ilamg, mvd_g)
++      idx, qgten, ngten, qbten, ilamg, mvd_g, qvten, tten, lat_ocp, qvneg, tneg)
+     !! computes graupel contents, ilamg, and mvd_g and checks bounds
+     use module_mp_tempo_params, only : r1, r2, nrhg, rho_g, mu_g, &
+       am_g, bm_g, ogg3, cgg, ogg2, obmg, d0r, idx_bg1, gonv_max, &
+       gonv_min, oge1, ogg1, d0g, meters3_to_liters
+ 
+     real(wp), dimension(:), intent(in) :: rho
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(inout) :: qg1d, qgten, rg, ng, rb, ngten, qbten
+     real(wp), dimension(:), intent(inout), optional :: ng1d, qb1d
+     real(dp), dimension(:), intent(out) :: ilamg
+@@ -1252,6 +1389,14 @@ module module_mp_tempo_main
+         ilamg(k) = 0._dp
+         idx(k) = idx_bg1
+         rb(k) = meters3_to_liters*r1/rho_g(idx(k))
++        if (present(qvten)) then ! at or below r1: to vapour with its latent heat, not deleted
++          qvten(k) = qvten(k) + (qg1d(k) + qgten(k)*global_dt)*global_inverse_dt
++          tten(k) = tten(k) - lat_ocp(k)*(qg1d(k) + qgten(k)*global_dt)*global_inverse_dt
++          if ((qg1d(k) + qgten(k)*global_dt) < 0._wp) then ! a negative filled from vapour: recorded for vapour_floor
++            qvneg(k) = qvneg(k) - (qg1d(k) + qgten(k)*global_dt)
++            tneg(k) = tneg(k) - lat_ocp(k)*(qg1d(k) + qgten(k)*global_dt)
++          endif
++        endif
+         qgten(k) = -qg1d(k) * global_inverse_dt
+         qg1d(k) = 0.0_wp
+         if (present(ng1d) .and. present(qb1d)) then
+@@ -1579,7 +1724,8 @@ module module_mp_tempo_main
+     if (present(ktop_sedi)) ktop = ktop_sedi
+ 
+     do k = nz, 1, -1
+-      sed_r(k) = vt(k)*xr(k)
++      ! inputs at or below limit (placeholders for absent mass) are not transported
++      if (xr(k) > limit) sed_r(k) = vt(k)*xr(k)
+     enddo
+     k = nz
+     odz = 1._wp/dz1d(k)
+@@ -1604,8 +1750,52 @@ module module_mp_tempo_main
+     endif 
+   end subroutine sedimentation
+ 
++  subroutine vapour_floor(rho, dz1d, qv1d, qvten, tten, qvneg, tneg, l_act, dt, odt, created)
++    !! vapour that would end the step below min_qv at a level in l_act is refilled from the column's vapour (every
++    !! level above min_qv gives the same fraction of its excess). Only a column with none to spare is floored: that
++    !! water is created and counted, and the latent heat of negatives filled from vapour that was not there (qvneg,
++    !! tneg) is taken back
++    real(wp), dimension(:), intent(in) :: rho, dz1d, qv1d, qvneg, tneg
++    real(wp), dimension(:), intent(inout) :: qvten, tten
++    logical, dimension(:), intent(in) :: l_act
++    real(wp), intent(in) :: dt, odt
++    real(wp), intent(inout) :: created
++    real(wp) :: xdef, xavl, fgive, ffill, qvf, short
++    integer :: k, nz
+ 
+-  subroutine semilagrangian_sedimentation(dz1d, rho, xr, xten, vt, steps, limit, precip)
++    nz = size(qv1d)
++    xdef = 0._wp
++    xavl = 0._wp
++    do k = 1, nz
++      qvf = qv1d(k) + qvten(k)*dt
++      if (l_act(k)) xdef = xdef + max(min_qv - qvf, 0._wp)*rho(k)*dz1d(k)
++      xavl = xavl + max(qvf - min_qv, 0._wp)*rho(k)*dz1d(k)
++    enddo
++    if (xdef <= 0._wp) return
++    fgive = 0._wp
++    ffill = 0._wp
++    if (xavl > 0._wp) then
++      fgive = min(1._wp, xdef/xavl)
++      ffill = min(1._wp, xavl/xdef)
++    endif
++    do k = 1, nz
++      qvf = qv1d(k) + qvten(k)*dt
++      if (l_act(k) .and. qvf < min_qv) then
++        short = (min_qv - qvf)*(1._wp - ffill)
++        qvten(k) = qvten(k) + (min_qv - qvf)*odt
++        if (short > 0._wp) then
++          created = created + short*rho(k)*dz1d(k)
++          if (qvneg(k) > 0._wp) tten(k) = tten(k) - min(short, qvneg(k))*tneg(k)/qvneg(k)*odt
++        endif
++      elseif (qvf > min_qv .and. fgive > 0._wp) then
++        qvten(k) = qvten(k) - (qvf - min_qv)*fgive*odt
++      endif
++    enddo
++  end subroutine vapour_floor
++
++
++  subroutine semilagrangian_sedimentation(dz1d, rho, xr, xten, vt, steps, limit, precip, &
++      qvten, tten, lat_ocp, qvneg, tneg)
+     !! semi-lagrangian sedimentation scheme from 
+     !! [Juang and Hong (2010)](https://doi.org/10.1175/2009MWR3109.1)
+     !!
+@@ -1616,6 +1806,8 @@ module module_mp_tempo_main
+     real(wp), intent(in) :: limit
+     real(wp), dimension(:), intent(in) :: dz1d, rho
+     real(wp), dimension(:), intent(inout) :: xr, xten
++    real(wp), dimension(:), intent(inout), optional :: qvten, tten, qvneg, tneg
++    real(wp), dimension(:), intent(in), optional :: lat_ocp
+     real(wp), dimension(:), intent(in) :: vt
+     real(wp) :: fa1, fa2, con1, decfl, dip, dim, tl, th, tl2, th2, qqd, qqh, qql, zsum, qsum, &
+       orho, dql, dqh
+@@ -1764,6 +1956,12 @@ module module_mp_tempo_main
+         endif
+       endif
+       orho = 1._wp / rho(k)
++      if (present(qvten) .and. xr(k) < limit) then ! the floor, booked in xten, is condensed from vapour
++        qvten(k) = qvten(k) - (limit - xr(k))*orho*global_inverse_dt
++        tten(k) = tten(k) + lat_ocp(k)*(limit - xr(k))*orho*global_inverse_dt
++        qvneg(k) = qvneg(k) + (limit - xr(k))*orho
++        tneg(k) = tneg(k) + lat_ocp(k)*(limit - xr(k))*orho
++      endif
+       xr(k) = max(xr(k), limit)
+       xten(k) = xten(k) + (xr(k) - rr_save(k)) * &
+         orho*global_inverse_dt
+-- 
+2.55.0
+

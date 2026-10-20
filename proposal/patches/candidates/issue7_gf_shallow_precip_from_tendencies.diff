@@ -1,0 +1,102 @@
+diff --git a/physics/CONV/Grell_Freitas/cu_gf_driver.F90 b/physics/CONV/Grell_Freitas/cu_gf_driver.F90
+index daf63efb..4203dca0 100644
+--- a/physics/CONV/Grell_Freitas/cu_gf_driver.F90
++++ b/physics/CONV/Grell_Freitas/cu_gf_driver.F90
+@@ -58,7 +58,7 @@ contains
+ !>\section gen_gf_driver Grell-Freitas Cumulus Scheme Driver General Algorithm
+       subroutine cu_gf_driver_run(ntracer,garea,im,km,dt,flag_init,flag_restart, gf_coldstart, &
+                cactiv,cactiv_m,g,cp,xlv,r_v,forcet,forceqv_spechum,phil,raincv, &
+-               qv_spechum,t,cld1d,us,vs,t2di,w,qv2di_spechum,p2di,psuri,        &
++               qv_spechum,t,cld1d,us,vs,t2di,w,qv2di_spechum,p2di,prsi,psuri,   &
+                hbot,htop,kcnv,xland,hfx2,qfx2,aod_gf,cliw,clcw,                 &
+                pbl,ud_mf,dd_mf,dt_mf,cnvw_moist,cnvc,imfshalcnv,                &
+                flag_for_scnv_generic_tend,flag_for_dcnv_generic_tend,           &
+@@ -140,8 +140,8 @@ contains
+    real(kind=kind_phys), dimension (:,:), intent(out), optional :: ud_mf
+    real(kind=kind_phys), dimension (:),   intent(out) :: raincv,cld1d
+    real(kind=kind_phys), dimension (:),   intent(out), optional :: maxupmf
+-   real(kind=kind_phys), dimension (:,:), intent(in)  :: t2di,p2di
+-!$acc declare copyin(hfx2,qfx2,psuri,t2di,p2di)
++   real(kind=kind_phys), dimension (:,:), intent(in)  :: t2di,p2di,prsi
++!$acc declare copyin(hfx2,qfx2,psuri,t2di,p2di,prsi)
+ !$acc declare copyout(ud_mf,dd_mf,dt_mf,raincv,cld1d)
+    ! Specific humidity from FV3
+    real(kind=kind_phys), dimension (:,:), intent(in) :: qv2di_spechum
+@@ -188,6 +188,7 @@ contains
+    real(kind=kind_phys), dimension    (km) :: zh
+    real(kind=kind_phys), dimension (im)    :: tau_ecmwf,edt,edtm,edtd,ter11,aa0,xlandi
+    real(kind=kind_phys), dimension (im)    :: pret,prets,pretm,hexec
++   real(kind=kind_phys), dimension (im)    :: dwat_shal ! water added by the applied shallow tendencies (kg m-2)
+    real(kind=kind_phys), dimension (im,10) :: forcing,forcing2
+    real(kind=kind_phys), dimension (im,nchem) :: wetdpc_mid
+ 
+@@ -202,7 +203,7 @@ contains
+ !$acc                outtm,outqm,outqcm,submm,cupclwm,         &
+ !$acc                cnvwt,cnvwts,cnvwtm,hco,hcdo,zdo,zdd,hcom,hcdom,zdom, &
+ !$acc                tau_ecmwf,edt,edtm,edtd,ter11,aa0,xlandi, &
+-!$acc                pret,prets,pretm,hexec,forcing,forcing2,wetdpc_mid,  &
++!$acc                pret,prets,pretm,hexec,dwat_shal,forcing,forcing2,wetdpc_mid,  &
+ !$acc                kbcon, ktop,ierr,ierrs,ierrm,kpbli, &
+ !$acc                k22s,kbcons,ktops,k22,jmin,jminm,kbconm,ktopm,k22m)
+ 
+@@ -459,6 +460,7 @@ contains
+       hbot(i)  =kte
+       htop(i)  =kts
+       raincv(i)=0.
++      dwat_shal(i)=0.
+       xlandi(i)=real(xland(i))
+ !     if(abs(xlandi(i)-1.).le.1.e-3) tun_rad_shall(i)=.15
+ !     if(abs(xlandi(i)-1.).le.1.e-3) flux_tun(i)=1.5
+@@ -948,6 +950,7 @@ contains
+                dd_mf(i,k)=cuten(i)*zd(i,k)*edt(i)*xmb(i)*dt
+                
+                ten_t(i,k) = (cutens(i)*outts(i,k)+cutenm(i)*outtm(i,k)+outt(i,k)*cuten(i))
++               dwat_shal(i)=dwat_shal(i)+dt*cutens(i)*(outqs(i,k)/(1.+qv(i,k))**2+outqcs(i,k))*(prsi(i,k)-prsi(i,k+1))/g
+                qv(i,k)=max(1.e-16,qv(i,k)+dt*(cutens(i)*outqs(i,k)+cutenm(i)*outqm(i,k)+outq(i,k)*cuten(i)))
+                gdc(i,k,7)=sqrt(us(i,k)**2 +vs(i,k)**2)
+                ten_u(i,k) = outu(i,k)*cuten(i) +outum(i,k)*cutenm(i) +outus(i,k)*cutens(i)
+@@ -1031,7 +1034,7 @@ contains
+             do i=its,itf
+               if(pret(i).gt.0.)then
+                  cactiv(i)=1
+-                 raincv(i)=.001*(cutenm(i)*pretm(i)+cutens(i)*prets(i)+cuten(i)*pret(i))*dt
++                 raincv(i)=max(0.,.001*((cutenm(i)*pretm(i)+cuten(i)*pret(i))*dt-dwat_shal(i)))
+               else
+                  cactiv(i)=0
+                  if(pretm(i).gt.0)raincv(i)=.001*cutenm(i)*pretm(i)*dt
+@@ -1074,6 +1077,16 @@ contains
+             ten_q(i,k,ntqv) = (new_qv_spechum(i,k) - qv_spechum(i,k))/dt
+           end do
+         end do
++! shallow-only columns: raincv is the water removed by the tendencies as applied by the host (none if they moisten)
++        do i=its,itf
++          if(cuten(i).le.0. .and. cutenm(i).le.0. .and. cutens(i).gt.0.)then
++            dq=0.
++            do k=kts,kte
++              dq=dq+(ten_q(i,k,ntqv)+dcliw(i,k)+dclcw(i,k))*(prsi(i,k)-prsi(i,k+1))
++            enddo
++            raincv(i)=max(0.,-.001*dq*dt/g)
++          endif
++        enddo
+ !
+ ! Diagnostic tendency updates
+ !
+diff --git a/physics/CONV/Grell_Freitas/cu_gf_driver.meta b/physics/CONV/Grell_Freitas/cu_gf_driver.meta
+index beb68a72..5aa70c94 100644
+--- a/physics/CONV/Grell_Freitas/cu_gf_driver.meta
++++ b/physics/CONV/Grell_Freitas/cu_gf_driver.meta
+@@ -275,6 +275,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
+ [psuri]
+   standard_name = surface_air_pressure
+   long_name = surface pressure

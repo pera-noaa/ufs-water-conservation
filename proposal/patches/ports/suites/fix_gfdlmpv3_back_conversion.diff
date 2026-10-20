@@ -1,0 +1,11 @@
+--- a/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
++++ b/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+@@ -1220,7 +1220,7 @@
+                 q_cond = qlz (k) + qrz (k) + qiz (k) + qsz (k) + qgz (k)
+                 con_r8 = one_r8 + qvz (k) + q_cond
+             else
+-                con_r8 = one_r8 + qvz (k)
++                con_r8 = one_r8 / (one_r8 - qv (i, k))
+             endif
+ 
+             delp (i, k) = dp (k) * con_r8

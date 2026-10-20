@@ -1,0 +1,343 @@
+diff --git a/drivers/ccpp/noahmpdrv.F90 b/drivers/ccpp/noahmpdrv.F90
+index eaf9eb6..433b6ff 100644
+--- a/drivers/ccpp/noahmpdrv.F90
++++ b/drivers/ccpp/noahmpdrv.F90
+@@ -492,7 +492,8 @@ end subroutine noahmpdrv_timestep_init
+       precip_adv_heat_grd_v_ccpp,                                &
+       precip_adv_heat_grd_b_ccpp,                                &
+       spec_humid_sfc_veg_ccpp,                                   &
+-      spec_humid_sfc_bare_ccpp                                   &
++      spec_humid_sfc_bare_ccpp,                                  &
++      iter                                                       &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -500,6 +501,8 @@ end subroutine noahmpdrv_timestep_init
+ 
+   use module_sf_noahmplsm,   only : gfs_stability
+   use module_sf_noahmp_glacier
++  use module_sf_noahmplsm,    only : hvap_lsm => hvap, hsub_lsm => hsub, hfus_lsm => hfus
++  use noahmp_glacier_globals, only : hvap_gla => hvap, hsub_gla => hsub, hfus_gla => hfus
+   use noahmp_tables
+ 
+   implicit none
+@@ -568,6 +571,9 @@ end subroutine noahmpdrv_timestep_init
+   real(kind=kind_phys), dimension(:)     , intent(in)    :: snoalb     ! upper bound on max albedo over deep snow
+   real(kind=kind_phys), dimension(:)     , intent(inout) :: sfalb      ! mean surface albedo [fraction]
+   logical             , dimension(:)     , intent(in)    :: flag_iter  !
++  ! optional and last: NOAA-EMC/noahmp's land component calls this routine with the original arguments
++  integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
++  logical                                                :: first_iter ! land is stepped on the first iteration only
+   integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
+   integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
+   integer                                , intent(in)    :: iopt_btr   ! option for soil moisture factor for stomatal resistance
+@@ -866,6 +872,7 @@ end subroutine noahmpdrv_timestep_init
+   real (kind=kind_phys)                            :: spec_humidity_bare_2m !   out | bare ground 2-m air specfic humidity [K]
+   real (kind=kind_phys)                            :: runoff_surface        !   out | surface runoff [mm/s] 
+   real (kind=kind_phys)                            :: runoff_baseflow       !   out | baseflow runoff [mm/s]
++  real (kind=kind_phys)                            :: glacier_snow_floor    !       | snow added by the glacier floor [mm]
+   real (kind=kind_phys)                            :: par_absorbed          !   out | absorbed photosynthesis active radiation [W/m2]
+   real (kind=kind_phys)                            :: photosynthesis        !   out | total photosynthesis [umol CO2/m2/s] [+ out]
+   real (kind=kind_phys)                            :: sw_absorbed_veg       !   out | solar radiation absorbed by vegetation [W/m2]
+@@ -988,18 +995,32 @@ end subroutine noahmpdrv_timestep_init
+ !
+ !  --- Just return if external land component is activated for two-way interaction
+ !
++  ! the host's latent heats, so the land pays the latent energy its water carries in the atmosphere
++  hvap_lsm = con_hvap
++  hfus_lsm = con_hfus
++  hsub_lsm = con_hvap + con_hfus
++  hvap_gla = hvap_lsm
++  hfus_gla = hfus_lsm
++  hsub_gla = hsub_lsm
++
+   if (cpllnd .and. cpllnd2atm) return
+ 
++  first_iter = .true.
++  if (present(iter)) first_iter = iter == 1
++
+   do i = 1, im
+ 
+-    if (flag_iter(i) .and. dry(i)) then
++    ! land is stepped once: a coastal (wet and dry) cell can be re-flagged for the second iteration
++    if (flag_iter(i) .and. dry(i) .and. first_iter) then
+ 
+ !
+ !  --- variable checks and derived fields
+ !
+ 
++      glacier_snow_floor = 0.0
+       if(vegtype(i) == isice_table ) then
+         if(weasd(i) < 0.1) then
++          glacier_snow_floor = 0.1 - weasd(i)  ! booked as negative baseflow below
+           weasd(i)  = 0.1
+         end if
+       end if                                       
+@@ -1225,8 +1246,8 @@ end subroutine noahmpdrv_timestep_init
+         soil_carbon_fast       = undefined
+         leaf_area_index        = undefined
+         stem_area_index        = undefined
+-        evaporation_canopy     = undefined
+-        transpiration          = undefined
++        evaporation_canopy     = 0.0
++        transpiration          = 0.0
+         aquifer_water          = undefined
+         precip_adv_heat_total  = undefined
+         soil_moisture_wtd      = 0.0
+@@ -1388,7 +1409,8 @@ end subroutine noahmpdrv_timestep_init
+       ecan      (i)   = evaporation_canopy
+       etran     (i)   = transpiration
+       edir      (i)   = evaporation_soil
+-      drain     (i)   = runoff_baseflow
++      ! FIXME: over land ice drain carries glacier ice and goes negative; it belongs in a frozen-runoff flux the interface lacks
++      drain     (i)   = runoff_baseflow - glacier_snow_floor/timestep
+       runoff    (i)   = runoff_surface
+ 
+       lfmassxy  (i)   = leaf_carbon
+@@ -1565,7 +1587,8 @@ end subroutine noahmpdrv_timestep_init
+ !  --- change units for output
+ !
+       hflx(i) = hflx(i) / density / con_cp
+-      evap(i) = evap(i) / density / con_hvap
++      ! the water Noah-MP removed (its own hvap/hsub), not latent heat / con_hvap
++      evap(i) = (ecan(i) + etran(i) + edir(i)) / density
+ 
+ !
+ !  --- calculate potential evaporation using noah code
+diff --git a/drivers/ccpp/noahmpdrv.meta b/drivers/ccpp/noahmpdrv.meta
+index 7d1150c..d1aa05f 100644
+--- a/drivers/ccpp/noahmpdrv.meta
++++ b/drivers/ccpp/noahmpdrv.meta
+@@ -1653,3 +1653,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True
+diff --git a/src/module_sf_noahmp_glacier.F90 b/src/module_sf_noahmp_glacier.F90
+index fcbe40a..09bc594 100644
+--- a/src/module_sf_noahmp_glacier.F90
++++ b/src/module_sf_noahmp_glacier.F90
+@@ -20,9 +20,9 @@ module noahmp_glacier_globals
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+@@ -349,6 +349,9 @@ contains
+ #endif
+ 
+     if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow joins the glacier, booked as glacier flow like snoflow
++     ! FIXME: this is ice, but runsub/drain is read as liquid; it belongs in a frozen-runoff flux the interface lacks
++     if(isnow == 0) runsub = runsub + sneqv/dt
+      snowh = 0.0
+      sneqv = 0.0
+     end if
+@@ -3305,6 +3308,8 @@ end if   ! opt_gla == 1
+    end if
+ 
+    if(snowh <= 1.e-8 .or. sneqv <= 1.e-6) then
++     ! the truncated snow leaves as surface runoff
++     if(isnow == 0) ponding2 = ponding2 + sneqv
+      snowh = 0.0
+      sneqv = 0.0
+    end if
+diff --git a/src/module_sf_noahmplsm.F90 b/src/module_sf_noahmplsm.F90
+index d7e8d97..7d69000 100644
+--- a/src/module_sf_noahmplsm.F90
++++ b/src/module_sf_noahmplsm.F90
+@@ -183,9 +183,9 @@ use machine ,   only : kind_phys
+   real (kind=kind_phys), parameter :: sb     = 5.67e-08  !< stefan-boltzmann constant (w/m2/k4)
+   real (kind=kind_phys), parameter :: vkc    = 0.40      !< von karman constant
+   real (kind=kind_phys), parameter :: tfrz   = 273.16    !< freezing/melting point (k)
+-  real (kind=kind_phys), parameter :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg)
+-  real (kind=kind_phys), parameter :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg)
+-  real (kind=kind_phys), parameter :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg)
++  real (kind=kind_phys)            :: hsub   = 2.8440e06 !< latent heat of sublimation (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hvap   = 2.5104e06 !< latent heat of vaporization (j/kg); host value set in noahmpdrv_run
++  real (kind=kind_phys)            :: hfus   = 0.3336e06 !< latent heat of fusion (j/kg); host value set in noahmpdrv_run
+   real (kind=kind_phys), parameter :: cwat   = 4.188e06  !< specific heat capacity of water (j/m3/k)
+   real (kind=kind_phys), parameter :: cice   = 2.094e06  !< specific heat capacity of ice (j/m3/k)
+   real (kind=kind_phys), parameter :: cpair  = 1004.64   !< heat capacity dry air at const pres (j/kg/k)
+@@ -943,6 +943,8 @@ contains
+     end if
+ 
+     if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+     end if
+@@ -1009,6 +1011,8 @@ contains
+ 
+   real (kind=kind_phys)                                        :: pair   !atm bottom level pressure (pa)
+   real (kind=kind_phys)                                        :: prcp_frozen   !total frozen precipitation [mm/s] ! mb/an : v3.7
++  real (kind=kind_phys)                                        :: fpcv          !frozen fraction of convective precipitation
++  real (kind=kind_phys)                                        :: bdfall0       !snow density before the mix [kg/m3]
+   real (kind=kind_phys), parameter                             :: rho_grpl = 500.0  ! graupel bulk density [kg/m3] ! mb/an : v3.7
+   real (kind=kind_phys), parameter                             :: rho_hail = 917.0  ! hail bulk density [kg/m3]    ! mb/an : v3.7
+ ! --------------------------------------------------------------------------------------------------
+@@ -1088,6 +1092,7 @@ contains
+ 
+      bdfall = min(120.,67.92+51.25*exp((sfctmp-tfrz)/2.59))       !mb/an: change to min  
+      if(opt_snf == 4 .or. opt_snf == 5) then
++        bdfall0 = bdfall
+         prcp_frozen = prcpsnow + prcpgrpl + prcphail
+         if(prcpnonc > 0. .and. prcp_frozen > 0.) then
+ 	  fpice = min(1.0,prcp_frozen/prcpnonc)
+@@ -1099,6 +1104,14 @@ contains
+ 	  fpice = 0.0
+         endif
+ 	
++        ! the microphysics fraction is for grid-scale precipitation; convective precipitation is snow below freezing
++        if(prcpconv + prcpshcv > 0.) then
++          fpcv = 0.0
++          if(sfctmp < tfrz) fpcv = 1.0
++          if(opt_snf == 4 .and. fpcv > 0. .and. fpice > 0.) bdfall = (bdfall*fpice*prcpnonc + &
++                 bdfall0*(prcpconv + prcpshcv)) / (fpice*prcpnonc + prcpconv + prcpshcv)
++          fpice = fpice + (fpcv - fpice)*(prcpconv + prcpshcv)/prcp
++        end if
+      endif
+ 
+      rain   = prcp * (1.-fpice)
+@@ -2045,6 +2058,8 @@ endif   ! croptype == 0
+ 
+      fsno = 0.
+      if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++       ! the truncated snow goes to the top soil layer as ice
++       if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+        snowh = 0.0
+        sneqv = 0.0
+      end if
+@@ -7113,6 +7128,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ ! local
+   integer                                        :: iz
+   real (kind=kind_phys)                                           :: qinsur  !water input on soil surface [m/s]
++  real (kind=kind_phys)                                           :: qcanl, qcani !truncated canopy water, ice to the ground (mm/s)
+   real (kind=kind_phys)                                           :: qseva   !soil surface evap rate [mm/s]
+   real (kind=kind_phys)                                           :: qsdew   !soil surface dew rate [mm/s]
+   real (kind=kind_phys)                                           :: qsnfro  !snow surface frost rate[mm/s]
+@@ -7141,7 +7157,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                   esai   ,tg     ,fveg   ,iloc   , jloc, & !in
+                   bdfall ,frozen_canopy  , & !in     
+                   canliq ,canice ,tv     ,                 & !inout
+-                  cmc    ,ecan   ,etran  , & !out
++                  cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+                   fwet      )                           !out
+ 
+ ! sublimation, frost, evaporation, and dew
+@@ -7160,8 +7176,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+      qsdew = qdew - qsnfro
+ 
+      call snowwater (parameters,nsnow  ,nsoil  ,imelt  ,dt     ,zsoil  , & !in
+-          &          sfctmp ,snowhin,qsnow  ,qsnfro ,qsnsub , & !in
+-          &          qrain  ,ficeold,iloc   ,jloc   ,         & !in
++          &          sfctmp ,snowhin+qcani/bdfall,qsnow+qcani,qsnfro ,qsnsub , & !in
++          &          qrain+qcanl,ficeold,iloc   ,jloc   ,         & !in
+           &          isnow  ,snowh  ,sneqv  ,snice  ,snliq  , & !inout
+           &          sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+           &          qsnbot ,snoflow,ponding1       ,ponding2)  !out
+@@ -7183,7 +7199,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ !    qinsur = ponding/dt * 0.001
+ 
+     if(isnow == 0) then
+-       qinsur = qinsur+(qsnbot + qsdew + qrain) * 0.001
++       qinsur = qinsur+(qsnbot + qsdew + qrain + qcanl) * 0.001
+     else
+        qinsur = qinsur+(qsnbot + qsdew) * 0.001
+     endif
+@@ -7249,7 +7265,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                        esai   ,tg     ,fveg   ,iloc   , jloc , & !in
+                        bdfall ,frozen_canopy  ,  & !in      
+                        canliq ,canice ,tv     ,                 & !inout
+-                       cmc    ,ecan   ,etran  , & !out
++                       cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+                        fwet      )                           !out
+ 
+ ! ------------------------ code history ------------------------------
+@@ -7282,6 +7298,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+   real (kind=kind_phys), intent(out)   :: ecan    !< evaporation of intercepted water (mm/s) [+]
+   real (kind=kind_phys), intent(out)   :: etran   !< transpiration rate (mm/s) [+]
+   real (kind=kind_phys), intent(out)   :: fwet    !< wetted or snowed fraction of the canopy (-)
++  real (kind=kind_phys), intent(out)   :: qcanl   !< truncated canopy water to the ground (mm/s)
++  real (kind=kind_phys), intent(out)   :: qcani   !< truncated canopy ice to the ground (mm/s)
+ ! --------------------------------------------------------------------
+ 
+ ! ------------------------ local variables ---------------------------
+@@ -7298,6 +7316,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ ! initialization
+ 
+       ecan    = 0.0
++      qcanl   = 0.0
++      qcani   = 0.0
+ 
+ ! --------------------------- liquid water ------------------------------
+ ! maximum canopy water
+@@ -7309,7 +7329,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+       if (.not.frozen_canopy) then             ! barlage: change to frozen_canopy
+         etran = max( fctr/hvap, 0. )
+         qevac = max( fcev/hvap, 0. )
+-        qdewc = abs( min( fcev/hvap, 0. ) )
++        ! condensation in the transpiration pathway (fctr < 0) is dew on the canopy
++        qdewc = abs( min( fcev/hvap, 0. ) ) + abs( min( fctr/hvap, 0. ) )
+         qsubc = 0.
+         qfroc = 0.
+       else
+@@ -7317,7 +7338,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+         qevac = 0.
+         qdewc = 0.
+         qsubc = max( fcev/hsub, 0. )
+-        qfroc = abs( min( fcev/hsub, 0. ) )
++        qfroc = abs( min( fcev/hsub, 0. ) ) + abs( min( fctr/hsub, 0. ) )
+       endif
+ 
+ ! canopy water balance. for convenience allow dew to bring canliq above
+@@ -7325,7 +7346,11 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+        qevac = min(canliq/dt,qevac)
+        canliq=max(0.,canliq+(qdewc-qevac)*dt)
+-       if(canliq <= 1.e-06) canliq = 0.0
++       if(canliq <= 1.e-06) then
++         ! the truncated canopy water drips to the ground
++         qcanl  = canliq/dt
++         canliq = 0.0
++       end if
+ 
+ ! --------------------------- canopy ice ------------------------------
+ ! for canopy ice
+@@ -7334,7 +7359,11 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+       qsubc = min(canice/dt,qsubc) 
+       canice= max(0.,canice + (qfroc-qsubc)*dt)
+-      if(canice.le.1.e-6) canice = 0.
++      if(canice.le.1.e-6) then
++        ! the truncated canopy ice falls to the ground
++        qcani  = canice/dt
++        canice = 0.
++      end if
+      
+ ! wetted fraction of canopy
+ 
+@@ -8160,6 +8189,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+    end if
+ 
+    if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) sice(1) = sice(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+    end if

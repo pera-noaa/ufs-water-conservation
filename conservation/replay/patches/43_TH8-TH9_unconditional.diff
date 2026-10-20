@@ -1,0 +1,156 @@
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 13:16:45.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90	2026-10-18 13:16:45.000000000 -0500
+@@ -4002,6 +4002,10 @@
+          nstep = nint(1./onstep(1))
+ 
+          if(.not. sedi_semi) then
++            ! floored layers carry their actual rain, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rr(k) .le. R1) rr(k) = max(0._wp, (qr1d(k) + qrten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_r(k) = vtrk(k)*rr(k)
+@@ -4012,7 +4016,7 @@
+                orho = 1./rho(k)
+                qrten(k) = qrten(k) - sed_r(k)*odzq*onstep(1)*orho
+                nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+-               rr(k) = max(R1, rr(k) - sed_r(k)*odzq*DT*onstep(1))
++               rr(k) = max(0._wp, rr(k) - sed_r(k)*odzq*DT*onstep(1))
+                nr(k) = max(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
+                pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                do k = ksed1(1), kts, -1
+@@ -4022,16 +4026,15 @@
+                                                       *odzq*onstep(1)*orho
+                   nrten(k) = nrten(k) + (sed_n(k+1)-sed_n(k))                &
+                                                       *odzq*onstep(1)*orho
+-                  rr(k) = max(R1, rr(k) + (sed_r(k+1)-sed_r(k)) &
++                  rr(k) = max(0._wp, rr(k) + (sed_r(k+1)-sed_r(k)) &
+                                                 *odzq*DT*onstep(1))
+                   nr(k) = max(R2, nr(k) + (sed_n(k+1)-sed_n(k)) &
+                                                 *odzq*DT*onstep(1))
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (rr(kts).gt.R1*rr_min) then
+-                  pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+-               endif 
++               ! all of the flux out of the lowest layer reaches the surface
++               pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+             enddo
+          else !if(.not. sedi_semi)
+             niter = 1
+@@ -4113,6 +4116,10 @@
+ 
+       if (ANY(L_qi .eqv. .true.)) then
+          nstep = nint(1./onstep(2))
++         ! floored layers carry their actual ice, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (ri(k) .le. R1) ri(k) = max(0._wp, (qi1d(k) + qiten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_i(k) = vtik(k)*ri(k)
+@@ -4123,7 +4130,7 @@
+             orho = 1./rho(k)
+             qiten(k) = qiten(k) - sed_i(k)*odzq*onstep(2)*orho
+             niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+-            ri(k) = max(R1, ri(k) - sed_i(k)*odzq*DT*onstep(2))
++            ri(k) = max(0._wp, ri(k) - sed_i(k)*odzq*DT*onstep(2))
+             ni(k) = max(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
+             pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             do k = ksed1(2), kts, -1
+@@ -4133,16 +4140,15 @@
+                                                 *odzq*onstep(2)*orho
+                niten(k) = niten(k) + (sed_n(k+1)-sed_n(k))                 &
+                                                 *odzq*onstep(2)*orho
+-               ri(k) = max(R1, ri(k) + (sed_i(k+1)-sed_i(k)) &
++               ri(k) = max(0._wp, ri(k) + (sed_i(k+1)-sed_i(k)) &
+                                              *odzq*DT*onstep(2))
+                ni(k) = max(R2, ni(k) + (sed_n(k+1)-sed_n(k)) &
+                                              *odzq*DT*onstep(2))
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (ri(kts).gt.R1*rr_min) then
+-               pptice = pptice + sed_i(kts)*DT*onstep(2)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptice = pptice + sed_i(kts)*DT*onstep(2)
+          enddo
+       endif
+ 
+@@ -4150,6 +4156,10 @@
+ 
+       if (ANY(L_qs .eqv. .true.)) then
+          nstep = nint(1./onstep(3))
++         ! floored layers carry their actual snow, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (rs(k) .le. R1) rs(k) = max(0._wp, (qs1d(k) + qsten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_s(k) = vtsk(k)*rs(k)
+@@ -4158,21 +4168,20 @@
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+             qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+-            rs(k) = max(R1, rs(k) - sed_s(k)*odzq*DT*onstep(3))
++            rs(k) = max(0._wp, rs(k) - sed_s(k)*odzq*DT*onstep(3))
+             pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             do k = ksed1(3), kts, -1
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qsten(k) = qsten(k) + (sed_s(k+1)-sed_s(k))                 &
+                                                 *odzq*onstep(3)*orho
+-               rs(k) = max(R1, rs(k) + (sed_s(k+1)-sed_s(k)) &
++               rs(k) = max(0._wp, rs(k) + (sed_s(k+1)-sed_s(k)) &
+                                              *odzq*DT*onstep(3))
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (rs(kts).gt.R1*rr_min) then
+-               pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+-            endif 
++            ! all of the flux out of the lowest layer reaches the surface
++            pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+          enddo
+       endif
+ 
+@@ -4181,6 +4190,10 @@
+       if (ANY(L_qg .eqv. .true.)) then
+          nstep = nint(1./onstep(4))
+          if(.not. sedi_semi) then 
++            ! floored layers carry their actual graupel, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rg(k) .le. R1) rg(k) = max(0._wp, (qg1d(k) + qgten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_g(k) = vtgk(k)*rg(k)
+@@ -4189,21 +4202,20 @@
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+-               rg(k) = max(R1, rg(k) - sed_g(k)*odzq*DT*onstep(4))
++               rg(k) = max(0._wp, rg(k) - sed_g(k)*odzq*DT*onstep(4))
+                pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                do k = ksed1(4), kts, -1
+                   odzq = 1./dzq(k)
+                   orho = 1./rho(k)
+                   qgten(k) = qgten(k) + (sed_g(k+1)-sed_g(k))                 &
+                                                 *odzq*onstep(4)*orho
+-                  rg(k) = max(R1, rg(k) + (sed_g(k+1)-sed_g(k)) &
++                  rg(k) = max(0._wp, rg(k) + (sed_g(k+1)-sed_g(k)) &
+                                                 *odzq*DT*onstep(4))
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (rg(kts).gt.R1*rr_min) then
+-                  pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+-               endif
++               ! all of the flux out of the lowest layer reaches the surface
++               pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+             enddo
+          else ! if(.not. sedi_semi) then 
+             niter = 1

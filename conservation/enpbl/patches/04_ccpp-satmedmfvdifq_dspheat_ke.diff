@@ -1,0 +1,168 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90
+@@ -1236,6 +1236,7 @@
+     logical              :: shinhong        !< flag for scale-aware Shinhong vertical turbulent mixing scheme
+     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
+     logical              :: dspheat         !< flag for tke dissipative heating
++    logical              :: dspheat_ke      !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
+     logical              :: sa3dtke         !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl        !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg       !< flag for canopy heat storage parameterization
+@@ -3886,6 +3887,7 @@
+     logical              :: shinhong       = .false.                  !< flag for scale-aware Shinhong vertical turbulent mixing scheme
+     logical              :: do_ysu         = .false.                  !< flag for YSU vertical turbulent mixing scheme
+     logical              :: dspheat        = .false.                  !< flag for tke dissipative heating
++    logical              :: dspheat_ke     = .false.                  !< flag for dissipative heating = resolved KE loss of the PBL momentum solve
+     logical              :: sa3dtke        = .false.                  !< flag for scale-aware 3D tke scheme
+     logical              :: hurr_pbl       = .false.                  !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg      = .false.                  !< flag for canopy heat storage parameterization
+@@ -4323,7 +4325,7 @@
+                                betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+                                pdfcld, shcnvcw, redrag,                                     &
+                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
+-                               shinhong, do_ysu, dspheat, lheatstrg, lseaspray, cnvcld,     &
++                               shinhong, do_ysu, dspheat, dspheat_ke, lheatstrg, lseaspray, cnvcld,     &
+                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
+                                isatmedmf, conv_cf_opt, do_deep, jcap, cscale,               &
+                                cs_parm, flgmin, cgwf, ccwf, cdmbgwd, alpha_fd,              &
+@@ -5283,6 +5285,7 @@
+     Model%shinhong          = shinhong
+     Model%do_ysu            = do_ysu
+     Model%dspheat           = dspheat
++    Model%dspheat_ke        = dspheat_ke
+     Model%hurr_pbl          = hurr_pbl
+     Model%lheatstrg         = lheatstrg
+     Model%lseaspray         = lseaspray
+@@ -7283,6 +7286,7 @@
+       print *, ' shinhong          : ', Model%shinhong
+       print *, ' do_ysu            : ', Model%do_ysu
+       print *, ' dspheat           : ', Model%dspheat
++      print *, ' dspheat_ke        : ', Model%dspheat_ke
+       print *, ' sa3dtke           : ', Model%sa3dtke
+       print *, ' lheatstrg         : ', Model%lheatstrg
+       print *, ' lseaspray         : ', Model%lseaspray
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta
+@@ -5872,6 +5872,12 @@
+ [dspheat]
+   standard_name = flag_TKE_dissipation_heating
+   long_name = flag for tke dissipative heating
++  units = flag
++  dimensions = ()
++  type = logical
++[dspheat_ke]
++  standard_name = flag_for_kinetic_energy_consistent_dissipation_heating
++  long_name = flag for dissipative heating equal to the resolved kinetic energy loss of the PBL momentum solve
+   units = flag
+   dimensions = ()
+   type = logical
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+@@ -97,7 +97,7 @@
+      &     prsi,del,prsl,prslk,phii,phil,delt,tte_edmf,                 &
+      &     dspheat,dusfc,dvsfc,dtsfc,dqsfc,hpbl,dkt,dku,tkeh,           &
+      &     kinver,xkzm_m,xkzm_h,xkzm_s,dspfac,bl_upfr,bl_dnfr,          &
+-     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,                            &
++     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,                 &
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+@@ -166,6 +166,8 @@
+ !
+ !  flag for tke dissipative heating
+       logical, intent(in)  :: dspheat
++!  flag for dissipative heating = resolved KE loss of the momentum solve
++      logical, intent(in)  :: dspheat_ke
+       real(kind=kind_phys), intent(out) :: ten_t(:,:),                  &
+      &                                     ten_u(:,:), ten_v(:,:)
+ !  flag for TTE-EDMF scheme
+@@ -183,6 +185,7 @@
+ !***
+ !***  local variables
+       real(kind=kind_phys) spd1_m
++      real(kind=kind_phys) dspq(im,km), dsptu(im), dsptv(im)
+ !***
+       integer i,is,k,n,ndt,km1,kmpbl,kmscu,ntrac1,idtend
+       integer kps,kbx,kmx
+@@ -2930,7 +2933,7 @@
+ !
+ !> ## Add TKE dissipative heating to temperature tendency
+ !
+-      if(dspheat) then
++      if(dspheat .and. .not. dspheat_ke) then
+         do k = 1,km1
+           do i = 1,im
+ !           tem = min(diss(i,k), dspmax)
+@@ -3023,6 +3026,56 @@
+ !           dvsfc(i) = dvsfc(i)+conw*del(i,k)*vtend
+          enddo
+       enddo
++!
++!> ## Dissipative heating = KE loss of the implicit momentum solve (Boville & Bretherton 2003):
++!!  interface momentum transfer x time-centred shear, half to each adjacent layer; surface stress work in layer 1
++!
++      if(dspheat .and. dspheat_ke) then
++        do k = 1,km
++          do i = 1,im
++            dspq(i,k) = 0.
++          enddo
++        enddo
++        do i = 1,im
++          dsptu(i) = 0.
++          dsptv(i) = 0.
++        enddo
++        do k = km,2,-1
++          do i = 1,im
++            dsptu(i) = dsptu(i) - del(i,k)*ten_u(i,k)*delt
++            dsptv(i) = dsptv(i) - del(i,k)*ten_v(i,k)*delt
++            tem = dsptu(i)*(u1(i,k)-u1(i,k-1)
++     &                   +0.5*(ten_u(i,k)-ten_u(i,k-1))*delt)
++     &          + dsptv(i)*(v1(i,k)-v1(i,k-1)
++     &                   +0.5*(ten_v(i,k)-ten_v(i,k-1))*delt)
++            dspq(i,k)   = dspq(i,k)   + 0.5*tem
++            dspq(i,k-1) = dspq(i,k-1) + 0.5*tem
++          enddo
++        enddo
++        do i = 1,im
++          dsptu(i) = dsptu(i) - del(i,1)*ten_u(i,1)*delt
++          dsptv(i) = dsptv(i) - del(i,1)*ten_v(i,1)*delt
++          dspq(i,1) = dspq(i,1)
++     &              + dsptu(i)*(u1(i,1)+0.5*ten_u(i,1)*delt)
++     &              + dsptv(i)*(v1(i,1)+0.5*ten_v(i,1)*delt)
++        enddo
++        do k = 1,km
++          do i = 1,im
++            dspq(i,k) = dspfac * dspq(i,k) / (cp*del(i,k)*delt)
++            ten_t(i,k) = ten_t(i,k) + dspq(i,k)
++          enddo
++        enddo
++        if(ldiag3d .and. .not. gen_tend) then
++          idtend = dtidx(index_of_temperature,index_of_process_pbl)
++          if(idtend>=1) then
++            do k = 1,km
++              do i = 1,im
++                dtend(i,k,idtend) = dtend(i,k,idtend)+dspq(i,k)*delt
++              enddo
++            enddo
++          endif
++        endif
++      endif
+       if (use_oceanuv) then
+         do i = 1,im
+           spd1_m=sqrt( (u1(i,1)-usfco(i))**2+(v1(i,1)-vsfco(i))**2 )
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+@@ -485,6 +485,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[dspheat_ke]
++  standard_name = flag_for_kinetic_energy_consistent_dissipation_heating
++  long_name = flag for dissipative heating equal to the resolved kinetic energy loss of the PBL momentum solve
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [sa3dtke]
+   standard_name = do_scale_aware_3d_tke
+   long_name = flag for scale-aware 3d tke scheme

@@ -1,0 +1,125 @@
+From b57dc50dd814d25c1be2f08ca097543185b81876 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 20:40:15 -0600
+Subject: [PATCH 2/2] Before the physics: remove negative mixing ratios without
+ adding mass
+
+atm_srk3 sets every negative scalar to zero before the physics ("simply
+set to zero negative mixing ratios ... (for now)"). That adds mass. With
+the monotonic transport the previous commit leaves almost nothing for it
+to do. With config_monotonic = false, negatives are routine and the clip
+adds water steadily.
+
+Measured on the idealized supercell (84x84 doubly periodic mesh, dx = 2 km,
+dt = 12 s, Thompson microphysics with its water fixes, no surface fluxes,
+double precision, 2 h, config_monotonic = false). Domain water W +
+accumulated precipitation P gains 1.40 kg/m2, 0.69 of the precipitation.
+A meter on this clip accounts for all of it at every 10-minute output.
+
+Fix:
+- Per column and scalar, zero the negative values and take the same mass
+  from the column's positive values in proportion (atm_nonneg_column,
+  NCEP Office Note 506 eqs. 10-11).
+- Some columns have no positive mass to borrow: a species is absent and
+  the transport undershot it. That mass went to other columns. Each such
+  column is set to zero, and the mass this adds is taken from the
+  scalar's positive mass over the whole domain, in proportion.
+- This needs one global sum per step (2 x num_scalars values).
+- It applies to all scalars, including number concentrations.
+- Columns and steps without negative values are unchanged, bit for bit.
+- The dummy cell nCells+1 keeps the plain clip.
+
+Borrowing within columns alone left 0.358 kg/m2. The domain step removes
+it.
+
+After (monotonic false): the water this handling adds is <= 2.5e-14 kg/m2
+per 10-minute window (before: up to 0.20 per window).
+- In total it moved 1.38 kg/m2 within columns and 0.334 kg/m2 between
+  columns.
+- The domain closure at 2 h is +3.0e-9 kg/m2. All of that is inside
+  Thompson, from its final qv = max(1e-10, qv) floor acting on vapour this
+  handling leaves at exactly zero. A trace sums it to the closure exactly.
+- Domain-mean P at 2 h is 2.022 -> 1.359 kg/m2, because the old clip had
+  been supplying the extra water.
+- Max w is 48.5 -> 50.0 m/s.
+- With the monotonic transport, Thompson at dt = 12 s and 8 s and Kessler
+  at dt = 12 s are bit-identical to the previous commit. Their closure
+  stays at roundoff (<= 1.4e-14 kg/m2).
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../dynamics/mpas_atm_time_integration.F      | 51 +++++++++++++++++--
+ 1 file changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index 1d8155b7..762f29a2 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -1929,6 +1929,11 @@ module atm_time_integration
+       real (kind=RKIND), dimension(:,:), pointer :: pressure_p, rtheta_p, exner, tend_u
+       real (kind=RKIND), dimension(:,:), pointer :: rho_pp, rtheta_pp, ru_p, rw_p, pv_edge, rho_edge
+       real (kind=RKIND) :: theta_local, fac_m
++      real (kind=RKIND), dimension(:), pointer :: rdzw_mp, areaCell_mp
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz_mp
++      real (kind=RKIND), dimension(:), allocatable :: q_col, wt_col
++      real (kind=RKIND), dimension(:), allocatable :: mass_local, mass_global
++      real (kind=RKIND) :: added, fac_mp
+ 
+ #ifndef MPAS_CAM_DYCORE
+       ! Used in allocating scratch fields for physics tendencies
+@@ -2795,9 +2800,49 @@ module atm_time_integration
+ 
+       end if
+ 
+-      !simply set to zero negative mixing ratios of different water species (for now):
+-      where ( scalars_2(:,:,:) < 0.0)  &
+-         scalars_2(:,:,:) = 0.0
++      !remove negative mixing ratios of all scalars before the physics without changing their mass (zeroing them
++      !alone adds mass): within each column where the column mass is positive; a column whose mass is not
++      !positive is set to zero and the mass that adds is taken from the scalar's positive mass over the whole
++      !domain, in proportion (the transport that left it negative carried that mass to other columns)
++      call mpas_pool_get_array(mesh, 'rdzw', rdzw_mp)
++      call mpas_pool_get_array(mesh, 'areaCell', areaCell_mp)
++      call mpas_pool_get_array(state, 'rho_zz', rho_zz_mp, 2)
++      allocate(q_col(nVertLevels), wt_col(nVertLevels))
++      allocate(mass_local(2*num_scalars), mass_global(2*num_scalars))
++      mass_local(:) = 0.0_RKIND
++      do iCell = 1, nCells
++         do iScalar = 1, num_scalars
++            do k = 1, nVertLevels
++               q_col(k) = scalars_2(iScalar,k,iCell)
++               wt_col(k) = rho_zz_mp(k,iCell)/rdzw_mp(k)
++            end do
++            call atm_nonneg_column(nVertLevels, q_col, wt_col, .true., added)
++            do k = 1, nVertLevels
++               scalars_2(iScalar,k,iCell) = q_col(k)
++            end do
++            if (iCell <= nCellsSolve) then
++               mass_local(iScalar) = mass_local(iScalar) + added*areaCell_mp(iCell)
++               do k = 1, nVertLevels
++                  mass_local(num_scalars+iScalar) = mass_local(num_scalars+iScalar) &
++                                                  + q_col(k)*wt_col(k)*areaCell_mp(iCell)
++               end do
++            end if
++         end do
++      end do
++      call mpas_dmpar_sum_real_array(domain % dminfo, 2*num_scalars, mass_local, mass_global)
++      do iScalar = 1, num_scalars
++         if (mass_global(iScalar) > 0.0_RKIND .and. mass_global(num_scalars+iScalar) > mass_global(iScalar)) then
++            fac_mp = 1.0_RKIND - mass_global(iScalar)/mass_global(num_scalars+iScalar)
++            do iCell = 1, nCells
++               do k = 1, nVertLevels
++                  scalars_2(iScalar,k,iCell) = scalars_2(iScalar,k,iCell) * fac_mp
++               end do
++            end do
++         end if
++      end do
++      deallocate(q_col, wt_col, mass_local, mass_global)
++      where ( scalars_2(:,:,nCells+1:) < 0.0)  &
++         scalars_2(:,:,nCells+1:) = 0.0
+ 
+       MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
+       !$acc update device(scalars_2, rthdynten)
+-- 
+2.55.0
+

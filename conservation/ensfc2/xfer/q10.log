@@ -1,0 +1,41 @@
+03:28 submit: sbatch -J e2_mopt10 --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/mopt10/ufs-weather-model build64.sbatch
+Submitted batch job 10155282
+03:28 submit: sbatch -J e2_bfx5n --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/bfx5n/ufs-weather-model build64.sbatch
+Submitted batch job 10155286
+03:35 submit: cp -p mopt10/ufs-weather-model/tests/fv3_e2_mopt10.exe bfx5n/ufs-weather-model/tests/fv3_e2_bfx5n.exe exe/ && tools/mkrun3.sh e5MA /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+cp: cannot stat 'mopt10/ufs-weather-model/tests/fv3_e2_mopt10.exe': No such file or directory
+03:35 submit: sbatch -J e2_opt5n --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/opt5n/ufs-weather-model build64.sbatch
+Submitted batch job 10155324
+03:35 submit: tools/mkrun3.sh e5B0 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_bfx5n.exe
+ layout = 3,8 
+Submitted batch job 10155333
+03:36 submit: cp -p opt5n/ufs-weather-model/tests/fv3_e2_opt5n.exe exe/ && tools/mkrun3.sh e5O0 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe
+cp: cannot stat 'opt5n/ufs-weather-model/tests/fv3_e2_opt5n.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5MB /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5MO0 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt10.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5BL /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_bfx5n.exe "" 4,6
+ layout = 4,6 
+Submitted batch job 10155354
+03:36 submit: tools/mkrestart3.sh e5BR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_bfx5n.exe
+S=10155356 R=10155357
+03:36 submit: tools/mkrun3.sh e5OA /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5OA1 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5OAL /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true." 4,6
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:36 submit: tools/mkrestart3.sh e5OAR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:36 submit: tools/mkrun3.sh e5OEP /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "sfc_precip_enthalpy = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:37 submit: tools/mkrun3.sh e5OLW2 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "lw_sfc_consistent = .true.;lw_sfc_return = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:37 submit: tools/mkrun3.sh e5OLW1 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "lw_sfc_consistent = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:37 submit: tools/mkrun3.sh e5OAIR /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "noahmp_pore_air = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+03:37 submit: tools/mkrun3.sh e5OEV /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe "sfc_evap_enthalpy = .true."
+cp: cannot stat '/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_opt5n.exe': No such file or directory
+QUEUE DONE

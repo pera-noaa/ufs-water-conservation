@@ -1,0 +1,71 @@
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+@@ -217,6 +217,7 @@
+    real(wp),            private :: olfus        !set in thompson_init
+ !..Latent heat slopes and moist heat capacity factor; thompson_kirchhoff: those of the host's (FV3) frame
+    logical                      :: thompson_kirchhoff = .false.
++   logical                      :: th8_test_off = .false.  ! TEST ONLY: env CANOPY_TH8_OFF=1
+ !..thompson_sed_actual: floored layers sediment their actual mass, not the R1 placeholder
+    logical                      :: thompson_sed_actual = .false.
+    real(wp), public, save :: tsf(2, 200, 4096) = 0.   ! sedimented mass through layer bottoms (kg m-2): liquid, ice
+@@ -4055,7 +4056,7 @@
+                   pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                enddo
+ 
+-               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rr(kts) > R1*rr_min)
++               if (.not. th8_test_off .or. rr(kts).gt.R1*rr_min) then  ! TEST hook on TH8
+                   pptrain = pptrain + sed_r(kts)*DT*onstep(1)
+                endif 
+             enddo
+@@ -4171,7 +4172,7 @@
+                pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             enddo
+ 
+-            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was ri(kts) > R1*rr_min)
++            if (.not. th8_test_off .or. ri(kts).gt.R1*rr_min) then  ! TEST hook on TH8
+                pptice = pptice + sed_i(kts)*DT*onstep(2)
+             endif 
+          enddo
+@@ -4206,7 +4207,7 @@
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+ 
+-            if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rs(kts) > R1*rr_min)
++            if (.not. th8_test_off .or. rs(kts).gt.R1*rr_min) then  ! TEST hook on TH8
+                pptsnow = pptsnow + sed_s(kts)*DT*onstep(3)
+             endif 
+          enddo
+@@ -4242,7 +4243,7 @@
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+ 
+-               if (.true.) then  ! all mass leaving the lowest layer is precipitation (was rg(kts) > R1*rr_min)
++               if (.not. th8_test_off .or. rg(kts).gt.R1*rr_min) then  ! TEST hook on TH8
+                   pptgraul = pptgraul + sed_g(kts)*DT*onstep(4)
+                endif
+             enddo
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
+@@ -48,7 +48,7 @@
+                                   threads, ext_diag, diag3d,               &
+                                   is_initialized, kirchhoff, sed_actual, errmsg, errflg)
+          use module_mp_thompson, only : PI, T_0, Rv, R, RoverRv, Cp
+-         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus, thompson_kirchhoff, thompson_sed_actual
++         use module_mp_thompson, only : R_uni, k_b, M_w, M_a, N_avo, lvap0, lfus, thompson_kirchhoff, th8_test_off, thompson_sed_actual
+          use module_mp_thompson, only : av_i, av_s, D0s, bv_s, bv_i
+          use module_mp_thompson, only : nt_c_l, nt_c_o, xnc_max, ssati_min, Nt_i_max, rr_min
+          
+@@ -136,6 +136,13 @@
+          lvap0 = con_hvap
+          lfus = con_hfus
+          thompson_kirchhoff = kirchhoff
++         block
++           character(len=8) :: ev
++           integer :: ln, st
++           call get_environment_variable('CANOPY_TH8_OFF', ev, ln, st)
++           th8_test_off = (st == 0 .and. ev(1:1) == '1')
++           if (th8_test_off .and. mpirank == mpiroot) print *, 'CANOPY TEST: TH8 OFF'
++         end block
+          thompson_sed_actual = sed_actual
+          
+          if (present(con_nt_c_l)) nt_c_l = con_nt_c_l

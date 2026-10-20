@@ -1,0 +1,43 @@
+fx6c_rap rc=0 0 6
+fx6cs_rap rc=0 0 6
+fx6_p8 rc=0 0 6
+fx6_rap rc=0 0 6
+fx6_gfdl rc=0 0 6
+S rc=0
+L rc=0
+R rc=0
+== fxa6_p8 vs fx6_p8: atmf024: 0 of 126 variables differ (6 files) sfcf024: 0 of 1176 variables differ (6 files) restart: 0 of 1138 variables differ (37 files) 
+== fxa6_gfdl vs fx6_gfdl: atmf024: 0 of 120 variables differ (6 files) sfcf024: 0 of 1140 variables differ (6 files) restart: 0 of 784 variables differ (31 files) 
+== fxa6_rap vs fx6_rap: atmf024: 0 of 120 variables differ (6 files) sfcf024: 0 of 1314 variables differ (6 files) restart: 0 of 1108 variables differ (31 files) 
+== mf6cs_rap vs fx6cs_rap: atmf024: 0 of 120 variables differ (6 files) sfcf024: 0 of 1314 variables differ (6 files) restart: 0 of 1108 variables differ (31 files) 
+== rs6p_S vs rs6p_R: atmf024: 0 of 126 variables differ (6 files) sfcf024: 0 of 1176 variables differ (6 files) restart: 0 of 1138 variables differ (37 files) 
+== rs6p_S vs rs6p_L: atmf024: 90 of 126 variables differ (6 files); largest: atmf024.tile2.nc:pressfc 1.41e+02, atmf024.tile5.nc:pressfc 1.09e+02, atmf024.tile4.nc:pressfc 1.06e+02, atmf024.tile1.nc:pressfc 8.05e+01 sfcf024: 924 of 1176 variables differ (6 files); largest: sfcf024.tile6.nc:tmp_avemct 9.99e+20, sfcf024.tile6.nc:tmp_avelct 9.99e+20, sfcf024.tile6.nc:tmp_avehct 9.99e+20, sfcf024.tile6.nc:prescnvclt 9.99e+20 restart: 726 of 1138 variables differ (37 files); largest: 20210323.060000.fv_tracer.res.tile4.nc:ice_nc 1.31e+07, 20210323.060000.fv_tracer.res.tile2.nc:ice_nc 1.31e+07, 20210323.060000.fv_tracer.res.tile1.nc:ice_nc 1.29e+07, 20210323.060000.fv_tracer.res.tile5.nc:ice_nc 1.27e+07 
+== fx6s_p8 vs rs6p_S: atmf024: 0 of 126 variables differ (6 files) sfcf024: 0 of 1176 variables differ (6 files) restart: 0 of 1138 variables differ (37 files) 
+== 03-closure-rap: fx6c_rap vs fxa6_rap
+field                    rms B-A     rms N-A  ratio    mean B-A    mean N-A      mean A
+T (K)                  1.930e-01   1.666e-01   1.16  -6.208e-03  -5.454e-04  2.4770e+02
+q (kg/kg)              1.606e-04   1.595e-04   1.01  -1.389e-06  -9.743e-09  2.4822e-03
+u (m/s)                2.875e-01   2.532e-01   1.14  -2.708e-03  -9.121e-04  7.0426e+00
+ps (Pa)                1.269e+01   1.117e+01   1.14  -2.821e-01  -4.514e-02  9.8684e+04
+precip (kg/m2/s)       1.217e-05   8.639e-06   1.41  +1.851e-06  -3.585e-08  2.1431e-05
+conv precip bucket     1.642e-05   1.339e-05   1.23  +2.852e-06  -9.541e-08  5.5023e-06
+LH (W/m2)              5.614e+00   4.580e+00   1.23  +9.854e-02  -4.367e-02  8.4947e+01
+SH (W/m2)              3.199e+00   2.410e+00   1.33  -1.011e-01  +2.049e-03  1.6284e+01
+T2m (K)                2.074e-01   1.809e-01   1.15  -1.021e-03  +7.147e-04  2.8713e+02
+q2m                    1.900e-04   1.849e-04   1.03  -3.520e-06  -1.887e-06  9.6553e-03
+PW (kg/m2)             3.968e-01   3.694e-01   1.07  -7.349e-03  +2.132e-03  2.4685e+01
+Tsfc (K)               2.703e-01   1.941e-01   1.39  -4.318e-03  -3.860e-04  2.8821e+02
+== 04-in-rap: fx6cs_rap vs fx6c_rap
+field                    rms B-A     rms N-A  ratio    mean B-A    mean N-A      mean A
+T (K)                  1.740e-01   1.666e-01   1.04  +2.667e-03  -5.454e-04  2.4769e+02
+q (kg/kg)              1.566e-04   1.595e-04   0.98  -1.661e-07  -9.743e-09  2.4808e-03
+u (m/s)                2.441e-01   2.532e-01   0.96  +5.520e-04  -9.121e-04  7.0399e+00
+ps (Pa)                1.046e+01   1.117e+01   0.94  -2.037e-02  -4.514e-02  9.8683e+04
+precip (kg/m2/s)       9.287e-06   8.639e-06   1.07  +1.207e-08  -3.585e-08  2.3282e-05
+conv precip bucket     1.375e-05   1.339e-05   1.03  +6.963e-08  -9.541e-08  8.3546e-06
+LH (W/m2)              5.240e+00   4.580e+00   1.14  +6.020e-02  -4.367e-02  8.5045e+01
+SH (W/m2)              2.612e+00   2.410e+00   1.08  -4.831e-03  +2.049e-03  1.6182e+01
+T2m (K)                2.155e-01   1.809e-01   1.19  -4.352e-03  +7.147e-04  2.8713e+02
+q2m                    1.781e-04   1.849e-04   0.96  -6.400e-07  -1.887e-06  9.6517e-03
+PW (kg/m2)             3.363e-01   3.694e-01   0.91  +2.759e-04  +2.132e-03  2.4677e+01
+Tsfc (K)               2.396e-01   1.941e-01   1.23  -5.855e-03  -3.860e-04  2.8820e+02

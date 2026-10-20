@@ -1,0 +1,43 @@
+From 6a6817663ace96c368e6cfe80770e3f0037bc2f8 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:55 -0500
+Subject: [PATCH 2/2] GFDL MP v3 terminal_fall: rain and cloud water fall with
+ c_liq
+
+terminal_fall calls sedi_heat with c_ice for every species, so falling rain
+and cloud water exchange heat with the ice heat capacity.
+
+Pass c_liq for qr and ql.
+
+Measured (control_iovr4_gfdlmpv3, C96, 24 h): energy residual in GFDL's
+frame with water potential energy +0.20 -> -0.007 W/m2. T -0.003 K, rms
+1.1-1.3x noise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90 | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90 b/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+index b5c24030..796e15e6 100644
+--- a/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
++++ b/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+@@ -2343,7 +2343,12 @@ subroutine terminal_fall (dts, ks, ke, tz, qv, ql, qr, qi, qs, qg, dz, dp, &
+     ! -----------------------------------------------------------------------
+ 
+     if (do_sedi_heat) then
+-        call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_ice)
++        ! the falling species brings its own heat capacity: liquid for rain and cloud water
++        if (qflag .eq. "qr" .or. qflag .eq. "ql") then
++            call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_liq)
++        else
++            call sedi_heat (ks, ke, dp, m1, dz, tz, qv, ql, qr, qi, qs, qg, c_ice)
++        endif
+     endif
+ 
+     ! -----------------------------------------------------------------------
+-- 
+2.31.1
+

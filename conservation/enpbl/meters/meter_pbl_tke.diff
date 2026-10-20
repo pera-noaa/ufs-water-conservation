@@ -1,0 +1,274 @@
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+@@ -4,12 +4,14 @@
+   use machine, only: kind_phys
+   implicit none
+   private
+-  public :: em_probe, emc, emg, emx, emkdt, emf
++  public :: em_probe, emc, emg, emx, emkdt, emf, emt, emtp
+   integer, parameter, public :: emnp = 12, emnc = 8192
+   real(kind=8), save :: emc(7, emnp, emnc) = 0.d0
+   real(kind=8), allocatable, save :: emd(:,:)
+   real(kind=8), save :: emg(10, emnp) = 0.d0, emx(12) = 0.d0, emf(12, emnc) = 0.d0
+   integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
++  integer, parameter, public :: emnt = 24, emnl = 128
++  real(kind=8), save :: emt(emnt) = 0.d0, emtp(12, emnl) = 0.d0
+ contains
+   subroutine em_probe(p, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                       ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
+@@ -47,6 +47,8 @@
+     real(kind=8) :: d(7), e0, e1, f, w, frad, fpbl, fmp, wpbl, wmp, wcv, a
+     integer :: s, jj, ierr
+     real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12)
++    real(kind=8) :: tbuf(emnt+12*emnl), trbuf(emnt+12*emnl)
++    integer :: kk
+     if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
+        buf(1:10*emnp) = reshape(emg, (/10*emnp/))
+        buf(10*emnp+1:) = emx
+@@ -61,6 +63,19 @@
+        endif
+        emg = 0.d0
+        emx = 0.d0
++       tbuf(1:emnt) = emt
++       tbuf(emnt+1:) = reshape(emtp, (/12*emnl/))
++       if (mpirank == mpiroot) then
++          call MPI_Reduce(MPI_IN_PLACE, tbuf, size(tbuf), MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          write(*,'(a,i6,24es25.16)') 'EMT ', emkdt(12), tbuf(1:emnt)
++          do kk = 1, emnl
++             write(*,'(a,i6,i4,12es17.8)') 'EMP ', emkdt(12), kk, tbuf(emnt+12*(kk-1)+1:emnt+12*kk)
++          enddo
++       else
++          call MPI_Reduce(tbuf, trbuf, size(tbuf), MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       endif
++       emt = 0.d0
++       emtp = 0.d0
+     endif
+     call em_probe(12, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
+                   ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F
+@@ -97,7 +97,7 @@
+      &     prsi,del,prsl,prslk,phii,phil,delt,tte_edmf,                 &
+      &     dspheat,dusfc,dvsfc,dtsfc,dqsfc,hpbl,dkt,dku,tkeh,           &
+      &     kinver,xkzm_m,xkzm_h,xkzm_s,dspfac,bl_upfr,bl_dnfr,          &
+-     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,                 &
++     &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,dspheat_ke,islmsk,          &
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+@@ -107,6 +107,7 @@
+ !
+       use machine  , only : kind_phys
+       use funcphys , only : fpvs
++      use energy_meter_common, only : emt, emtp
+ !
+       implicit none
+ !
+@@ -168,6 +169,12 @@
+       logical, intent(in)  :: dspheat
+ !  flag for dissipative heating = resolved KE loss of the momentum solve
+       logical, intent(in)  :: dspheat_ke
++      integer, intent(in)  :: islmsk(:)
++      real(kind=8) emm, emraw, emtb, emte0(im,km), emkel, emo, emn
++      real(kind=8) emq(km), emtu, emtv, emd, emdm, emb, emxu, emxv
++      real(kind=8) emc2
++      integer emk
++      integer emj
+       real(kind=kind_phys), intent(out) :: ten_t(:,:),                  &
+      &                                     ten_u(:,:), ten_v(:,:)
+ !  flag for TTE-EDMF scheme
+@@ -467,6 +474,16 @@
+           tteh(i,k) = 0
+         enddo
+       enddo
++      do k=1,km
++        do i=1,im
++          emm = garea(i)*del(i,k)*gravi
++          emt(5) = emt(5) + emm*(te(i,k)-q1(i,k,ntke))*rdt
++          emt(12) = emt(12) + emm*q1(i,k,ntke)
++        enddo
++      enddo
++      do i=1,im
++        emt(24) = emt(24) + garea(i)
++      enddo
+       if(tte_edmf) then
+         do k=1,km1
+           do i=1,im
+@@ -2018,6 +2035,11 @@
+             endif
+             shrp = shrp + ptem1 + ptem2
+           endif
++          emm = garea(i)*del(i,k)*gravi
++          emt(1) = emt(1) + emm*shrp
++          if(k == 1) emt(2) = emt(2) + emm*0.5*tem2
++          emt(3) = emt(3) + emm*buop
++          emt(4) = emt(4) + emm*max(buop,0.)
+           if(tte_edmf) then
+             if(buop > 0.) then
+               prod(i,k) = 2. * buop + shrp
+@@ -2061,6 +2083,7 @@
+        enddo
+        enddo
+       else
++       emte0(1:im,1:km) = te(1:im,1:km)
+        dtn = dt2 / float(ndt)
+        do n = 1, ndt
+        do k = 1,km1
+@@ -2069,10 +2092,16 @@
+            ptem = ce0 / ele(i,k)
+            disste = ptem * te(i,k) * tem
+            tem1 = prod(i,k) + te(i,k) / dtn
++           emraw = disste
+            disste = max(min(disste, tem1), 0.)
+            if(.not. tte_edmf) diss(i,k) = disste
+            te(i,k) = te(i,k) + dtn * (prod(i,k)-disste)
++           emtb = te(i,k)
+            te(i,k) = max(te(i,k), tkmnz(i,k))
++           emm = garea(i)*del(i,k)*gravi
++           emt(6) = emt(6) + emm*dtn*disste*rdt
++           emt(7) = emt(7) + emm*dtn*(emraw-disste)*rdt
++           emt(8) = emt(8) + emm*(te(i,k)-emtb)*rdt
+ !          te(i,k) = max(te(i,k), tkmin)
+         enddo
+        enddo
+@@ -2103,6 +2132,13 @@
+ !
+ !>  - Compute updraft & downdraft properties for TKE or TTE
+ !
++      do k = 1, km1
++        do i = 1, im
++          emm = garea(i)*del(i,k)*gravi
++          emt(9) = emt(9) + emm*diss(i,k)
++          emt(10) = emt(10) + emm*(te(i,k)-emte0(i,k))*rdt
++        enddo
++      enddo
+       do k = 1, km
+         do i = 1, im
+           if(pcnvflg(i)) then
+@@ -2431,6 +2467,9 @@
+ !           f1(i,k) = max(f1(i,k), tkmin)
+             qtend = (f1(i,k)-q1(i,k,ntke))*rdt
+             rtg(i,k,ntke) = rtg(i,k,ntke)+qtend
++            emm = garea(i)*del(i,k)*gravi
++            emt(11) = emt(11) + emm*(f1(i,k)-te(i,k))*rdt
++            emt(13) = emt(13) + emm*f1(i,k)
+          enddo
+       enddo
+       if(ldiag3d) then
+@@ -2880,6 +2919,14 @@
+         dtsfc(i) = rho_a(i) * cp * heat(i)
+         dqsfc(i) = rho_a(i) * hvap * evap(i)
+       enddo
++      do i = 1,im
++        emt(18) = emt(18) - garea(i)*dtsfc(i)
++      enddo
++      do k = 1,km
++        do i = 1,im
++          emt(18) = emt(18) + garea(i)*del(i,k)*gravi*cp*ten_t(i,k)
++        enddo
++      enddo
+ !
+       if(ldiag3d .and. .not. gen_tend) then
+         idtend = dtidx(index_of_temperature,index_of_process_pbl)
+@@ -3076,6 +3123,74 @@
+           endif
+         endif
+       endif
++      do i = 1,im
++        emj = 1
++        if(islmsk(i) /= 1) emj = 2
++        if(xmu(i) <= 0.) emj = emj + 2
++        emm = garea(i)*del(i,1)*gravi/(zi(i,2)-zi(i,1))
++        emt(15) = emt(15) + emm*stress(i)/spd1(i)*
++     &     ((u1(i,1)+ten_u(i,1)*delt)**2+(v1(i,1)+ten_v(i,1)*delt)**2)
++        emt(16) = emt(16) + garea(i)*rho_a(i)*stress(i)*
++     &     (u1(i,1)**2+v1(i,1)**2)/spd1(i)
++        emq(1:km) = 0.
++        emtu = 0.
++        emtv = 0.
++        do k = km,2,-1
++          emtu = emtu - del(i,k)*ten_u(i,k)*delt
++          emtv = emtv - del(i,k)*ten_v(i,k)*delt
++          emxu = u1(i,k)-u1(i,k-1)+0.5*(ten_u(i,k)-ten_u(i,k-1))*delt
++          emxv = v1(i,k)-v1(i,k-1)+0.5*(ten_v(i,k)-ten_v(i,k-1))*delt
++          emd = emtu*emxu + emtv*emxv
++          emq(k) = emq(k) + 0.5*emd
++          emq(k-1) = emq(k-1) + 0.5*emd
++          emdm = 0.
++          emk = k-1
++          emc2 = delt*0.5*(prsl(i,emk)-prsl(i,emk+1))*rdzt(i,emk)
++          if(pcnvflg(i) .and. emk < kpbl(i)) then
++            emdm = emdm - emc2*xmf(i,emk)*(
++     &        (ucko(i,emk)+ucko(i,emk+1)-u1(i,emk)-u1(i,emk+1))*emxu
++     &       +(vcko(i,emk)+vcko(i,emk+1)-v1(i,emk)-v1(i,emk+1))*emxv)
++          endif
++          if(scuflg(i)) then
++            if(emk >= mrad(i) .and. emk < krad(i)) then
++              emdm = emdm + emc2*xmfd(i,emk)*(
++     &          (ucdo(i,emk)+ucdo(i,emk+1)-u1(i,emk)-u1(i,emk+1))*emxu
++     &         +(vcdo(i,emk)+vcdo(i,emk+1)-v1(i,emk)-v1(i,emk+1))*emxv)
++            endif
++          endif
++          emt(21) = emt(21) + garea(i)*gravi*min(emd,0.)/delt
++          emt(22) = emt(22) + garea(i)*gravi*emdm/delt
++          emt(23) = emt(23) + garea(i)*gravi*min(emd-emdm,0.)/delt
++        enddo
++        emtu = emtu - del(i,1)*ten_u(i,1)*delt
++        emtv = emtv - del(i,1)*ten_v(i,1)*delt
++        emq(1) = emq(1) + emtu*(u1(i,1)+0.5*ten_u(i,1)*delt)
++     &                  + emtv*(v1(i,1)+0.5*ten_v(i,1)*delt)
++        do k = 1,km
++          emm = garea(i)*del(i,k)*gravi
++          emkel = -0.5*(ten_u(i,k)*(2.*u1(i,k)+ten_u(i,k)*delt)
++     &                + ten_v(i,k)*(2.*v1(i,k)+ten_v(i,k)*delt))
++          emt(14) = emt(14) + emm*emkel
++          emt(17) = emt(17) + emm*min(emkel,0.)
++          emo = 0.
++          if(k < km) emo = dspfac*diss(i,k)
++          emn = dspfac*emkel
++          emb = dspfac*emq(k)/(del(i,k)*delt)
++          emt(20) = emt(20) + emm*min(emb,0.)
++          if(dspheat) then
++            if(dspheat_ke) then
++              emt(19) = emt(19) + emm*emb
++            else
++              emt(19) = emt(19) + emm*emo
++            endif
++          endif
++          if(k <= 128) then
++            emtp(emj,k) = emtp(emj,k) + emm*emo
++            emtp(emj+4,k) = emtp(emj+4,k) + emm*emn
++            emtp(emj+8,k) = emtp(emj+8,k) + emm*emb
++          endif
++        enddo
++      enddo
+       if (use_oceanuv) then
+         do i = 1,im
+           spd1_m=sqrt( (u1(i,1)-usfco(i))**2+(v1(i,1)-vsfco(i))**2 )
+--- a/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
++++ b/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+@@ -1,7 +1,7 @@
+ [ccpp-table-properties]
+   name = satmedmfvdifq
+   type = scheme
+-  dependencies = ../../tools/funcphys.f90,../../tools/canopy_utils_mod.f,../../hooks/machine.F,../mfpbltq.f,mfscuq.f,../tridi.f
++  dependencies = ../../tools/funcphys.f90,../../tools/canopy_utils_mod.f,../../hooks/machine.F,../mfpbltq.f,mfscuq.f,../tridi.f,../../Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+ 
+ ########################################################################
+ [ccpp-arg-table]
+@@ -485,6 +485,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[islmsk]
++  standard_name = sea_land_ice_mask
++  long_name = sea/land/ice mask (=0/1/2)
++  units = flag
++  dimensions = (horizontal_loop_extent)
++  type = integer
++  intent = in
+ [dspheat_ke]
+   standard_name = flag_for_kinetic_energy_consistent_dissipation_heating
+   long_name = flag for dissipative heating equal to the resolved kinetic energy loss of the PBL momentum solve

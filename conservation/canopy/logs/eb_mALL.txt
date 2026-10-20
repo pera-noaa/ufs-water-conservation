@@ -1,0 +1,75 @@
+# file mALL/out  steps EBD 120 (1..120)  EMS 119  area 5.100965e+14  constants cp=1004.6 hlv=2500000.0 hlf=333580.0 cpv=1846.0 cl=4185.5 ci=1972.0
+
+## dycore and coupling (120 steps), global mean W m-2 (water rows kg m-2 s-1)
+dyc: te0 point - atmos_dyn start (TE)                      +0.000000e+00
+dyc: Rayleigh_Super (TE)                                   -4.171931e-06
+dyc: dyn_core+tracers+remap+fixer (TE, 8->9)               +4.172047e-06
+dyc: fixer window total te0->after fix (TE, 7->9)          +1.157251e-10
+dyc: neg_adj3 (TE)                                         +2.679949e-10
+dyc: end fv_dynamics -> after p_split (TE)                 +0.000000e+00
+dyc: fv_subgrid_z (TE)                                     +4.119826e-03
+dyc: fv_subgrid_z (IE+PE+KW+KA, A-grid KE)                 -3.045396e-11
+dyc: fv_subgrid_z dKA                                      -4.119826e-03
+dyc: fv_subgrid_z dIE+dPE                                  +4.119832e-03
+dyc: fv_subgrid_z dKW                                      -5.544824e-09
+cpl: dyn end -> state_update start (TE)                    +0.000000e+00
+cpl: delp/q write (TE)                                     +1.471106e+00
+cpl: delp/q write: IE                                      +1.924788e+00
+cpl: delp/q write: PE                                      -4.512014e-01
+cpl: delp/q write: KD                                      -2.479638e-03
+cpl: delp/q write: mass (kg, as W m-2 x1)                  +4.161229e-06
+cpl: fv_update_phys (TE)                                   -9.592377e+00
+cpl: fv_update_phys IE+PE                                  -6.791250e+00
+cpl: fv_update_phys KD                                     -2.801127e+00
+cpl: fv_update_phys KA                                     -2.786415e+00
+cpl: intended heating sum cp_air t_dt dt delp/g            -6.807329e+00
+dyc: fixer intended (consv*sum(te0-te))                    -5.638069e-01
+dyc: E_Flux (W m-2, summed)                                -5.638069e-01
+dyc: te0 (g_sum) - TE(slot7)                               +7.918030e-11
+gap: step end -> next atmos_dyn start (TE)                 +0.000000e+00
+water: delp/q write dWv                                    +4.231676e-06
+water: delp/q write dWl                                    -1.920532e-07
+water: delp/q write dWi                                    +1.216059e-07
+
+## physics frame, 119 steps, W m-2: dE  dcpT  dLvq  d(-Lf qi)  dK | dW(kg m-2 s-1)  F  sum|r|  dW-Wflux
+1->2 interstitial_1..composites_pre      +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 | +0.000e+00 +0.0000e+00 0.0000e+00 +0.000e+00 | r=dE-F +0.000000e+00 | dE* +0.0000e+00 gap +0.0000e+00
+2->3 dcyc2t3 (radiation)                 -1.0332e+02 -1.0332e+02 +0.0000e+00 +0.0000e+00 +0.0000e+00 | +0.000e+00 -1.0332e+02 1.6636e-09 +0.000e+00 | r=dE-F +1.055652e-12 | dE* -1.0359e+02 gap -2.6492e-01
+3->4 surface loop..sfc_diag_post         +1.5479e-01 +1.5479e-01 +0.0000e+00 +0.0000e+00 +0.0000e+00 | +0.000e+00 +0.0000e+00 2.1089e+00 +0.000e+00 | r=dE-F +1.547880e-01 | dE* +1.5630e-01 gap +1.5133e-03
+4->5 PBL (sfc_generic_post..PBL_post)    +1.0335e+02 +2.0527e+01 +8.5044e+01 +6.0770e-17 -2.2214e+00 | +3.502e-05 +1.0335e+02 2.2651e-02 -2.703e-21 | r=dE-F +1.641909e-04 | dE* +1.4441e+02 gap +4.1059e+01
+5->6 GWD (+apply)                        +1.1752e-13 +4.1209e-01 +0.0000e+00 +3.8193e-17 -4.1209e-01 | -4.031e-23 +0.0000e+00 1.6006e-09 -4.031e-23 | r=dE-F +1.175180e-13 | dE* +9.2408e-04 gap +9.2408e-04
+6->7 photochem                           +1.4364e-05 +0.0000e+00 +1.4364e-05 +0.0000e+00 +0.0000e+00 | +5.746e-12 +0.0000e+00 1.4364e-05 +5.746e-12 | r=dE-F +1.436427e-05 | dE* +2.0580e-05 gap +6.2160e-06
+7->8 SAMF deep                           +1.6049e-01 +6.5491e+01 -6.4794e+01 -4.1677e-01 -1.1923e-01 | -1.677e-05 +0.0000e+00 2.7161e-01 -1.677e-05 | r=dE-F +1.604881e-01 | dE* -1.9369e+01 gap -1.9529e+01
+8->9 SAMF shallow                        -1.2306e-01 +1.8652e+01 -1.8729e+01 -1.8004e-02 -2.8050e-02 | -3.007e-06 +0.0000e+00 1.8855e-01 -3.007e-06 | r=dE-F -1.230582e-01 | dE* -3.4812e+00 gap -3.3581e+00
+9->10 interst_4, cnvc90                  +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 | +0.000e+00 +0.0000e+00 0.0000e+00 +0.000e+00 | r=dE-F +0.000000e+00 | dE* +0.0000e+00 gap +0.0000e+00
+10->11 Thompson+MP_post                  +1.2635e+00 -8.2232e+00 +9.0929e+00 +3.9384e-01 +0.0000e+00 | -1.107e-05 +1.2864e+00 3.7348e-01 -2.271e-20 | r=dE-F -2.288061e-02 | dE* -1.1025e+01 gap -1.2289e+01
+11->12 maximum_hourly..physics_post      +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 +0.0000e+00 | +0.000e+00 +0.0000e+00 0.0000e+00 +0.000e+00 | r=dE-F +0.000000e+00 | dE* +0.0000e+00 gap +0.0000e+00
+ALL physics 1->12                        +1.4845e+00 -6.3076e+00 +1.0614e+01 -4.0933e-02 -2.7808e+00 | +4.173e-06 +1.3150e+00 2.3455e+00 +5.746e-12 | r=dE-F +1.695158e-01 | dE* +7.1048e+00 gap +5.6202e+00
+
+## physics extras (W m-2 means except first two, per-step means)
+E_phys(probe1) J             +2.599997e+09
+W(probe1) kg                 +2.426224e+01
+SWnet TOA*xmu                +2.517122e+02
+-OLR                         -2.412485e+02
+SWnet sfc*xmu (rad)          +1.753645e+02
+LWnet sfc (rad, down)        -6.157953e+01
+adjsfcnsw                    +1.753645e+02
+adjsfcdlw                    +3.340436e+02
+SH (dtsfc1)                  +1.580686e+01
+LH (dqsfc1)                  +8.754303e+01
+precip kg                    +3.084465e-05
+
+## global budget, frame E_D = TE + hlv*Wv - hlf*Wi, 119 steps, W m-2
+E_D(end) - E_D(start of step)                              +2.375336e+00
+boundary flux F (rad TOA-sfc + SH + LH + hfus*P_ice)       +1.315025e+00
+residual total                                             +1.060311e+00
+ dycore: fixer window (7->9)                               +1.289815e-10
+ dycore: other dyn (1->7, 9->3)                            +4.129290e-03
+ physics: dE_P - F (sum of schemes)                        +1.695158e-01
+ coupling: E_D(6)-E_D(4) - dE_P                            +8.866661e-01
+   coupling: delp/q write dTE                              +1.473178e+00
+   coupling: heating injected - phys dcpT (= C1 + D7 heat when on) -5.662956e-01
+   coupling: dKD+dKW - phys dK                             -2.021606e-02
+   KE+heating closure (D7 exact => equals C1 heating; 0 if C1 off) -5.823824e-01
+   water write dTE + C1 heating (derived above): D2 after C1 +8.907954e-01
+   check: latent terms dycore - physics                    -6.311027e-12
+   check: E_P(probe1) - E_P(dycore slot 4)                 +6.141976e-11

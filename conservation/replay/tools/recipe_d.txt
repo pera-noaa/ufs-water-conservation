@@ -1,0 +1,24 @@
+# A.5 full11
+38_SL2 PR . 2 $A/24_ensfc2_13_sfc_SL2.diff $P -I $TL/rebase_r11.py TREE 13
+39_CS1 P . 2 $A/25_ensfc2_14_sfc_CS1.diff
+40_CB1 P . 2 $A/26_ensfc2_15_sfc_CB1.diff
+41_sfc_options_r4_16b P . 2 $SRC/preclag/patches/16b_sfc_options_r4_meta_fixed.diff
+42_E2 PR . 1 $A/28_canopy_01_E2_noahmp_fwet_opt.diff $P -I $TL/rebase_r11.py TREE E2
+43_TH9 PR . 1 $A/29_canopy_03_TH9_thompson_sed_actual.diff $P -I $TL/rebase_r11.py TREE TH9
+44_E1 P . 1 $A/30_canopy_04_E1_nst_spray_implicit.diff
+CMP $E/full11/ufs-weather-model
+# A.6 full12
+45_dyn_te_exact_v2 P . 1 $A/31_fv3tally_01_fv3-dyn_te_exact_v2.diff
+CMP $E/full12/ufs-weather-model
+# A.7 full13
+46_PL1 P . 1 $A/41_preclag_01_PL1_sfc_precip_t1_carry.diff
+47_MYNN01 P . 1 $A/32_suites_01_E3_mynn_surface_flux_density_dew_and_filler_mass.diff
+48_MYNN01b P . 1 $A/33_suites_01b_E3_mynn_moisture_check_latent_heat_double_count.diff
+49_GFDL02 P . 1 $A/34_suites_02_E4_gfdlmp_v3_mass_basis.diff
+50_GF03 PR . 1 $A/35_suites_03_E5_gf_water_closure.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+51_MYNN04 PR . 1 $A/36_suites_04_E3c_mynn_surface_heat_flux_theta.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+52_PBL05 P . 1 $A/37_suites_05_PBL_satmedmfvdifq_surface_flux_layer_mass.diff
+53_MYNN06 PR . 1 $A/38_suites_06_E3d_mynn_static_energy_mixing.diff $P -I $TL/rebase_r11.py TREE REJ ccpp/data/GFS_typedefs.F90
+54_GFDL07 P . 1 $A/39_suites_07_E4c_gfdlmp_v3_rain_sedimentation_heat_capacity.diff
+55_SAMF08 P . 1 $A/40_suites_08_SAMF_deep_ca_trigger_early_return_decomposition.diff
+CMP $E/full13/ufs-weather-model

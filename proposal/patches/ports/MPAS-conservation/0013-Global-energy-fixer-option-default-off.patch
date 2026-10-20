@@ -1,0 +1,109 @@
+From 92689f85eec0160d68efc23e8c549af181cfe3c0 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Sat, 17 Oct 2026 19:04:46 -0600
+Subject: [PATCH 13/13] Global energy fixer (option, default off)
+
+config_energy_fixer (.false.): after the physics of each step, one
+uniform change of T_m per dry mass, applied in two passes, restores the
+run's initial total energy net of what precipitation has carried out. The
+reference energy is the run's first step, carried in the restart file, so
+the fixer does not drift and a restarted run reproduces a straight one.
+The sums are the meter's order-independent fixed-point sums, so the
+forecast stays bit-identical across decompositions.
+
+A fixer, not a fix: it closes the dynamics' own energy residual (in the
+24-h supercell -3.8e5 J/m2, 1.5 % of gross condensation heating; a dry
+thermal shows the same kind of loss). Off, the forecast is bit-identical
+to the previous commit.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/core_atmosphere/Registry.xml              |  5 +++
+ .../dynamics/mpas_atm_time_integration.F      | 34 +++++++++++++++++++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/src/core_atmosphere/Registry.xml b/src/core_atmosphere/Registry.xml
+index e2c46b1..6324abc 100644
+--- a/src/core_atmosphere/Registry.xml
++++ b/src/core_atmosphere/Registry.xml
+@@ -261,6 +261,11 @@
+                      description="Energy meter test: zero all moist species at the first step (at fixed theta_m) when the test heating is on"
+                      possible_values=".true. or .false."/>
+ 
++                <nml_option name="config_energy_fixer" type="logical" default_value="false" in_defaults="false"
++                     units="-"
++                     description="Global energy fixer: each step, one uniform temperature change restores the initial total energy of the run net of the energy carried out by precipitation"
++                     possible_values=".true. or .false."/>
++
+                 <nml_option name="config_monotonic" type="logical" default_value="true"
+                      units="-"
+                      description="Whether to enable monotonic limiter in scalar advection"
+diff --git a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+index 2e9692c..8dd044b 100644
+--- a/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
++++ b/src/core_atmosphere/dynamics/mpas_atm_time_integration.F
+@@ -2888,6 +2888,7 @@ module atm_time_integration
+          if (ebud_layer_on(domain)) call efix_layer(domain, dt, itimestep)
+          if (ebud_sw(4)) call etest_heat(domain, dt, itimestep)
+          call ebud_point(domain, 2, 4, itimestep)
++         if (ebud_fixer_on(domain)) call efix_global(domain, dt)
+          call ebud_point(domain, 2, 5, itimestep)
+       end if
+ 
+@@ -9301,6 +9302,7 @@ module atm_time_integration
+       if (ebud_cfg_done) return
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_meter', lp); ebud_sw(1) = lp
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_mp_energy_coupling', cp); ebud_sw(2) = (trim(cp) == 'layer')
++      call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_fixer', lp); ebud_sw(3) = lp
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_heating', rp); ebud_theat = dble(rp)
+       call mpas_pool_get_config(domain % blocklist % configs, 'config_energy_test_cooling', rp); ebud_tcool = dble(rp)
+       ebud_sw(4) = (ebud_theat > 0.d0 .or. ebud_tcool > 0.d0)
+@@ -9328,6 +9330,11 @@ module atm_time_integration
+       call ebud_cfg(domain); ebud_layer_on = ebud_sw(2)
+    end function ebud_layer_on
+ 
++   logical function ebud_fixer_on(domain)
++      type (domain_type), intent(in) :: domain
++      call ebud_cfg(domain); ebud_fixer_on = ebud_sw(3)
++   end function ebud_fixer_on
++
+    logical function ebud_active(domain)
+       type (domain_type), intent(in) :: domain
+       call ebud_cfg(domain); ebud_active = any(ebud_sw)
+@@ -9759,6 +9766,33 @@ module atm_time_integration
+       ef_q0(:,:,iCell) = tmp(:,:)
+    end subroutine efix_swap
+ 
++   subroutine efix_global(domain, dt)
++      type (domain_type), intent(in) :: domain
++      real (kind=RKIND), intent(in) :: dt
++      real (kind=RKIND), dimension(:,:), pointer :: rho_zz, theta_m, zz, zgrid, u, w
++      real (kind=RKIND), dimension(:,:,:), pointer :: scalars
++      real (kind=RKIND), dimension(:), pointer :: rdzw, areaCell, dcEdge, dvEdge
++      integer, dimension(:,:), pointer :: edgesOnCell
++      integer, dimension(:), pointer :: nEdgesOnCell
++      integer :: nCellsSolve, nVertLevels, ms, me, iq(6), iCell, k, it
++      real (kind=8) :: glob(15), dtm, ex, tm
++      real (kind=RKIND), dimension(:,:), pointer :: rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab
++      call ebud_ptrs(domain, 2, nCellsSolve, nVertLevels, ms, me, iq, rho_zz, theta_m, scalars, u, w, &
++                     zz, zgrid, rdzw, areaCell, dcEdge, dvEdge, edgesOnCell, nEdgesOnCell)
++      call efix_ptrs(domain, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++      do it = 1, 2   ! second pass removes the rounding of the first
++         call ebud_global(domain, 2, glob)
++         dtm = -(ebud_energy(glob) - ebud_eref)/(dble(cv)*glob(1))   ! anchored at the run's first step: no drift
++         do iCell = 1, nCellsSolve
++            do k = 1, nVertLevels
++               ex = (dble(zz(k,iCell))*(dble(rgas)/dble(p0))*dble(rho_zz(k,iCell))*dble(theta_m(k,iCell)))**(dble(rgas)/dble(cv))
++               tm = dble(theta_m(k,iCell))*ex
++               call efix_set_tm(k, iCell, tm + dtm, dt, rho_zz, theta_m, zz, rtheta_p, rtheta_b, exner, exner_b, pressure_p, rt_diab)
++            end do
++         end do
++      end do
++   end subroutine efix_global
++
+    subroutine etest_dry(domain)
+       ! dry thermal test: remove all moist species at fixed theta_m (time level 1, all cells)
+       type (domain_type), intent(in) :: domain
+-- 
+2.55.0
+

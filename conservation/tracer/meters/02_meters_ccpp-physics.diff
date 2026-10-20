@@ -1,0 +1,511 @@
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/tm_meter.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/tm_meter.F90
+@@ -0,0 +1,229 @@
++!> Tracer-mass meters (diagnostic builds only): Neumaier double-precision sums of q*dp*area per tracer.
++!! Index 0 = air (sum dp*area), 1..nq = tracers, nq+1 = dry air. Units Pa m2. Not thread-safe (OMP_NUM_THREADS=1).
++module tm_meter
++  implicit none
++  private
++  public :: tm_nt, tm_np, tm_nslot, tm_pts, tm_acc, tm_neu, tm_dyn_rec, tm_phys_mass, tm_phys_add, &
++            tm_pt_zero, tm_pt_add, tm_iu, tm_umax, tm_ucheck, tm_cfl, tm_cfl_deep, &
++            tm_iud, tm_icnv, tm_c0, tm_dr, tm_drs, tm_dry_dyn, tm_dry_phys, tm_dry_slot, tm_osc, tm_osc_check, tm_cflh
++  integer, parameter :: tm_nt = 40, tm_np = 24, tm_nslot = 6
++  real(8), save :: tm_pts(2, 0:tm_nt+1, tm_np) = 0.d0
++  real(8), save :: tm_acc(2, 0:tm_nt+1, tm_nslot) = 0.d0
++  integer, save :: tm_iu = 0                         ! index of the uniform moist test tracer (set by host)
++  real(8), save :: tm_cfl(4) = 0.d0                  ! SAMF deep: max donor Courant, level, columns C>1, columns
++  real(8), save :: tm_umax(4, tm_nslot) = 0.d0
++  integer, save :: tm_iud = 0, tm_icnv = 0           ! indices of pt_udry, pt_cnv (set by host)
++  real(8), parameter :: tm_c0 = 1.d-6                ! dry-uniform value
++  real(8), save :: tm_dr(3, tm_np) = 0.d0            ! per point: sum D*dev^2, sum D, max|dev|; dev = c_dry/c0 - 1
++  real(8), save :: tm_drs(2, tm_nslot) = 0.d0        ! per slot, this step: change of sum D*dev^2, max|dev| after
++  real(8), save :: tm_osc(3, 4) = 0.d0               ! DCNV increments k=1..6 for qv, T, pt_umoist, pt_cnv:
++                                                     !   columns alternating >=4 times, columns changed, max rel inc k<=5
++  real(8), save :: tm_cflh(7) = 0.d0                 ! column-steps by max Courant: <.5 <1 <2 <3 <4 <5 >=5       ! per slot, this step: max rel change, its level, count > 1%, count cells
++contains
++  pure subroutine tm_neu(s, x)
++    real(8), intent(inout) :: s(2)
++    real(8), intent(in) :: x
++    real(8) :: t
++    t = s(1) + x
++    if (abs(s(1)) >= abs(x)) then
++      s(2) = s(2) + ((s(1) - t) + x)
++    else
++      s(2) = s(2) + ((x - t) + s(1))
++    endif
++    s(1) = t
++  end subroutine tm_neu
++
++  !> dynamics frame: dp = delp, compute domain; stores rank sums at point ip
++  subroutine tm_dyn_rec(ip, isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, area)
++    integer, intent(in) :: ip, isd, jsd, is, ie, js, je, npz, nq, nwat
++    real(8), intent(in) :: q(isd:, jsd:, :, :), delp(isd:, jsd:, :), area(isd:, jsd:)
++    real(8) :: s(2, 0:nq+1), x
++    integer :: i, j, k, m
++    s = 0.d0
++    do k = 1, npz
++      do j = js, je
++        do i = is, ie
++          x = delp(i,j,k)*area(i,j)
++          call tm_neu(s(:,0), x)
++          call tm_neu(s(:,nq+1), delp(i,j,k)*(1.d0 - sum(q(i,j,k,1:nwat)))*area(i,j))
++          do m = 1, nq
++            call tm_neu(s(:,m), q(i,j,k,m)*x)
++          enddo
++        enddo
++      enddo
++    enddo
++    tm_pts(:, 0:nq+1, ip) = s
++    call tm_dry_dyn(ip, isd, jsd, is, ie, js, je, npz, nwat, q, delp, area)
++  end subroutine tm_dyn_rec
++
++  !> physics frame (k=1 at surface): dp = prsi(k) - prsi(k+1); dry = dp*(1 - qv)
++  subroutine tm_phys_mass(im, levs, ntrac, gq0, prsi, area, s)
++    integer, intent(in) :: im, levs, ntrac
++    real(8), intent(in) :: gq0(:,:,:), prsi(:,:), area(:)
++    real(8), intent(out) :: s(2, 0:ntrac+1)
++    real(8) :: x
++    integer :: i, k, m
++    s = 0.d0
++    do k = 1, levs
++      do i = 1, im
++        x = (prsi(i,k) - prsi(i,k+1))*area(i)
++        call tm_neu(s(:,0), x)
++        call tm_neu(s(:,ntrac+1), (prsi(i,k) - prsi(i,k+1))*(1.d0 - gq0(i,k,1))*area(i))
++        do m = 1, ntrac
++          call tm_neu(s(:,m), gq0(i,k,m)*x)
++        enddo
++      enddo
++    enddo
++  end subroutine tm_phys_mass
++
++  !> cumulative physics change in slot: acc += s1 - s0
++  subroutine tm_phys_add(slot, ntrac, s0, s1)
++    integer, intent(in) :: slot, ntrac
++    real(8), intent(in) :: s0(2, 0:ntrac+1), s1(2, 0:ntrac+1)
++    integer :: m
++    do m = 0, ntrac+1
++      call tm_neu(tm_acc(:,m,slot), s1(1,m))
++      call tm_neu(tm_acc(:,m,slot), s1(2,m))
++      call tm_neu(tm_acc(:,m,slot), -s0(1,m))
++      call tm_neu(tm_acc(:,m,slot), -s0(2,m))
++    enddo
++  end subroutine tm_phys_add
++
++  subroutine tm_pt_zero(ip)
++    integer, intent(in) :: ip
++    tm_pts(:,:,ip) = 0.d0
++  end subroutine tm_pt_zero
++
++  !> point ip += s (block-wise accumulation of a physics-frame point)
++  subroutine tm_pt_add(ip, n, s)
++    integer, intent(in) :: ip, n
++    real(8), intent(in) :: s(2, 0:n+1)
++    integer :: m
++    do m = 0, n+1
++      call tm_neu(tm_pts(:,m,ip), s(1,m))
++      call tm_neu(tm_pts(:,m,ip), s(2,m))
++    enddo
++  end subroutine tm_pt_add
++  !> uniform-tracer check: relative change of tracer tm_iu between q0 (before) and gq0 (after) in slot
++  subroutine tm_ucheck(slot, im, levs, q0, gq0)
++    integer, intent(in) :: slot, im, levs
++    real(8), intent(in) :: q0(:,:), gq0(:,:)
++    real(8) :: r
++    integer :: i, k
++    do k = 1, levs
++      do i = 1, im
++        tm_umax(4,slot) = tm_umax(4,slot) + 1.d0
++        if (q0(i,k) == 0.d0) cycle
++        r = abs(gq0(i,k) - q0(i,k))/abs(q0(i,k))
++        if (r > 0.01d0) tm_umax(3,slot) = tm_umax(3,slot) + 1.d0
++        if (r > tm_umax(1,slot)) then
++          tm_umax(1,slot) = r; tm_umax(2,slot) = k
++        endif
++      enddo
++    enddo
++  end subroutine tm_ucheck
++  !> SAMF deep: donor-cell Courant number of the explicit environmental (TVD) flux, xmb*dt*g/dp*|net flux|
++  subroutine tm_cfl_deep(im, km, cnvflg, kb, jmin, ktcon, eta, etad, edto, xmb, del, dt2)
++    integer, intent(in) :: im, km, kb(:), jmin(:), ktcon(:)
++    logical, intent(in) :: cnvflg(:)
++    real(8), intent(in) :: eta(:,:), etad(:,:), edto(:), xmb(:), del(:,:), dt2
++    real(8) :: tem, c, cmx
++    integer :: i, k, kd
++    do i = 1, im
++      if (.not. cnvflg(i)) cycle
++      tm_cfl(4) = tm_cfl(4) + 1.d0
++      cmx = 0.d0
++      do k = 1, ktcon(i) - 1
++        tem = 0.d0
++        if (k >= kb(i)) tem = eta(i,k)
++        if (k <= jmin(i)) tem = tem - edto(i)*etad(i,k)
++        kd = k
++        if (tem > 0.d0) kd = k + 1
++        c = abs(tem)*xmb(i)*dt2*9.80665d0/(1000.d0*del(i,kd))
++        cmx = max(cmx, c)
++        if (c > tm_cfl(1)) then
++          tm_cfl(1) = c; tm_cfl(2) = kd
++        endif
++      enddo
++      if (cmx > 1.d0) tm_cfl(3) = tm_cfl(3) + 1.d0
++      if (cmx < 0.5d0) then
++        tm_cflh(1) = tm_cflh(1) + 1.d0
++      elseif (cmx < 1.d0) then
++        tm_cflh(2) = tm_cflh(2) + 1.d0
++      else
++        k = min(7, 2 + int(cmx))
++        tm_cflh(k) = tm_cflh(k) + 1.d0
++      endif
++    enddo
++  end subroutine tm_cfl_deep
++  !> dry-ratio stats, dynamics frame: D = delp*(1-sum water)*area, c = q/(1-sum water)
++  subroutine tm_dry_dyn(ip, isd, jsd, is, ie, js, je, npz, nwat, q, delp, area)
++    integer, intent(in) :: ip, isd, jsd, is, ie, js, je, npz, nwat
++    real(8), intent(in) :: q(isd:, jsd:, :, :), delp(isd:, jsd:, :), area(isd:, jsd:)
++    real(8) :: w, d, dev
++    integer :: i, j, k
++    tm_dr(:, ip) = 0.d0
++    if (tm_iud <= 0) return
++    do k = 1, npz
++      do j = js, je
++        do i = is, ie
++          w = 1.d0 - sum(q(i,j,k,1:nwat))
++          d = delp(i,j,k)*w*area(i,j)
++          dev = q(i,j,k,tm_iud)/w/tm_c0 - 1.d0
++          tm_dr(1,ip) = tm_dr(1,ip) + d*dev*dev
++          tm_dr(2,ip) = tm_dr(2,ip) + d
++          tm_dr(3,ip) = max(tm_dr(3,ip), abs(dev))
++        enddo
++      enddo
++    enddo
++  end subroutine tm_dry_dyn
++
++  !> dry-ratio stats, physics frame: dry mass D = dp*(1 - qv_in) is fixed through the physics (as the write-back keeps it);
++  !! c = tracer mass / D = qt/(1 - qv_in). Returns (sum D*dev^2, sum D, max|dev|).
++  subroutine tm_dry_phys(im, levs, qt, qvin, prsi, area, r)
++    integer, intent(in) :: im, levs
++    real(8), intent(in) :: qt(:,:), qvin(:,:), prsi(:,:), area(:)
++    real(8), intent(out) :: r(3)
++    real(8) :: d, dev
++    integer :: i, k
++    r = 0.d0
++    do k = 1, levs
++      do i = 1, im
++        d = (prsi(i,k) - prsi(i,k+1))*(1.d0 - qvin(i,k))*area(i)
++        dev = qt(i,k)/(1.d0 - qvin(i,k))/tm_c0 - 1.d0
++        r(1) = r(1) + d*dev*dev
++        r(2) = r(2) + d
++        r(3) = max(r(3), abs(dev))
++      enddo
++    enddo
++  end subroutine tm_dry_phys
++
++  subroutine tm_dry_slot(slot, r0, r1)
++    integer, intent(in) :: slot
++    real(8), intent(in) :: r0(3), r1(3)
++    tm_drs(1,slot) = tm_drs(1,slot) + (r1(1) - r0(1))
++    tm_drs(2,slot) = max(tm_drs(2,slot), r1(3))
++  end subroutine tm_dry_slot
++
++  !> DCNV increment shape in levels 1..6 (k=1 at surface): sign alternations and max relative increment
++  subroutine tm_osc_check(iv, im, x0, x1)
++    integer, intent(in) :: iv, im
++    real(8), intent(in) :: x0(:,:), x1(:,:)
++    real(8) :: inc(6), thr
++    integer :: i, k, nalt
++    do i = 1, im
++      inc = x1(i,1:6) - x0(i,1:6)
++      if (all(inc == 0.d0)) cycle
++      tm_osc(2,iv) = tm_osc(2,iv) + 1.d0
++      thr = 1.d-6*maxval(abs(x0(i,1:6)))
++      nalt = 0
++      do k = 1, 5
++        if (abs(inc(k)) > thr .and. abs(inc(k+1)) > thr .and. inc(k)*inc(k+1) < 0.d0) nalt = nalt + 1
++      enddo
++      if (nalt >= 4) tm_osc(1,iv) = tm_osc(1,iv) + 1.d0
++      do k = 1, 5
++        if (x0(i,k) /= 0.d0) tm_osc(3,iv) = max(tm_osc(3,iv), abs(inc(k)/x0(i,k)))
++      enddo
++    enddo
++  end subroutine tm_osc_check
++end module tm_meter
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.F90
+@@ -19,12 +19,16 @@
+       cnvw, cnvc, cnvw_phy_f3d, cnvc_phy_f3d, flag_for_dcnv_generic_tend,         &
+       ntcw,ntiw,ntclamt,ntrw,ntsw,ntrnc,ntsnc,ntgl,                               &
+       ntgnc, nthl, nthnc, nthv, ntgv, ntrz, ntgz, nthz, ntsigma, ntomega, ntrac,  &
+-      clw, dclw, satmedmf, trans_trac, errmsg, errflg)
++      clw, dclw, satmedmf, trans_trac, tm_prsi, tm_area, tm_qgrs, errmsg, errflg)
+ 
+ 
+       use machine,               only: kind_phys
+ 
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
+       implicit none
++      real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
++      real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
++      real(8) :: tm_r0(3), tm_r1(3)
+ 
+       integer, intent(in) :: im, levs, nsamftrac, tracers_total, tend_opt_dcnv
+       integer, intent(in) :: imp_physics, imp_physics_gfdl, imp_physics_thompson, imp_physics_nssl, imp_physics_wsm6, imp_physics_mg, imp_physics_fer_hires
+@@ -95,6 +99,12 @@
+       endif   ! end if_ntcw
+       
+       
++      allocate(tm_s0(2,0:ntrac+1), tm_s1(2,0:ntrac+1))
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s0)
++      if (tm_iu > 0) tm_u0 = gq0(1:im,:,tm_iu)
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r0)
++      tm_xq = gq0(1:im,:,1); tm_xt = gt0(1:im,:)
++      if (tm_icnv > 0) tm_xc = gq0(1:im,:,tm_icnv)
+       case_DCNV_ten: select case (tend_opt_dcnv)
+         case (1) !immediately apply tendencies
+                   !Current state = current state + dt*current tendency
+@@ -147,7 +157,16 @@
+           errflg = 1
+           errmsg = 'A tendency application control was outside of the acceptable range (1-4)'
+           return
+-      end select case_DCNV_ten      
++      end select case_DCNV_ten
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s1)
++      call tm_phys_add(1, ntrac, tm_s0, tm_s1)
++      if (tm_iu > 0) call tm_ucheck(1, im, levs, tm_u0, gq0(1:im,:,tm_iu))
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r1)
++      if (tm_iud > 0) call tm_dry_slot(1, tm_r0, tm_r1)
++      call tm_osc_check(1, im, tm_xq, gq0(1:im,:,1)); call tm_osc_check(2, im, tm_xt, gt0(1:im,:))
++      if (tm_iu > 0) call tm_osc_check(3, im, tm_u0, gq0(1:im,:,tm_iu))
++      if (tm_icnv > 0) call tm_osc_check(4, im, tm_xc, gq0(1:im,:,tm_icnv))
++      
+       
+       if (cscnv .or. satmedmf .or. trans_trac .or. ras) then
+         tracers = 2
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.meta
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.meta
+@@ -2,7 +2,7 @@
+ [ccpp-table-properties]
+   name = GFS_DCNV_generic_post
+   type = scheme
+-  dependencies = ../../hooks/machine.F
++  dependencies = ../../hooks/machine.F,tm_meter.F90
+ 
+ ########################################################################
+ [ccpp-arg-table]
+@@ -622,6 +622,30 @@
+   dimensions = ()
+   type = integer
+   intent = in
++[tm_prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_area]
++  standard_name = cell_area
++  long_name = area of the grid cell
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_qgrs]
++  standard_name = physics_timestep_initial_tracer_concentration
++  long_name = tracer concentration at the start of the physics time step
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.F90
+@@ -16,11 +16,15 @@
+         index_of_process_scnv, ntqv, flag_for_scnv_generic_tend,                   &
+         ntcw,ntiw,ntclamt,ntrw,ntsw,ntrnc,ntsnc,ntgl,ntgnc,ntsigma,                &
+         imfshalcnv, imfshalcnv_sas, imfshalcnv_samf, ntrac,                        &
+-        cscnv, satmedmf, trans_trac, ras, errmsg, errflg)
++        cscnv, satmedmf, trans_trac, ras, tm_prsi, tm_area, tm_qgrs, errmsg, errflg)
+ 
+       use machine,               only: kind_phys
+ 
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
+       implicit none
++      real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
++      real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
++      real(8) :: tm_r0(3), tm_r1(3)
+ 
+       integer, intent(in) :: im, levs, ntqv, nsamftrac, tracers_total, tend_opt_scnv
+       integer, intent(in) :: imp_physics, imp_physics_gfdl
+@@ -88,6 +92,10 @@
+         endif   ! end if_ntiw
+       endif   ! end if_ntcw
+       
++      allocate(tm_s0(2,0:ntrac+1), tm_s1(2,0:ntrac+1))
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s0)
++      if (tm_iu > 0) tm_u0 = gq0(1:im,:,tm_iu)
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r0)
+       case_SCNV_ten: select case (tend_opt_scnv)
+         case (1) !immediately apply tendencies
+                   !Current state = current state + dt*current tendency
+@@ -141,6 +149,11 @@
+           errmsg = 'A tendency application control was outside of the acceptable range (1-4)'
+           return
+       end select case_SCNV_ten
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s1)
++      call tm_phys_add(2, ntrac, tm_s0, tm_s1)
++      if (tm_iu > 0) call tm_ucheck(2, im, levs, tm_u0, gq0(1:im,:,tm_iu))
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r1)
++      if (tm_iud > 0) call tm_dry_slot(2, tm_r0, tm_r1)
+ 
+       if (imfshalcnv==imfshalcnv_sas .or. imfshalcnv==imfshalcnv_samf) then
+         do i=1,im
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.meta
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.meta
+@@ -2,7 +2,7 @@
+ [ccpp-table-properties]
+   name = GFS_SCNV_generic_post
+   type = scheme
+-  dependencies = ../../hooks/machine.F
++  dependencies = ../../hooks/machine.F,tm_meter.F90
+ 
+ ########################################################################
+ [ccpp-arg-table]
+@@ -483,6 +483,30 @@
+   dimensions = ()
+   type = integer
+   intent = in
++[tm_prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_area]
++  standard_name = cell_area
++  long_name = area of the grid cell
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_qgrs]
++  standard_name = physics_timestep_initial_tracer_concentration
++  long_name = tracer concentration at the start of the physics time step
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90
+@@ -13,10 +13,14 @@
+ !>  @{
+       subroutine GFS_GWD_generic_post_run(im, levs, ntrac, tend_opt_gwd, lssav, ldiag3d, dtf, dtp, dusfcg, dvsfcg, ten_t, ten_u, ten_v, ten_q, dudt, dvdt, dtdt, dqdt, &
+       &  dugwd, dvgwd, gt0, gq0, gu0, gv0, flag_for_gwd_generic_tend, dtend, dtidx, index_of_temperature, index_of_x_wind,  &
+-      &  index_of_y_wind, index_of_process_orographic_gwd, errmsg, errflg)
++      &  index_of_y_wind, index_of_process_orographic_gwd, tm_prsi, tm_area, tm_qgrs, errmsg, errflg)
+ 
+       use machine, only : kind_phys
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
+       implicit none
++      real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
++      real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
++      real(8) :: tm_r0(3), tm_r1(3)
+       
+       integer, intent(in) :: im, levs, ntrac, tend_opt_gwd
+       logical, intent(in) :: lssav, ldiag3d, flag_for_gwd_generic_tend
+@@ -46,6 +50,10 @@
+       errmsg = ''
+       errflg = 0
+       
++      allocate(tm_s0(2,0:ntrac+1), tm_s1(2,0:ntrac+1))
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s0)
++      if (tm_iu > 0) tm_u0 = gq0(1:im,:,tm_iu)
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r0)
+       case_GWD_ten: select case (tend_opt_gwd)
+         case (1) !immediately apply tendencies
+                   !Current state = current state + dt*current tendency
+@@ -99,6 +107,11 @@
+           errmsg = 'A tendency application control was outside of the acceptable range (1-4)'
+           return
+       end select case_GWD_ten
++      call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s1)
++      call tm_phys_add(3, ntrac, tm_s0, tm_s1)
++      if (tm_iu > 0) call tm_ucheck(3, im, levs, tm_u0, gq0(1:im,:,tm_iu))
++      if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r1)
++      if (tm_iud > 0) call tm_dry_slot(3, tm_r0, tm_r1)
+       
+       if (lssav) then
+         dugwd(:) = dugwd(:) + dusfcg(:)*dtf
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.meta
+@@ -2,7 +2,7 @@
+ [ccpp-table-properties]
+   name = GFS_GWD_generic_post
+   type = scheme
+-  dependencies = ../../hooks/machine.F
++  dependencies = ../../hooks/machine.F,tm_meter.F90
+ 
+ ########################################################################
+ [ccpp-arg-table]
+@@ -245,6 +245,30 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[tm_prsi]
++  standard_name = air_pressure_at_interface
++  long_name = air pressure at model layer interfaces
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_area]
++  standard_name = cell_area
++  long_name = area of the grid cell
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[tm_qgrs]
++  standard_name = physics_timestep_initial_tracer_concentration
++  long_name = tracer concentration at the start of the physics time step
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
+ [errmsg]
+   standard_name = ccpp_error_message
+   long_name = error message for error handling in CCPP
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -92,6 +92,7 @@
+ !
+       use machine , only : kind_phys
+       use funcphys , only : fpvs
++      use tm_meter, only : tm_cfl_deep
+ 
+       implicit none
+ !
+@@ -3427,6 +3428,8 @@
+         enddo
+       enddo
+ !
++      call tm_cfl_deep(im,km,cnvflg,kb,jmin,ktcon,eta,etad,edto,
++     &     xmb,del,dt2)
+       if (.not.hwrf_samfdeep) then
+        indx = ntk - 2
+        do n = 1, ntr

@@ -1,0 +1,218 @@
+--- base/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-13 15:40:09.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90	2026-10-17 13:23:24.000000000 -0500
+@@ -127,10 +127,11 @@
+   logical, parameter :: w_limiter = .false. ! doesn't work so well??
+ 
+   real(kind=4) :: E_Flux = 0.
++  real(kind=8), public, save :: ebs(12, 12) = 0.d0, ebx(8) = 0.d0
+   private
+ 
+   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
+-         rst_remap, mappm, E_Flux, remap_2d, map_scalar
++         rst_remap, mappm, E_Flux, remap_2d, map_scalar, eb_state, eb_print
+ 
+ contains
+ 
+@@ -680,7 +681,7 @@
+ !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
+ !$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,&
+ !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
+-!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
++!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,ebx,             &
+ !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
+ !$OMP                               kord_tm, pe4,npx,npy, ccn_cm3,                             &
+ !$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,GFDL_interstitial,grav_var)    &
+@@ -786,7 +787,9 @@
+ 
+ !$OMP single
+          dtmp = consv*g_sum(domain, te_2d, is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.)
++      if (mpp_pe() == mpp_root_pe()) ebx(2) = ebx(2) + dble(dtmp)/dble(grav)
+       E_Flux = dtmp / (grav*pdt*4.*pi*radius**2)    ! unit: W/m**2
++      if (mpp_pe() == mpp_root_pe()) ebx(3) = ebx(3) + dble(E_Flux)
+                                                    ! Note pdt is "phys" time step
+       if ( hydrostatic ) then
+            dtmp = dtmp / (cp*    g_sum(domain, zsum0, is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
+@@ -3657,4 +3660,77 @@
+ 
+  end subroutine moist_cp
+ 
++ subroutine eb_state(is, ie, js, je, isd, ied, jsd, jed, km, nwat, sphum, liq_wat, rainwat, ice_wat, &
++                     snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, hs, ua, va, rsin2_l, cosa_s_l, &
++                     area, grav_var, slot)
++   ! energy meter (diagnostic builds only): rank sums of x*delp*area/grav into ebs(:,slot)
++   integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed, km, nwat, slot
++   integer, intent(in) :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat
++   real, intent(in) :: u(isd:ied, jsd:jed+1, km), v(isd:ied+1, jsd:jed, km)
++   real, intent(in) :: w(isd:, jsd:, 1:), delz(is:, js:, 1:)
++   real, intent(in), dimension(isd:ied, jsd:jed, km) :: pt, delp, ua, va
++   real, intent(in) :: q(isd:ied, jsd:jed, km, *), hs(isd:ied, jsd:jed)
++   real, intent(in) :: rsin2_l(isd:ied, jsd:jed), cosa_s_l(isd:ied, jsd:jed)
++   real(kind=8), intent(in) :: area(isd:ied, jsd:jed)
++   real, intent(in) :: grav_var(isd:ied, jsd:jed, km)
++   real :: phiz(is:ie, km+1), cvm(is:ie), qd(is:ie)
++   real(kind=8) :: a, x(12), qc, qi
++   integer :: i, j, k
++   do j = js, je
++      do i = is, ie
++         phiz(i, km+1) = hs(i, j)
++      enddo
++      do k = km, 1, -1
++         do i = is, ie
++            phiz(i, k) = phiz(i, k+1) - grav_var(i, j, k)*delz(i, j, k)
++         enddo
++      enddo
++      do k = 1, km
++         call moist_cv(is, ie, isd, ied, jsd, jed, km, j, k, nwat, sphum, liq_wat, rainwat, &
++                       ice_wat, snowwat, graupel, hailwat, q, qd, cvm)
++         do i = is, ie
++            a = dble(delp(i, j, k))*area(i, j)/dble(grav)
++            qi = dble(q(i, j, k, ice_wat)) + dble(q(i, j, k, snowwat)) + dble(q(i, j, k, graupel))
++            if (hailwat > 0) qi = qi + dble(q(i, j, k, hailwat))
++            qc = qi + dble(q(i, j, k, liq_wat)) + dble(q(i, j, k, rainwat))
++            x(1) = dble(cvm(i))*dble(pt(i, j, k))
++            x(2) = 0.5d0*(dble(phiz(i, k)) + dble(phiz(i, k+1)))
++            x(3) = 0.25d0*dble(rsin2_l(i, j))*(dble(u(i, j, k))**2 + dble(u(i, j+1, k))**2 + &
++                   dble(v(i, j, k))**2 + dble(v(i+1, j, k))**2 - (dble(u(i, j, k)) + dble(u(i, j+1, k)))* &
++                   (dble(v(i, j, k)) + dble(v(i+1, j, k)))*dble(cosa_s_l(i, j)))
++            x(4) = 0.5d0*dble(w(i, j, k))**2
++            x(5) = 0.5d0*(dble(ua(i, j, k))**2 + dble(va(i, j, k))**2)
++            x(6) = dble(q(i, j, k, sphum))
++            x(7) = dble(q(i, j, k, liq_wat)) + dble(q(i, j, k, rainwat))
++            x(8) = qi
++            x(9) = 1.d0
++            x(10) = dble(cp_air)*dble(pt(i, j, k))*(1.d0 - qc)
++            x(11) = x(5)*(1.d0 - qc)
++            x(12) = ((1.d0 - dble(q(i, j, k, sphum)) - qc)*dble(cp_air) + dble(q(i, j, k, sphum))*dble(cp_vapor) &
++                    + x(7)*dble(c_liq) + qi*dble(c_ice))*dble(pt(i, j, k))
++            ebs(:, slot) = ebs(:, slot) + x*a
++         enddo
++      enddo
++   enddo
++ end subroutine eb_state
++
++ subroutine eb_print(kstep)
++   ! energy meter: global sums of all slots, one line per slot from the master, then reset
++   use mpp_mod, only: mpp_sum
++   integer, intent(in) :: kstep
++   integer :: s
++   call mpp_sum(ebs, size(ebs))
++   call mpp_sum(ebx, size(ebx))
++   if (mpp_pe() == mpp_root_pe()) then
++      if (kstep == 1) write(*, '(a,9es24.16)') 'EBC ', dble(cp_air), dble(rdgas), dble(rvgas), dble(grav), &
++           dble(hlv), dble(hlf), dble(cp_vapor), dble(c_liq), dble(c_ice)
++      do s = 1, size(ebs, 2)
++         if (ebs(9, s) /= 0.d0) write(*, '(a,i6,i3,12es25.16)') 'EBD ', kstep, s, ebs(:, s)
++      enddo
++      write(*, '(a,i6,8es25.16)') 'EBX ', kstep, ebx
++   endif
++   ebs = 0.d0
++   ebx = 0.d0
++ end subroutine eb_print
++
+ end module fv_mapz_mod
+--- base/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-13 15:40:09.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-17 13:21:20.000000000 -0500
+@@ -135,6 +135,7 @@
+ #endif
+    use dyn_core_mod,        only: dyn_core, del2_cubed, init_ijk_mem
+    use fv_mapz_mod,         only: compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp
++   use fv_mapz_mod,         only: eb_state, ebx
+    use fv_tracer2d_mod,     only: tracer_2d, tracer_2d_1L, tracer_2d_nested
+    use fv_grid_utils_mod,   only: cubed_to_latlon, c2l_ord2, g_sum
+    use fv_fill_mod,         only: fill2D
+@@ -580,6 +581,10 @@
+            endif
+       endif
+ 
++      if (.not.do_adiabatic_init) then
++         call eb_state(is, ie, js, je, isd, ied, jsd, jed, npz, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, phis, ua, va, gridstruct%rsin2, gridstruct%cosa_s, gridstruct%area_64, grav_var, 7)
++         if (consv_te > 0.) ebx(1) = ebx(1) + sum(dble(te_2d(is:ie,js:je))*gridstruct%area_64(is:ie,js:je))/dble(grav)
++      endif
+       if( (flagstruct%consv_am .or. idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
+           call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
+                            ptop, ua, va, u, v, delp, teq, ps2, m_fac, grav_var)
+@@ -597,6 +602,7 @@
+ #endif
+                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
+                 .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
++             if (.not.do_adiabatic_init) call eb_state(is, ie, js, je, isd, ied, jsd, jed, npz, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, phis, ua, va, gridstruct%rsin2, gridstruct%cosa_s, gridstruct%area_64, grav_var, 8)
+ !         endif
+         else
+              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
+@@ -815,6 +821,7 @@
+                      flagstruct%moist_phys, grav_var)
+      
+                                                   call timing_off('Remapping')
++     if (GFDL_interstitial%last_step .and. .not.do_adiabatic_init) call eb_state(is, ie, js, je, isd, ied, jsd, jed, npz, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, phis, ua, va, gridstruct%rsin2, gridstruct%cosa_s, gridstruct%area_64, grav_var, 9)
+ 
+      if ( flagstruct%molecular_diffusion ) then
+ ! do thermosphere adjustment if it is turned on and at GFDL_interstitial%last_step.
+@@ -969,6 +976,7 @@
+                                 q(isd,jsd,1,snowwat), &
+                                 q(isd,jsd,1,graupel), grav_var, check_negative=flagstruct%check_negative)
+      endif
++     if (.not.do_adiabatic_init) call eb_state(is, ie, js, je, isd, ied, jsd, jed, npz, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, u, v, w, delz, pt, delp, q, phis, ua, va, gridstruct%rsin2, gridstruct%cosa_s, gridstruct%area_64, grav_var, 10)
+      if ( flagstruct%fv_debug ) then
+        call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+        call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+--- base/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-15 10:48:45.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 13:21:20.000000000 -0500
+@@ -211,6 +211,7 @@
+ use fv_mp_mod,          only: is_master, tile_fine
+ use fv_sg_mod,          only: fv_subgrid_z
+ use fv_update_phys_mod, only: fv_update_phys
++use fv_mapz_mod,       only: eb_state, eb_print, ebx
+ use fv_io_mod,          only: fv_io_register_nudge_restart
+ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
+@@ -684,6 +685,7 @@
+ !               ' n_split=',Atm(mytile)%flagstruct%n_split,' mytile=',mytile
+ 
+    a_step = a_step + 1
++   call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 1)
+ !
+ !*** If this is a regional run then read in the next boundary data when it is time.
+ !
+@@ -730,6 +732,7 @@
+     endif
+ 
+     enddo !p_split
++    call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 2)
+     if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+         Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+         if(Atm(n)%flagstruct%nf_omega>0)   then
+@@ -808,6 +811,7 @@
+ 
+ ! zero out t_dt for use as an accumulator
+     t_dt = 0.
++    call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 3)
+ 
+    call mpp_clock_end (id_subgridz)
+ 
+@@ -1605,6 +1609,7 @@
+       enddo
+    endif
+ 
++   call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 4)
+    call timing_on('GFS_TENDENCIES')
+    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
+ !--- put u/v tendencies into haloed arrays u_dt and v_dt
+@@ -1753,6 +1758,9 @@
+     endif
+ #endif
+ 
++   call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 5)
++   ebx(4) = ebx(4) + sum(dble(t_dt(isc:iec,jsc:jec,:))*dble(dt_atmos)*dble(cp_air)*dble(Atm(n)%delp(isc:iec,jsc:jec,:)) &
++          *spread(Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),3,npz))/dble(grav)
+    call mpp_clock_begin (id_dynam)
+        call timing_on('FV_UPDATE_PHYS')
+     call fv_update_phys( dt_atmos, isc, iec, jsc, jec, isd, ied, jsd, jed, Atm(n)%ng, nt_dyn, &
+@@ -1769,6 +1777,8 @@
+                          Atm(n)%phys_diag, Atm(n)%nudge_diag )
+        call timing_off('FV_UPDATE_PHYS')
+    call mpp_clock_end (id_dynam)
++   call eb_state(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%flagstruct%nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%phis, Atm(n)%ua, Atm(n)%va, Atm(n)%gridstruct%rsin2, Atm(n)%gridstruct%cosa_s, Atm(n)%gridstruct%area_64, Atm(n)%grav_var, 6)
++   call eb_print(a_step)
+ 
+ !--- nesting update after updating atmospheric variables with
+ !--- physics tendencies

@@ -1,0 +1,98 @@
+From 81c61e33d109a6d4a01e5adc8283eb98912fc5d9 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:47 -0500
+Subject: [PATCH 01/29] mp_thompson: convert to and from mixing ratio with the
+ same humidity
+
+FV3 hands physics tracers per (dry air + vapour) and rebuilds each species'
+mass afterwards as the pre-physics thickness times the returned value. The
+driver converted to mixing ratios with /(1-spechum) but back with
+/(1+qv_new), so every species returned scaled by (m_d+m_v,old)/(m_d+m_v,new):
+net evaporation in the scheme removed water, net condensation created it.
+
+Convert back with *(1-spechum), the scheme's unchanged input, so the round
+trip is exact on whatever basis the host supplies (also when sub-cycling).
+
+Measured (C96 control_p8_ugwpv1): Thompson's water residual -0.67 % -> -0.30 %
+of grid-scale precipitation.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/MP/Thompson/mp_thompson.F90 | 49 +++++++++++++++--------------
+ 1 file changed, 25 insertions(+), 24 deletions(-)
+
+diff --git a/physics/MP/Thompson/mp_thompson.F90 b/physics/MP/Thompson/mp_thompson.F90
+index ba1b420d..dbb5d3b6 100644
+--- a/physics/MP/Thompson/mp_thompson.F90
++++ b/physics/MP/Thompson/mp_thompson.F90
+@@ -687,21 +687,22 @@ module mp_thompson
+          ! DH* - do this only if istep == 1? Would be ok if it was
+          ! guaranteed that nothing else in the same subcycle group
+          ! was using these arrays, but it is somewhat dangerous.
+-         qv = new_spechum/(1.0_kind_phys-new_spechum)
++         ! convert with the input (host-basis) humidity in both directions, so the host's mass rebuild is exact
++         qv = new_spechum/(1.0_kind_phys-spechum)
+ 
+          if (convert_dry_rho) then
+-           new_qc = new_qc/(1.0_kind_phys-new_spechum)
+-           new_qr = new_qr/(1.0_kind_phys-new_spechum)
+-           new_qi = new_qi/(1.0_kind_phys-new_spechum)
+-           new_qs = new_qs/(1.0_kind_phys-new_spechum)
+-           new_qg = new_qg/(1.0_kind_phys-new_spechum)
+-
+-           new_ni = new_ni/(1.0_kind_phys-new_spechum)
+-           new_nr = new_nr/(1.0_kind_phys-new_spechum)
++           new_qc = new_qc/(1.0_kind_phys-spechum)
++           new_qr = new_qr/(1.0_kind_phys-spechum)
++           new_qi = new_qi/(1.0_kind_phys-spechum)
++           new_qs = new_qs/(1.0_kind_phys-spechum)
++           new_qg = new_qg/(1.0_kind_phys-spechum)
++
++           new_ni = new_ni/(1.0_kind_phys-spechum)
++           new_nr = new_nr/(1.0_kind_phys-spechum)
+            if (is_aerosol_aware .or. merra2_aerosol_aware) then
+-              new_nc = new_nc/(1.0_kind_phys-new_spechum)
+-              new_nwfa = new_nwfa/(1.0_kind_phys-new_spechum)
+-              new_nifa = new_nifa/(1.0_kind_phys-new_spechum)
++              new_nc = new_nc/(1.0_kind_phys-spechum)
++              new_nwfa = new_nwfa/(1.0_kind_phys-spechum)
++              new_nifa = new_nifa/(1.0_kind_phys-spechum)
+            end if
+          end if
+          ! *DH
+@@ -941,21 +942,21 @@ module mp_thompson
+          ! was using these arrays, but it is somewhat dangerous.
+ 
+          !> - Convert water vapor mixing ratio back to specific humidity
+-         new_spechum = qv/(1.0_kind_phys+qv)
++         new_spechum = qv*(1.0_kind_phys-spechum)
+ 
+          if (convert_dry_rho) then
+-           new_qc = new_qc/(1.0_kind_phys+qv)
+-           new_qr = new_qr/(1.0_kind_phys+qv)
+-           new_qi = new_qi/(1.0_kind_phys+qv)
+-           new_qs = new_qs/(1.0_kind_phys+qv)
+-           new_qg = new_qg/(1.0_kind_phys+qv)
+-
+-           new_ni = new_ni/(1.0_kind_phys+qv)
+-           new_nr = new_nr/(1.0_kind_phys+qv)
++           new_qc = new_qc*(1.0_kind_phys-spechum)
++           new_qr = new_qr*(1.0_kind_phys-spechum)
++           new_qi = new_qi*(1.0_kind_phys-spechum)
++           new_qs = new_qs*(1.0_kind_phys-spechum)
++           new_qg = new_qg*(1.0_kind_phys-spechum)
++
++           new_ni = new_ni*(1.0_kind_phys-spechum)
++           new_nr = new_nr*(1.0_kind_phys-spechum)
+            if (is_aerosol_aware .or. merra2_aerosol_aware) then
+-              new_nc = new_nc/(1.0_kind_phys+qv)
+-              new_nwfa = new_nwfa/(1.0_kind_phys+qv)
+-              new_nifa = new_nifa/(1.0_kind_phys+qv)
++              new_nc = new_nc*(1.0_kind_phys-spechum)
++              new_nwfa = new_nwfa*(1.0_kind_phys-spechum)
++              new_nifa = new_nifa*(1.0_kind_phys-spechum)
+            end if
+          end if
+          ! *DH

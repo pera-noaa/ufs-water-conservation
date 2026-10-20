@@ -1,0 +1,216 @@
+--- a/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -1177,7 +1177,6 @@
+     logical              :: sfc_precip_enthalpy!< flag: precipitation lands with its frame-F enthalpy (Noah-MP, sea ice)
+     logical              :: lw_sfc_return      !< flag: land keeps the LW it emits beyond the radiation-time land emission
+     logical              :: noahmp_pore_air    !< flag: Noah-MP soil pores keep the air heat when water moves
+-    logical              :: sfc_precip_t1_carry !< flag: surfaces book precipitation at the T1 of the step it fell (pl1)
+                                       !2-title + internal GFS sfc_diag  )
+ 
+     ! -- RUC LSM options
+@@ -3890,7 +3889,6 @@
+     logical              :: sfc_precip_enthalpy= .false.
+     logical              :: lw_sfc_return      = .false.
+     logical              :: noahmp_pore_air    = .false.
+-    logical              :: sfc_precip_t1_carry = .false.
+                                                  !3->NoahMP 2-title + internal GFS sfc_diag  )
+ 
+     integer              :: mosaic_lu      =  0  ! 1 - used of fractional landuse in RUC lsm
+@@ -4383,7 +4381,6 @@
+                                lw_sfc_consistent, sfc_evap_enthalpy, noahmp_heat_advect,    &
+                                noahmp_kirchhoff, noahmp_fwet_opt,                           &
+                                sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air,         &
+-                               sfc_precip_t1_carry,                                         &
+                           !    RUC lsm options
+                                add_fire_heat_flux,                                          &
+                                mosaic_lu, mosaic_soil, isncond_opt, isncovr_opt,            &
+@@ -5310,7 +5307,6 @@
+     Model%sfc_precip_enthalpy = sfc_precip_enthalpy
+     Model%lw_sfc_return = lw_sfc_return
+     Model%noahmp_pore_air = noahmp_pore_air
+-    Model%sfc_precip_t1_carry = sfc_precip_t1_carry
+ 
+ ! RUC lsm options
+     Model%mosaic_lu        = mosaic_lu
+@@ -7361,7 +7357,6 @@
+         print *, ' sfc_precip_enthalpy : ', Model%sfc_precip_enthalpy
+         print *, ' lw_sfc_return : ', Model%lw_sfc_return
+         print *, ' noahmp_pore_air : ', Model%noahmp_pore_air
+-        print *, ' sfc_precip_t1_carry : ', Model%sfc_precip_t1_carry
+       elseif (Model%lsm == Model%lsm_ruc) then
+         print *,' RUC Land Surface Model used'
+         print *, 'The Physics options are'
+--- a/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/data/GFS_typedefs.meta	2026-10-18 13:12:48.000000000 -0500
+@@ -5805,12 +5805,6 @@
+   units = flag
+   dimensions = ()
+   type = logical
+-[sfc_precip_t1_carry]
+-  standard_name = flag_for_surface_precipitation_at_fallout_temperature
+-  long_name = flag: surfaces book precipitation at the lowest-layer T of the step it fell
+-  units = flag
+-  dimensions = ()
+-  type = logical
+ [noahmp_fwet_opt]
+   standard_name = control_for_noahmp_canopy_wetted_fraction
+   long_name = Noah-MP canopy wetted fraction rule
+--- a/UFSATM/ccpp/driver/GFS_restart.F90	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/driver/GFS_restart.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -150,7 +150,7 @@
+     if (Model%rrfs_sd) then
+        num2d = num2d + 6
+     endif
+-    if (Model%sfc_precip_t1_carry) then
++    if (Model%sfc_precip_enthalpy) then
+        num2d = num2d + 1
+     endif
+ 
+@@ -481,7 +481,7 @@
+       Restart(idx)%data%var2 => Coupling%rrfs_hwp_ave(:)
+     endif
+     ! pl1: T1 of the step whose precipitation tprcp holds
+-    if (Model%sfc_precip_t1_carry) then
++    if (Model%sfc_precip_enthalpy) then
+       idx = idx + 1
+       Restart(idx)%name = 'sfc_precip_t1'
+       Restart(idx)%axes = 2
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -29,7 +29,7 @@
+         dtend, dtidx, index_of_temperature, index_of_process_mp,ldiag3d, qdiag3d,dqdt_qmicro, lssav, num_dfi_radar,       &
+         fh_dfi_radar,index_of_process_dfi_radar, ix_dfi_radar, dfi_radar_tten, radar_tten_limits, fhour, prevsq,      &
+         iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp, sfc_precip_enthalpy, con_cliq, tgrs, &
+-        sfc_precip_t1_carry, tprcp_t1)
++        tprcp_t1)
+ !
+       use machine, only: kind_phys
+       use calpreciptype_mod, only: calpreciptype
+@@ -59,7 +59,6 @@
+       real(kind=kind_phys),                    intent(in)    :: con_cliq
+       real(kind=kind_phys), dimension(:,:), optional, intent(in) :: tgrs
+       real(kind=kind_phys)                                   :: lfph
+-      logical, optional,                       intent(in)    :: sfc_precip_t1_carry
+       real(kind=kind_phys), dimension(:), optional, intent(inout) :: tprcp_t1
+       real(kind=kind_phys), dimension(:),      intent(in)    :: rain1, xlat, xlon, tsfc
+       real(kind=kind_phys), dimension(:),      intent(inout) :: ice, snow, graupel, rainc
+@@ -535,8 +534,8 @@
+       endif
+ 
+       ! pl1: the surfaces book tprcp next step at the T1 it left the atmosphere at
+-      if (present(sfc_precip_t1_carry) .and. present(tprcp_t1) .and. present(tgrs)) then
+-        if (sfc_precip_t1_carry) then
++      if (present(sfc_precip_enthalpy) .and. present(tprcp_t1) .and. present(tgrs)) then
++        if (sfc_precip_enthalpy) then
+           do i = 1, im
+             tprcp_t1(i) = tgrs(i,1)
+           enddo
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta	2026-10-18 13:12:48.000000000 -0500
+@@ -1092,14 +1092,6 @@
+   kind = kind_phys
+   intent = in
+   optional = True
+-[sfc_precip_t1_carry]
+-  standard_name = flag_for_surface_precipitation_at_fallout_temperature
+-  long_name = flag: surfaces book precipitation at the lowest-layer T of the step it fell
+-  units = flag
+-  dimensions = ()
+-  type = logical
+-  intent = in
+-  optional = True
+ [tprcp_t1]
+   standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
+   long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90	2026-10-18 13:12:48.000000000 -0500
+@@ -457,7 +457,7 @@
+       albdvis_rad, albdnir_rad, albivis_rad, albinir_rad, adjsfculw_land,       &
+       hflx_evap_enth, con_cliq, con_cvap, con_t0c, noahmp_fwet_opt,              &
+       sfc_precip_enthalpy, lw_sfc_return, noahmp_pore_air, ulw_lnd_rad, sfcdlw_rad, &
+-      sfc_precip_t1_carry, tprcp_t1                                               &
++      tprcp_t1                                               &
+       )
+ 
+   use machine ,   only : kind_phys
+@@ -552,7 +552,6 @@
+   real(kind=kind_phys), dimension(:), optional, intent(in)    :: sfcdlw_rad
+   logical :: epd, lwr, aird
+   real(kind=kind_phys) :: lwref
+-  logical, optional, intent(in) :: sfc_precip_t1_carry
+   real(kind=kind_phys), dimension(:), optional, intent(in) :: tprcp_t1
+   logical :: ptc
+   real(kind=kind_phys) :: tpr
+@@ -1024,7 +1023,7 @@
+   if (present(noahmp_pore_air)) aird = noahmp_pore_air
+   call noahmp_options_energy2(epd, aird, 1972.0_kind_phys)   ! FV3's c_ice (frame F)
+   ptc = .false.
+-  if (present(sfc_precip_t1_carry)) ptc = sfc_precip_t1_carry .and. present(tprcp_t1)
++  if (present(sfc_precip_enthalpy)) ptc = sfc_precip_enthalpy .and. present(tprcp_t1)
+   opt_ep_gla = epd
+   opt_ev_gla = eve
+   cl_f_gla = con_cliq
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.meta	2026-10-18 13:12:48.000000000 -0500
+@@ -1855,14 +1855,6 @@
+   type = integer
+   intent = in
+   optional = True
+-[sfc_precip_t1_carry]
+-  standard_name = flag_for_surface_precipitation_at_fallout_temperature
+-  long_name = flag: surfaces book precipitation at the lowest-layer T of the step it fell
+-  units = flag
+-  dimensions = ()
+-  type = logical
+-  intent = in
+-  optional = True
+ [tprcp_t1]
+   standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
+   long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f	2026-10-18 13:12:48.000000000 -0500
+@@ -45,7 +45,7 @@
+      &       evapi, evapw, hflxi, hflxw, islmsk,                        &
+      &       errmsg, errflg, iter, lw_sfc_consistent, adjsfcdlw,
+      &       adjsfculw_ice, sfc_precip_enthalpy, con_hfus, con_cliq,
+-     &       sfc_precip_t1_carry, tprcp_t1
++     &       tprcp_t1
+      &     )
+ 
+ ! ===================================================================== !
+@@ -167,7 +167,6 @@
+       logical, optional, intent(in) :: sfc_precip_enthalpy
+       real (kind=kind_phys), intent(in) :: con_hfus, con_cliq
+       real (kind=kind_phys) :: snowm(im), dqp, e1, e1x, b1x, tc1
+-      logical, optional, intent(in) :: sfc_precip_t1_carry
+       real (kind=kind_phys), optional, intent(in) :: tprcp_t1(:)
+       real (kind=kind_phys) :: tprc
+       real (kind=kind_phys), parameter :: di_e = 917.0_kind_phys,
+@@ -421,8 +420,8 @@
+       do i = 1, im
+         if (flag(i) .and. snowm(i) > zero .and. hice(i) > zero) then
+           tprc = t1(i)
+-          if (present(sfc_precip_t1_carry) .and. present(tprcp_t1)) then
+-            if (sfc_precip_t1_carry .and. tprcp_t1(i) > zero)
++          if (present(sfc_precip_enthalpy) .and. present(tprcp_t1)) then
++            if (sfc_precip_enthalpy .and. tprcp_t1(i) > zero)
+      &        tprc = tprcp_t1(i)
+           endif
+           dqp = snowm(i)*(1972.0_kind_phys*(tprc - t0c) - con_hfus
+--- a/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta	2026-10-18 13:12:47.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta	2026-10-18 13:12:48.000000000 -0500
+@@ -497,14 +497,6 @@
+   type = real
+   kind = kind_phys
+   intent = in
+-[sfc_precip_t1_carry]
+-  standard_name = flag_for_surface_precipitation_at_fallout_temperature
+-  long_name = flag: surfaces book precipitation at the lowest-layer T of the step it fell
+-  units = flag
+-  dimensions = ()
+-  type = logical
+-  intent = in
+-  optional = True
+ [tprcp_t1]
+   standard_name = air_temperature_at_surface_adjacent_layer_at_precipitation_fallout
+   long_name = lowest-layer T at the start of the physics step whose precipitation tprcp holds

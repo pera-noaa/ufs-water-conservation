@@ -1,0 +1,4 @@
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+Hunk #1 succeeded at 795 (offset 16 lines).
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+Hunk #1 succeeded at 2704 (offset 46 lines).

@@ -1,0 +1,41 @@
+From 5d2fd2bc33fde4e5c0c461b6c549cf329d7e0082 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 21:56:46 -0600
+Subject: [PATCH 5/5] Thompson: graupel at or below R1 goes to vapour instead
+ of being deleted
+
+WRF's copy of Thompson balances graupel mass and number separately from
+rain and, where the graupel left after the source and sink terms is at or
+below R1, overwrites its tendency to delete it (qgten = -qg1d/dt). The M5
+commit sent leftover rain to vapour but left this branch, which the CCPP
+copy does not have. Trace rain freezing (prg_rfz ~1e-15) in supercooled
+layers feeds it. Add the leftover graupel to vapour with lsub, as for rain.
+
+Found by a column red team (double-precision harness, 1000 plausible
+columns): the WRF port's water residual reached 2.7e-10 kg/m2 (relative
+2.6e-11, 50 columns above 1e-12), against 5.7e-14 for the CCPP copy; the
+deleted graupel's fusion heat stayed in the temperature. Compiles
+(gfortran syntax check); not yet rerun in the harness or WRF.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ phys/module_mp_thompson.F | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/phys/module_mp_thompson.F b/phys/module_mp_thompson.F
+index 86999ae5..a624e71c 100644
+--- a/phys/module_mp_thompson.F
++++ b/phys/module_mp_thompson.F
+@@ -3192,6 +3192,9 @@
+             endif
+ 
+          else
++           ! graupel left at or below R1 goes to vapour with its latent heat, not deleted
++           qvten(k) = qvten(k) + (qg1d(k) + qgten(k)*dtsave)*odts
++           tten(k) = tten(k) - lsub*ocp(k)*(qg1d(k) + qgten(k)*dtsave)*odts*(1-IFDRY)
+            qgten(k) = -qg1d(k)*odts
+            ngten(k) = -ng1d(k)*odts
+            qbten(k) = -qb1d(k)*odts
+-- 
+2.55.0
+

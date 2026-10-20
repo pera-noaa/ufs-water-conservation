@@ -1,0 +1,88 @@
+From a9d1673093bc089feb23b3dfab4d864ca06619df Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:04:22 -0600
+Subject: [PATCH 08/18] noahmpdrv: step the land once per time step
+
+GFS_surface_loop_control_part2 excludes Noah-MP land from the second surface
+iteration ((dry .and. lsm /= lsm_noahmp) .or. (wet .and. nstf_name1 > 0)),
+but with frac_grid a coastal cell is both dry and wet, so the second clause
+re-flags it, and noahmpdrv only tests flag_iter .and. dry. Noah-MP then steps
+the land again from the state the first pass already updated; unlike Noah and
+RUC it does not save and restore its state for the second pass.
+
+Pass the CCPP loop counter and compute land on the first pass only.
+
+Measured with in-model meters (C96 control_p8_ugwpv1, frac_grid, NSST): 24-27 %
+of the land area was stepped twice every time step (low-wind coastal cells),
+adding each step's precipitation twice; land water grew by 3-5 % of global
+precipitation. The atmosphere's budget is unaffected (it exchanges with the
+final pass).
+
+Adapted to production/AQM.v7 (67d069ad6) from ufs/dev c7dc705.
+
+iter is an optional trailing argument of noahmpdrv_run, as in the
+ufs-community/ccpp-physics change: NOAA-EMC/noahmp's land component calls
+the routine with the original arguments in atmosphere-land builds (none on
+this branch). Without it the land is stepped as before.
+---
+ physics/noahmpdrv.F90  | 11 +++++++++--
+ physics/noahmpdrv.meta |  8 ++++++++
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/physics/noahmpdrv.F90 b/physics/noahmpdrv.F90
+index 4bdc89b1..db3664c4 100644
+--- a/physics/noahmpdrv.F90
++++ b/physics/noahmpdrv.F90
+@@ -161,7 +161,7 @@
+       sncovr1, qsurf, gflux, drain, evap, hflx, ep, runoff,      &
+       cmm, chh, evbs, evcw, sbsno, pah, ecan, etran, edir, snowc,&
+       stm, snohf,smcwlt2, smcref2, wet1, t2mmp, q2mp,zvfun,      &
+-      ztmax, errmsg, errflg)     
++      ztmax, errmsg, errflg, iter)
+ 
+   use machine ,   only : kind_phys
+   use funcphys,   only : fpvs
+@@ -239,6 +239,9 @@
+   real(kind=kind_phys), dimension(:)     , intent(in)    :: snoalb     ! upper bound on max albedo over deep snow
+   real(kind=kind_phys), dimension(:)     , intent(inout) :: sfalb      ! mean surface albedo [fraction]
+   logical             , dimension(:)     , intent(in)    :: flag_iter  !
++  ! optional and last: NOAA-EMC/noahmp's land component calls this routine with the original arguments
++  integer, optional                      , intent(in)    :: iter       ! surface iteration (ccpp loop counter)
++  logical                                                :: first_iter ! land is stepped on the first iteration only
+   integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
+   integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
+   integer                                , intent(in)    :: iopt_btr   ! option for soil moisture factor for stomatal resistance
+@@ -601,9 +604,13 @@
+   errmsg = ''
+   errflg = 0
+ 
++  first_iter = .true.
++  if (present(iter)) first_iter = iter == 1
++
+ do i = 1, im
+ 
+-    if (flag_iter(i) .and. dry(i)) then
++    ! land is stepped once: a coastal (wet and dry) cell can be re-flagged for the second iteration
++    if (flag_iter(i) .and. dry(i) .and. first_iter) then
+ 
+ !
+ !  --- variable checks and derived fields
+diff --git a/physics/noahmpdrv.meta b/physics/noahmpdrv.meta
+index 3235b7c9..fc638f15 100644
+--- a/physics/noahmpdrv.meta
++++ b/physics/noahmpdrv.meta
+@@ -1337,3 +1337,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True
+-- 
+2.55.0
+

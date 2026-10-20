@@ -1,0 +1,69 @@
+From 5126cab37c5484c303f322f280db408c2a540960 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 12:04:21 -0600
+Subject: [PATCH 02/19] mp_thompson: convert to and from mixing ratio with the
+ same humidity
+
+FV3 hands physics tracers per (dry air + vapour) and rebuilds each species'
+mass afterwards as the pre-physics thickness times the returned value. The
+driver converted to mixing ratios with /(1-spechum) but back with
+/(1+qv_new), so every species returned scaled by (m_d+m_v,old)/(m_d+m_v,new):
+net evaporation in the scheme removed water, net condensation created it.
+
+Convert back with *(1-spechum), the scheme's unchanged input, so the round
+trip is exact on whatever basis the host supplies (also when sub-cycling).
+
+Measured (C96 control_p8_ugwpv1): Thompson's water residual -0.67 % -> -0.30 %
+of grid-scale precipitation.
+
+Adapted to production/GFS.v17 (8007f2c3e) from ufs/dev c7dc705. This branch converts spechum in place (no new_spechum): the entry conversion already uses the input humidity, so only the return conversion changes, and spechum is overwritten after the species.
+---
+ physics/MP/Thompson/mp_thompson.F90 | 28 +++++++++++++++-------------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/physics/MP/Thompson/mp_thompson.F90 b/physics/MP/Thompson/mp_thompson.F90
+index 666a8a53..301dd782 100644
+--- a/physics/MP/Thompson/mp_thompson.F90
++++ b/physics/MP/Thompson/mp_thompson.F90
+@@ -867,23 +867,25 @@ module mp_thompson
+          ! was using these arrays, but it is somewhat dangerous.
+ 
+          !> - Convert water vapor mixing ratio back to specific humidity
+-         spechum = qv/(1.0_kind_phys+qv)
+-
++         ! convert back with the input (host-basis) humidity, as on entry, so the host's mass rebuild is exact;
++         ! spechum still holds the input here, so it is overwritten last
+          if (convert_dry_rho) then
+-           qc = qc/(1.0_kind_phys+qv)
+-           qr = qr/(1.0_kind_phys+qv)
+-           qi = qi/(1.0_kind_phys+qv)
+-           qs = qs/(1.0_kind_phys+qv)
+-           qg = qg/(1.0_kind_phys+qv)
+-
+-           ni = ni/(1.0_kind_phys+qv)
+-           nr = nr/(1.0_kind_phys+qv)
++           qc = qc*(1.0_kind_phys-spechum)
++           qr = qr*(1.0_kind_phys-spechum)
++           qi = qi*(1.0_kind_phys-spechum)
++           qs = qs*(1.0_kind_phys-spechum)
++           qg = qg*(1.0_kind_phys-spechum)
++
++           ni = ni*(1.0_kind_phys-spechum)
++           nr = nr*(1.0_kind_phys-spechum)
+            if (is_aerosol_aware .or. merra2_aerosol_aware) then
+-              nc = nc/(1.0_kind_phys+qv)
+-              nwfa = nwfa/(1.0_kind_phys+qv)
+-              nifa = nifa/(1.0_kind_phys+qv)
++              nc = nc*(1.0_kind_phys-spechum)
++              nwfa = nwfa*(1.0_kind_phys-spechum)
++              nifa = nifa*(1.0_kind_phys-spechum)
+            end if
+          end if
++
++         spechum = qv*(1.0_kind_phys-spechum)
+          ! *DH
+ 
+          !> - Convert rainfall deltas from mm to m (on physics timestep); add to inout variables
+-- 
+2.55.0
+

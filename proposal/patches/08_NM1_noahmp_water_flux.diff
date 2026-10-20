@@ -1,0 +1,12 @@
+--- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -1523,7 +1523,8 @@
+ !  --- change units for output
+ !
+       hflx(i) = hflx(i) / density / con_cp
+-      evap(i) = evap(i) / density / con_hvap
++      ! the water Noah-MP removed (its own hvap/hsub), not latent heat / con_hvap
++      evap(i) = (ecan(i) + etran(i) + edir(i)) / density
+ 
+ !
+ !  --- calculate potential evaporation using noah code

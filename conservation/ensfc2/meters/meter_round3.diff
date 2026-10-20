@@ -1,0 +1,333 @@
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.F90
+@@ -28,10 +28,11 @@
+         graupelprv, draincprv, drainncprv, diceprv, dsnowprv, dgraupelprv, dtp, num_diag_buckets,                         &
+         dtend, dtidx, index_of_temperature, index_of_process_mp,ldiag3d, qdiag3d,dqdt_qmicro, lssav, num_dfi_radar,       &
+         fh_dfi_radar,index_of_process_dfi_radar, ix_dfi_radar, dfi_radar_tten, radar_tten_limits, fhour, prevsq,      &
+-        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp)
++        iopt_lake, iopt_lake_clm, lkm, use_lake_model, errmsg, errflg, precip_phase_host, con_hfus, con_cp, garea)
+ !
+       use machine, only: kind_phys
+       use calpreciptype_mod, only: calpreciptype
++      use energy_meter_common, only: esg
+       implicit none
+ 
+       integer, intent(in) :: im, levs, kdt, tend_opt_mp, nrcm, nncl, ntcw, ntrac, num_dfi_radar, index_of_process_dfi_radar
+@@ -54,6 +55,7 @@
+       real(kind=kind_phys),                    intent(in)    :: dtf, frain, con_g, rainmin, rhowater
+       logical, optional,                       intent(in)    :: precip_phase_host
+       real(kind=kind_phys),                    intent(in)    :: con_hfus, con_cp
++      real(kind=kind_phys), dimension(:), optional, intent(in) :: garea
+       real(kind=kind_phys), dimension(:),      intent(in)    :: rain1, xlat, xlon, tsfc
+       real(kind=kind_phys), dimension(:),      intent(inout) :: ice, snow, graupel, rainc
+       real(kind=kind_phys), dimension(:),      intent(in), optional :: rain0, ice0, snow0, graupel0
+@@ -479,6 +481,13 @@
+             if (present(precip_phase_host)) then
+               if (precip_phase_host .and. csnow > zero) gt0(i,1) = gt0(i,1)                  &
+                 + con_hfus*rhowater*csnow*con_g / (con_cp*(prsi(i,1)-prsi(i,2)))
++            endif
++            if (present(garea) .and. csnow > zero) then
++              esg(207) = esg(207) + garea(i)*3.3358d5*rhowater*csnow
++              esg(208) = esg(208) + garea(i)*rhowater*csnow
++              if (present(precip_phase_host)) then
++                if (precip_phase_host) esg(209) = esg(209) + garea(i)*con_hfus*rhowater*csnow
++              endif
+             endif
+ !            if (snow0(i,1)+ice0(i,1)+graupel0(i,1)+csnow > rain0(i,1)+crain) then
+ !            if (snow0(i)+ice0(i)+graupel0(i)+csnow > 0.0) then
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta
+@@ -1067,3 +1067,12 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[garea]
++  standard_name = cell_area
++  long_name = grid cell area
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.F90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_post.F90
+@@ -351,8 +351,15 @@
+             if (txi > zero) qsfc_heat = qsfc_heat + txi*(adjsfculw_ice(i) - adjsfcdlw(i))
+             if (txo > zero) qsfc_heat = qsfc_heat + txo*(adjsfculw_water(i) - adjsfcdlw(i))
+             qsfc_heat = qsfc_heat - (sfculw_rad(i) - sfcdlw_rad(i))
++            esb(172,i) = qsfc_heat
++            esb(173,i) = txl*(adjsfculw_land(i) - adjsfcdlw(i))
++            esb(174,i) = txi*(adjsfculw_ice(i) - adjsfcdlw(i))
++            esb(175,i) = txo*(adjsfculw_water(i) - adjsfcdlw(i))
++            esb(176,i) = sfculw_rad(i) - sfcdlw_rad(i)
+           endif
+           if (eve .and. dry(i)) qsfc_heat = qsfc_heat + txl*hflx_evap_enth(i)
++          if (eve .and. dry(i)) esb(177,i) = txl*hflx_evap_enth(i)
++          esb(171,i) = qsfc_heat
+           dtdt(i,1) = dtdt(i,1) + qsfc_heat*grav/(con_cp*(prsi(i,1)-prsi(i,2)))
+         enddo
+       endif
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+@@ -12,7 +12,7 @@
+   real(kind=8), save :: emg(10, emnp) = 0.d0, emx(12) = 0.d0, emf(12, emnc) = 0.d0
+   integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
+   ! surface components: per-block column store esb, per-step global sums esg (esgd = previous step)
+-  integer, parameter, public :: esnb = 120, esng = 220
++  integer, parameter, public :: esnb = 220, esng = 420
+   real(kind=8), save :: esb(esnb, 1024) = 0.d0
+   real(kind=8), save :: esg(esng) = 0.d0, esgd(esng) = 0.d0
+   integer, save :: eskdt = -1
+@@ -140,6 +140,25 @@
+        esg(205) = esg(205) + a*esb(105, i)*esb(108, i)*1004.6d0*esb(109, i)
+        esg(206) = esg(206) + a*emf(8, jj)
+     endif
++    if (esb(4, i) == 1.d0) then
++       esg(221:230) = esg(221:230) + wl*esb(121:130, i)
++       esg(261:280) = esg(261:280) + wl*esb(141:160, i)
++       esg(281:290) = esg(281:290) + wl*esb(161:170, i)
++    endif
++    if (esb(133, i) > 0.d0) then
++       esg(233) = esg(233) + wl*esb(131, i)
++       esg(234) = esg(234) + wl*esb(132, i)
++       esg(235) = esg(235) + wl*esb(8, i)
++       if (esb(1, i) > 0.999d0) then
++          esg(231) = esg(231) + a*esb(131, i)
++          esg(232) = esg(232) + a*emf(6, jj)
++          esg(236) = esg(236) + a*esb(8, i)
++       endif
++    endif
++    esg(237:239) = esg(237:239) + wl*esb(134:136, i)
++    esg(240:241) = esg(240:241) + wi*esb(137:138, i)
++    esg(242:243) = esg(242:243) + wo*esb(139:140, i)
++    esg(301:310) = esg(301:310) + a*esb(171:180, i)
+     esg(161:169) = esg(161:169) + a*emf(4:12, jj)
+     esg(170) = esg(170) + a
+     esg(171) = esg(171) + wl
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Layer/UFS/sfc_nst.f90
+@@ -688,6 +688,8 @@
+           esb(97,i) = hflx(i)*timestep
+           esb(98,i) = evap(i)*timestep
+           esb(101,i) = sfcemis(i)*sbc*tskin(i)**4*timestep
++          esb(139,i) = evap(i)/hvap*timestep*(tskin(i) - 273.15d0)
++          esb(140,i) = evap(i)/hvap*timestep*(t1(i) - 273.15d0)
+           tem     = one / rho_a(i)
+           hflx(i) = hflx(i) * tem * cpinv
+           evap(i) = evap(i) * tem * hvapi
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -22,7 +22,7 @@
+   real (kind=kind_phys), save :: cl_f = 4185.5, cpv_f = 1846.0, t0_f = 273.15  ! frame F constants
+   public  :: noahmp_options_energy
+   ! energy meter (diagnostic builds only): budget terms of the column just computed (J m-2, kg m-2)
+-  real(kind=8), public, save :: esl(40) = 0.d0
++  real(kind=8), public, save :: esl(80) = 0.d0
+   real(kind=8), save :: es_ws = 0.d0, es_wl = 0.d0
+   real(kind=8), save :: es_tv0 = 0.d0, es_hcv = 0.d0, es_hs = 0.d0, es_hl = 0.d0
+   public :: es_hland, es_hcol
+@@ -1022,6 +1022,7 @@
+ 
+ !     write(*,'(a20,10f15.5)') 'sflx:runoff=',runsrf*dt,runsub*dt,edir*dt
+      if (present(hevap)) hevap = hev
++     esl(60) = hev*dt
+ 
+ ! compute carbon budgets (carbon storages and co2 & bvoc fluxes)
+ 
+@@ -7352,6 +7353,7 @@
+   real (kind=kind_phys), dimension(       1:nsoil)                :: sh2o0, bnd, hcp0
+   real (kind=kind_phys)                                           :: dflx, qadv(nsoil), hsnow
+   real (kind=kind_phys)                                           :: rsat0, qthru, qcold, qinfl, qinfh, tsbot
++  real (kind=kind_phys)                                           :: es_sh1(nsoil)
+   real (kind=kind_phys), dimension(       1:nsoil)                :: etrani  !transpiration rate (mm/s) [+]
+   real (kind=kind_phys), dimension(       1:nsoil)                :: wcnd   !hydraulic conductivity (m/s)
+   real (kind=kind_phys)                                           :: qdrain  !soil-bottom free drainage [mm/s] 
+@@ -7415,16 +7417,19 @@
+    call es_segw(33, parameters, nsnow, nsoil, isnow, stc, dzsnso, snice, snliq, sh2o, sice, sneqv, canice)
+    esl(23) = (qsnsub - qsnfro)*dt
+    hevap = hevap + (qsnsub - qsnfro)*hvt1 + hsnow/dt
++   esl(61) = esl(61) + hsnow
+    lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt + lheatc
+    if(frozen_ground) then
+       sice(1) =  sice(1) + (qsdew-qseva)*dt/(dzsnso(1)*1000.)
+       edef = max(0., -sice(1))*dzsnso(1)*1000./dt
+       hevap = hevap + (qseva - qsdew)*(hvt1 + cik*(stc(1)-tfrz)) + edef*(cwk - cik)*(stc(1)-tfrz)
++      esl(62) = esl(62) + ((qseva - qsdew)*cik + edef*(cwk - cik))*(stc(1)-tfrz)*dt
+       lheat = lheat + (latheag - hsub)*(qseva - qsdew)*dt
+       esl(23) = esl(23) + (qseva - qsdew)*dt
+       qsdew = 0.0
+       qseva = 0.0
+       if(sice(1) < 0.) then
++         esl(65) = esl(65) - hfus*sice(1)*dzsnso(1)*1000.
+          lheat = lheat - hfus*sice(1)*dzsnso(1)*1000.   ! the missing ice came from the liquid
+          sh2o(1) = sh2o(1) + sice(1)
+          sice(1) = 0.
+@@ -7501,6 +7506,12 @@
+        qinfh = 0.
+        if (qinsur > 0.) qinfh = cwk*qinfl/qinsur*dt*(qthru*(tg - stc(1)) + qcold*(tfrz - stc(1)) &
+                                                     + qsnbot*(tsbot - stc(1)))
++       do iz = 1, nsoil
++          esl(51) = esl(51) + cwk*bnd(iz)*(stc(iz)-tfrz)
++          esl(59) = esl(59) - cpair*(sh2o(iz)-sh2o0(iz))*dzsnso(iz)*(stc(iz)-tfrz)
++          es_sh1(iz) = sh2o(iz)
++       enddo
++       esl(54) = esl(54) + qinfh
+  
+        if(opt_run == 1) then 
+           call es_segw(37, parameters, nsnow, nsoil, isnow, stc, dzsnso, snice, snliq, sh2o, sice, sneqv, canice)
+@@ -7532,6 +7543,16 @@
+           endif
+        enddo
+        dflx = dflx - ((sh2o(nsoil) - sh2o0(nsoil))*dzsnso(nsoil)*1000. - bnd(nsoil))  ! 0 if all is booked
++       do iz = 1, nsoil
++          esl(52) = esl(52) + cwk*bnd(iz)*(stc(iz)-tfrz)
++          esl(53) = esl(53) - cpair*(sh2o(iz)-sh2o0(iz))*dzsnso(iz)*(stc(iz)-tfrz)
++          esl(44) = esl(44) - cpair*(sh2o(iz)-es_sh1(iz))*dzsnso(iz)*(stc(iz)-tfrz)
++          esl(55) = esl(55) + cwk*((sh2o(iz)-sh2o0(iz))*dzsnso(iz)*1000. - bnd(iz))*(stc(iz)-tfrz)
++          esl(56) = esl(56) + qadv(iz)
++          if (opt_adv) esl(57) = esl(57) + qadv(iz)
++       enddo
++       esl(52) = esl(52) - esl(51)
++       esl(58) = esl(58) + dflx
+        if (opt_adv) then
+           do iz = 1, nsoil
+              stc(iz) = stc(iz) + qadv(iz)/(dzsnso(iz)*(hcp0(iz) + (cwat - cpair)*(sh2o(iz) - sh2o0(iz))))
+@@ -7921,6 +7942,7 @@
+ 
+     if(isnow <  0 .and. newnode == 0 .and. qsnow > 0.) then
+          snice(isnow+1)  = snice(isnow+1)   + qsnow   * dt
++         esl(63) = esl(63) + cice/denice*qsnow*dt*(stc(isnow+1)-tfrz)
+          dzsnso(isnow+1) = dzsnso(isnow+1)  + snowhin * dt
+     endif
+ 
+@@ -8478,6 +8500,7 @@
+       sice(1) =  sice(1) + (qsnfro-qsnsub)*dt/(dzsnso(1)*1000.)  ! barlage: sh2o->sice v3.6
+       hsnow = (qsnsub-qsnfro)*dt*cice/1000.*(stc(1)-tfrz) + max(0.,-sice(1))*dzsnso(1)*(cwat-cice)*(stc(1)-tfrz)
+       if(sice(1) < 0.) then
++         esl(66) = esl(66) - hfus*sice(1)*dzsnso(1)*1000.
+          sh2o(1) = sh2o(1) + sice(1)
+          sice(1) = 0.
+       end if
+@@ -8504,6 +8527,7 @@
+          snowh   = 0.
+       end if
+       if(sice(1) < 0.) then
++         esl(66) = esl(66) - hfus*sice(1)*dzsnso(1)*1000.
+          sh2o(1) = sh2o(1) + sice(1)
+          sice(1) = 0.
+       end if
+@@ -8532,6 +8556,7 @@
+       !kwm:  subroutine combine can change isnow to make it 0 again?
+       if ( isnow < 0 ) then !kwm added this if statement to prevent out-of-bounds array references
+          snliq(isnow+1) = snliq(isnow+1) + qrain * dt
++         esl(64) = esl(64) + cwat/denh2o*qrain*dt*(stc(isnow+1)-tfrz)
+          snliq(isnow+1) = max(0., snliq(isnow+1))
+       endif
+       
+@@ -9504,9 +9529,11 @@
+          wt          = wa
+          zwt         = (-zsoil(nsoil) + 25.) - wa/1000./rous      !(m)
+          mliq(nsoil) = mliq(nsoil) - qin * dt        ! [mm]
++         esl(41) = esl(41) - cwat/1000.*qin*dt*(stc(nsoil)-tfrz)
+          bnd(nsoil) = bnd(nsoil) - qin*dt
+ 
+          mliq(nsoil) = mliq(nsoil) + max(0.,(wa - 5000.))
++         esl(41) = esl(41) + cwat/1000.*max(0.,(wa - 5000.))*(stc(nsoil)-tfrz)
+          bnd(nsoil) = bnd(nsoil) + max(0.,(wa - 5000.))
+          wa          = min(wa, 5000.)
+       else
+@@ -9530,6 +9557,7 @@
+ 
+          do iz = 1, nsoil           ! removing subsurface runoff
+          mliq(iz) = mliq(iz) - qdis*dt*hk(iz)*dzmm(iz)/wtsub
++         esl(42) = esl(42) - cwat/1000.*qdis*dt*hk(iz)*dzmm(iz)/wtsub*(stc(iz)-tfrz)
+          bnd(iz) = bnd(iz) - qdis*dt*hk(iz)*dzmm(iz)/wtsub
+          end do
+       end if
+@@ -9549,6 +9577,7 @@
+           end if
+           mliq(iz  ) = mliq(iz  ) + xs
+           mliq(iz+1) = mliq(iz+1) - xs
++          esl(43) = esl(43) + cwat/1000.*xs*(stc(iz)-stc(iz+1))
+       end do
+ 
+         iz = nsoil
+@@ -9559,6 +9588,7 @@
+         end if
+         mliq(iz) = mliq(iz) + xs
+         wa       = wa - xs
++        esl(41) = esl(41) + cwat/1000.*xs*(stc(nsoil)-tfrz)
+         bnd(nsoil) = bnd(nsoil) + xs
+         wt       = wt - xs
+ 
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
+@@ -1303,6 +1303,23 @@
+           if (srflag(i)*precipitation_forcing - (precip_snow + precip_graupel + precip_hail) &
+               > 0.5*precip_convective) fpcvh = 1.
+         endif
++        ! meter: host (srflag) vs sfctmp < tfrz decision for convective precipitation
++        if (precip_convective > 0.) then
++          esb(161,i) = precip_convective*delt
++          esb(164,i) = 1.d0
++          if (srflag(i)*precipitation_forcing - (precip_snow + precip_graupel + precip_hail) &
++              > 0.5*precip_convective) then
++            if (temperature_forcing >= 273.16d0) then
++              esb(163,i) = precip_convective*delt
++              esb(165,i) = 1.d0
++            endif
++          else
++            if (temperature_forcing < 273.16d0) then
++              esb(162,i) = precip_convective*delt
++              esb(165,i) = 1.d0
++            endif
++          endif
++        endif
+         call noahmp_sflx (parameters                                          , &
+           i_location            ,j_location            ,latitude              , &
+           year_length           ,julian_day            ,cosine_zenith         , &
+@@ -1467,6 +1484,8 @@
+         esb(17,i) = esl(26)
+         esb(23:52,i) = esl(1:30)
+         esb(110:119,i) = esl(31:40)
++        esb(121:130,i) = esl(41:50)
++        esb(141:160,i) = esl(51:70)
+       endif
+       esb(18,i) = esb(22,i) - esb(17,i)
+       esb(53,i) = 1000.d0*tprcp(i)
+@@ -1474,6 +1493,23 @@
+       esb(55,i) = rainc_mp(i)*delt
+       esb(56,i) = rainn_mp(i)*delt
+       esb(57,i) = 1000.d0*tprcp(i)*srflag(i)
++      if (present(albdvis_rad) .and. vegetation_category /= isice_table) then
++        if (albdvis_rad(i) >= 0.) then
++          esb(131,i) = (adjvisbmd(i)*(1.-albdvis_rad(i)) + adjvisdfd(i)*(1.-albivis_rad(i)) &
++                      + adjnirbmd(i)*(1.-albdnir_rad(i)) + adjnirdfd(i)*(1.-albinir_rad(i)))*delt
++          esb(132,i) = (adjvisbmd(i)*(1.-albedo_direct(1)) + adjvisdfd(i)*(1.-albedo_diffuse(1)) &
++                      + adjnirbmd(i)*(1.-albedo_direct(2)) + adjnirdfd(i)*(1.-albedo_diffuse(2)))*delt
++          esb(133,i) = 1.d0
++        endif
++      endif
++      if (vegetation_category == isice_table) then
++        esb(134,i) = edir(i)*delt*(temperature_ground - 273.15d0)
++      else
++        esb(134,i) = ((ecan(i) + etran(i))*(temperature_leaf - 273.15d0) &
++                     + edir(i)*(temperature_ground - 273.15d0))*delt
++      endif
++      esb(135,i) = (ecan(i) + etran(i) + edir(i))*delt*(temperature_forcing - 273.15d0)
++      esb(136,i) = precipitation_forcing*delt*(temperature_forcing - 273.15d0)
+ 
+       lfmassxy  (i)   = leaf_carbon
+       rtmassxy  (i)   = root_carbon
+--- mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ mopt/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -498,6 +498,8 @@
+           t12 = tice(i)*tice(i)
+           esb(77,i) = sfcemis(i)*sbc*t12*t12*delt
+           esb(78,i) = sfcnsw(i)*delt
++          esb(137,i) = evapi(i)/hvap*delt*(tice(i) - 273.15d0)
++          esb(138,i) = evapi(i)/hvap*delt*(t1(i) - 273.15d0)
+ 
+           tem     = one / rho(i)
+           hflxi(i) = hflxi(i) * tem * cpinv

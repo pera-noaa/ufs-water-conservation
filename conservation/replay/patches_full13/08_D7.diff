@@ -1,0 +1,159 @@
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90 b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:10:46
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:10:46
+@@ -210,6 +210,7 @@
+ use fv_timing_mod,      only: timing_on, timing_off
+ use fv_mp_mod,          only: is_master, tile_fine
+ use fv_sg_mod,          only: fv_subgrid_z
++use fv_mapz_mod,        only: moist_cp, moist_cv
+ use fv_update_phys_mod, only: fv_update_phys
+ use fv_io_mod,          only: fv_io_register_nudge_restart
+ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+@@ -286,6 +287,7 @@
+ 
+ !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
+   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
++  real, allocatable, dimension(:,:,:)   :: ke_tgt  ! cpl_ke_heating: KE (J/kg x Pa) the increments imply
+   real, allocatable                     :: pref(:,:), dum1d(:)
+ 
+   logical :: first_diag = .true.
+@@ -1536,6 +1538,9 @@
+    integer :: i, j, ix, im, k, k1, n, w_diff, nt_dyn, iq
+    integer :: nb, blen, nwat, dnats, nq_adv
+    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt, qp
++   real(kind=kind_phys):: ub, vb, ua0, va0, dpp
++   real, allocatable :: ked0(:,:,:)
++   real :: ked1, dte, tnew, cxm(isc:iec), qcx(isc:iec)
+    real psum, qsum, psumb, qsumb, betad
+    character(len=32) :: tracer_name
+    Time_prev = Time
+@@ -1607,6 +1612,7 @@
+ 
+    call timing_on('GFS_TENDENCIES')
+    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
++   if (Atm(n)%flagstruct%cpl_ke_heating .and. .not. allocated(ke_tgt)) allocate(ke_tgt(isc:iec,jsc:jec,npz))
+ !--- put u/v tendencies into haloed arrays u_dt and v_dt
+ !$OMP parallel do default (none) &
+ !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mygrid, u_dt, v_dt, t_dt,&
+@@ -1614,8 +1620,8 @@
+ #ifdef MULTI_GASES
+ !$OMP                      num_gas,                                                      &
+ #endif
+-!$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
+-!$OMP             private (nb, blen, i, j, k, k1, ix, im, q0, qwat, qt, tracer_name, qp)
++!$OMP                      snowwat, graupel, nq_adv, flip_vc, ke_tgt, dt_atmos)   &
++!$OMP             private (nb, blen, i, j, k, k1, ix, im, q0, qwat, qt, tracer_name, qp, ub, vb, ua0, va0, dpp)
+    do nb = 1,Atm_block%nblks
+ 
+ !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
+@@ -1645,6 +1651,20 @@
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
++         if (Atm(n)%flagstruct%cpl_ke_heating) then
++! KE change the A-grid increments imply: fv_subgrid_z part (already in u_dt) on the old delp, physics part on its own mass
++           ub = IPD_Statein%ugrs(im,k)
++           vb = IPD_Statein%vgrs(im,k)
++           ua0 = ub - dt_atmos*u_dt(i,j,k1)
++           va0 = vb - dt_atmos*v_dt(i,j,k1)
++           if (flip_vc) then
++             dpp = IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1)
++           else
++             dpp = IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k)
++           endif
++           ke_tgt(i,j,k1) = 0.5*(ub**2 + vb**2 - ua0**2 - va0**2)*Atm(n)%delp(i,j,k1)            &
++                          + 0.5*(IPD_Stateout%gu0(im,k)**2 + IPD_Stateout%gv0(im,k)**2 - ub**2 - vb**2)*dpp
++         endif
+          u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Stateout%gu0(im,k) - IPD_Statein%ugrs(im,k)) * rdt
+          v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Stateout%gv0(im,k) - IPD_Statein%vgrs(im,k)) * rdt
+ !         t_dt(i,j,k1) = (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
+@@ -1757,6 +1777,18 @@
+ 
+    call mpp_clock_begin (id_dynam)
+        call timing_on('FV_UPDATE_PHYS')
++    if (Atm(n)%flagstruct%cpl_ke_heating) then
++      allocate(ked0(isc:iec,jsc:jec,npz))
++      do k=1,npz
++        do j=jsc,jec
++          do i=isc,iec
++            ked0(i,j,k) = 0.25*Atm(n)%gridstruct%rsin2(i,j)*(Atm(n)%u(i,j,k)**2 + Atm(n)%u(i,j+1,k)**2 + Atm(n)%v(i,j,k)**2 &
++                   + Atm(n)%v(i+1,j,k)**2 - (Atm(n)%u(i,j,k) + Atm(n)%u(i,j+1,k))*(Atm(n)%v(i,j,k) &
++                   + Atm(n)%v(i+1,j,k))*Atm(n)%gridstruct%cosa_s(i,j))
++          enddo
++        enddo
++      enddo
++    endif
+     call fv_update_phys( dt_atmos, isc, iec, jsc, jec, isd, ied, jsd, jed, Atm(n)%ng, nt_dyn, &
+                          Atm(n)%u,  Atm(n)%v,   Atm(n)%w,  Atm(n)%delp, Atm(n)%pt,         &
+                          Atm(n)%q,  Atm(n)%qdiag,                                          &
+@@ -1769,6 +1801,31 @@
+                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
+                          Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop,         &
+                          Atm(n)%phys_diag, Atm(n)%nudge_diag )
++    if (Atm(n)%flagstruct%cpl_ke_heating) then
++! heat (per cell, as fv_update_phys heats) the implied minus the realised D-grid KE change
++      do k=1,npz
++        do j=jsc,jec
++          if (Atm(n)%flagstruct%hydrostatic .or. Atm(n)%flagstruct%phys_hydrostatic) then
++            call moist_cp(isc,iec,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
++                          ice_wat, snowwat, graupel, hailwat, Atm(n)%q, qcx, cxm, Atm(n)%pt(isc:iec,j,k))
++          else
++            call moist_cv(isc,iec,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
++                          ice_wat, snowwat, graupel, hailwat, Atm(n)%q, qcx, cxm, Atm(n)%pt(isc:iec,j,k))
++          endif
++          do i=isc,iec
++            ked1 = 0.25*Atm(n)%gridstruct%rsin2(i,j)*(Atm(n)%u(i,j,k)**2 + Atm(n)%u(i,j+1,k)**2 + Atm(n)%v(i,j,k)**2 &
++                   + Atm(n)%v(i+1,j,k)**2 - (Atm(n)%u(i,j,k) + Atm(n)%u(i,j+1,k))*(Atm(n)%v(i,j,k) &
++                   + Atm(n)%v(i+1,j,k))*Atm(n)%gridstruct%cosa_s(i,j))
++            dte = ke_tgt(i,j,k)/Atm(n)%delp(i,j,k) - (ked1 - ked0(i,j,k))
++            tnew = Atm(n)%pt(i,j,k) + dte/cxm(i)
++            if (.not. Atm(n)%flagstruct%hydrostatic .and. Atm(n)%flagstruct%phys_hydrostatic) &
++                 Atm(n)%delz(i,j,k) = Atm(n)%delz(i,j,k)*tnew/Atm(n)%pt(i,j,k)
++            Atm(n)%pt(i,j,k) = tnew
++          enddo
++        enddo
++      enddo
++      deallocate(ked0)
++    endif
+        call timing_off('FV_UPDATE_PHYS')
+    call mpp_clock_end (id_dynam)
+ 
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-17 20:10:46
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90	2026-10-17 20:10:46
+@@ -680,6 +680,7 @@
+    real    :: ke_bg = 0.  !<  background KE production (m^2/s^3) over a small step
+                           !< Use this to conserve total energy if consv_te=0
+    real    :: consv_te = 0.   !< Fraction of total energy lost during the adiabatic integration
++   logical :: cpl_ke_heating = .false. !< heat the KE mismatch of the A- to D-grid wind-increment mapping
+                               !< between calls of the physics, to be added backglobally as heat;
+                               !< essentially the strength of the energy fixer in the physics.
+                               !< Note that this is a global energy fixer and cannot add back energy
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90 b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-17 20:10:46
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90	2026-10-17 20:10:46
+@@ -332,6 +332,7 @@
+      real    , pointer :: d_con
+      real    , pointer :: ke_bg
+      real    , pointer :: consv_te
++     logical , pointer :: cpl_ke_heating
+      real    , pointer :: tau
+      real    , pointer :: tau_w
+      real    , pointer :: fast_tau_w_sec
+@@ -924,6 +925,7 @@
+        d_con                         => Atm%flagstruct%d_con
+        ke_bg                         => Atm%flagstruct%ke_bg
+        consv_te                      => Atm%flagstruct%consv_te
++       cpl_ke_heating                => Atm%flagstruct%cpl_ke_heating
+        tau                           => Atm%flagstruct%tau
+        tau_w                         => Atm%flagstruct%tau_w
+        fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
+@@ -1119,7 +1121,7 @@
+             write_coarse_diagnostics,&
+             write_only_coarse_intermediate_restarts, &
+             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, increment_file_on_native_grid, &
+-            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
++            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum, cpl_ke_heating
+ 
+        ! Read FVCORE namelist
+        read (input_nml_file,fv_core_nml,iostat=ios)

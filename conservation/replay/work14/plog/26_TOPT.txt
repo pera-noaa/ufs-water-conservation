@@ -1,0 +1,8 @@
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90
+Hunk #1 succeeded at 103 (offset 10 lines).
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_post.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.F90
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.meta
+patching file UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f
+Hunk #1 succeeded at 552 (offset 17 lines).
+patching file UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper_post.F90

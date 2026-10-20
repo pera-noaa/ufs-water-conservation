@@ -1,0 +1,11 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -724,7 +724,7 @@
+      &                    + (one - f1)*stsice(i,2)
+ 
+               if (stsice(i,2) > tfi) then
+-                hice(i) = hice(i) - h2*ci*(stsice(i,2) - tfi)/ (li*delt)
++                hice(i) = hice(i) - h2*ci*(stsice(i,2) - tfi)/ li
+                 stsice(i,2) = tfi
+               endif
+             else

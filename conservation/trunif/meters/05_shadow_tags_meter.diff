@@ -1,0 +1,490 @@
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_DCNV_generic_post.F90	2026-10-17 20:25:19.000000000 -0500
+@@ -24,7 +24,7 @@
+ 
+       use machine,               only: kind_phys
+ 
+-      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check, tm_sh_phys
+       implicit none
+       real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
+       real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
+@@ -166,6 +166,7 @@
+       call tm_osc_check(1, im, tm_xq, gq0(1:im,:,1)); call tm_osc_check(2, im, tm_xt, gt0(1:im,:))
+       if (tm_iu > 0) call tm_osc_check(3, im, tm_u0, gq0(1:im,:,tm_iu))
+       if (tm_icnv > 0) call tm_osc_check(4, im, tm_xc, gq0(1:im,:,tm_icnv))
++      call tm_sh_phys(14, im, levs, gq0, tm_qgrs, tm_prsi, tm_area, 1)
+       
+       
+       if (cscnv .or. satmedmf .or. trans_trac .or. ras) then
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-17 20:25:19.000000000 -0500
+@@ -16,7 +16,7 @@
+       &  index_of_y_wind, index_of_process_orographic_gwd, tm_prsi, tm_area, tm_qgrs, errmsg, errflg)
+ 
+       use machine, only : kind_phys
+-      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check, tm_sh_phys
+       implicit none
+       real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
+       real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
+@@ -54,6 +54,7 @@
+       call tm_phys_mass(im, levs, ntrac, gq0, tm_prsi, tm_area, tm_s0)
+       if (tm_iu > 0) tm_u0 = gq0(1:im,:,tm_iu)
+       if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r0)
++      call tm_sh_phys(11, im, levs, gq0, tm_qgrs, tm_prsi, tm_area, 1)
+       case_GWD_ten: select case (tend_opt_gwd)
+         case (1) !immediately apply tendencies
+                   !Current state = current state + dt*current tendency
+@@ -112,6 +113,7 @@
+       if (tm_iu > 0) call tm_ucheck(3, im, levs, tm_u0, gq0(1:im,:,tm_iu))
+       if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r1)
+       if (tm_iud > 0) call tm_dry_slot(3, tm_r0, tm_r1)
++      call tm_sh_phys(12, im, levs, gq0, tm_qgrs, tm_prsi, tm_area, 1)
+       
+       if (lssav) then
+         dugwd(:) = dugwd(:) + dusfcg(:)*dtf
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_SCNV_generic_post.F90	2026-10-17 20:25:19.000000000 -0500
+@@ -20,7 +20,7 @@
+ 
+       use machine,               only: kind_phys
+ 
+-      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check
++      use tm_meter, only: tm_phys_mass, tm_phys_add, tm_iu, tm_ucheck, tm_iud, tm_icnv, tm_dry_phys, tm_dry_slot, tm_osc_check, tm_sh_phys
+       implicit none
+       real(kind=kind_phys), intent(in) :: tm_prsi(:,:), tm_area(:), tm_qgrs(:,:,:)
+       real(8), allocatable :: tm_s0(:,:), tm_s1(:,:), tm_u0(:,:), tm_xq(:,:), tm_xt(:,:), tm_xc(:,:)
+@@ -154,6 +154,7 @@
+       if (tm_iu > 0) call tm_ucheck(2, im, levs, tm_u0, gq0(1:im,:,tm_iu))
+       if (tm_iud > 0) call tm_dry_phys(im, levs, gq0(1:im,:,tm_iud), tm_qgrs(1:im,:,1), tm_prsi, tm_area, tm_r1)
+       if (tm_iud > 0) call tm_dry_slot(2, tm_r0, tm_r1)
++      call tm_sh_phys(15, im, levs, gq0, tm_qgrs, tm_prsi, tm_area, 1)
+ 
+       if (imfshalcnv==imfshalcnv_sas .or. imfshalcnv==imfshalcnv_samf) then
+         do i=1,im
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/tm_meter.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/tm_meter.F90	2026-10-17 20:41:58.000000000 -0500
+@@ -6,7 +6,7 @@
+   public :: tm_nt, tm_np, tm_nslot, tm_pts, tm_acc, tm_neu, tm_dyn_rec, tm_phys_mass, tm_phys_add, &
+             tm_pt_zero, tm_pt_add, tm_iu, tm_umax, tm_ucheck, tm_cfl, tm_cfl_deep, &
+             tm_iud, tm_icnv, tm_c0, tm_dr, tm_drs, tm_dry_dyn, tm_dry_phys, tm_dry_slot, tm_osc, tm_osc_check, tm_cflh, &
+-            tm_samf_substep
++            tm_samf_substep, tm_shi, tm_wi, tm_sh_on, tm_shnp, tm_sha, tm_sh_dyn, tm_sh_phys, tm_sh_icstat, tm_tgi, tm_tga
+   integer, parameter :: tm_nt = 40, tm_np = 24, tm_nslot = 6
+   real(8), save :: tm_pts(2, 0:tm_nt+1, tm_np) = 0.d0
+   real(8), save :: tm_acc(2, 0:tm_nt+1, tm_nslot) = 0.d0
+@@ -20,6 +20,13 @@
+   real(8), save :: tm_osc(3, 4) = 0.d0               ! DCNV increments k=1..6 for qv, T, pt_umoist, pt_cnv:
+                                                      !   columns alternating >=4 times, columns changed, max rel inc k<=5
+   real(8), save :: tm_cflh(7) = 0.d0                 ! column-steps by max Courant: <.5 <1 <2 <3 <4 <5 >=5       ! per slot, this step: max rel change, its level, count > 1%, count cells
++  integer, save :: tm_shi(4) = 0, tm_wi(6) = 0          ! shadow: sh_d sh_m sh_p sh_v; water sphum liq ice rain snow graupel
++  logical, save :: tm_sh_on = .false.
++  integer, parameter :: tm_shnp = 20
++  real(8), save :: tm_sha(6, tm_shnp, 5) = 0.d0
++  integer, save :: tm_tgi(6) = 0                      ! tags adv rmp pbl dcv scv; 6 = pt_udry
++  integer, parameter :: tm_tgp(5) = (/ 3, 4, 12, 14, 15 /)   ! the process each tag keeps
++  real(8), save :: tm_tga(6, 7) = 0.d0
+ contains
+   pure subroutine tm_neu(s, x)
+     real(8), intent(inout) :: s(2)
+@@ -319,4 +326,163 @@
+       enddo
+     enddo
+   end subroutine tm_samf_substep
++  !> SHADOW METER (diagnostic only). Shadow tracers sh_d, sh_m, sh_p, sh_v are reset to an exactly uniform state
++  !! before each process and the departure after it is accumulated per process ip (1..tm_shnp) and quantity iq:
++  !! 1 dev_dry  2 dev_moist  3 dev_physbasis  4 frame/species term  5 residual = 1 - 4.
++  !! Stats tm_sha(1:6,ip,iq) = sum W dev^2, sum W, max|dev|, k at max, lat, lon (deg); W = dry mass * area.
++  subroutine tm_sh_acc(ip, iq, w, dev, k, lat, lon)
++    integer, intent(in) :: ip, iq, k
++    real(8), intent(in) :: w, dev, lat, lon
++    tm_sha(1,ip,iq) = tm_sha(1,ip,iq) + w*dev*dev
++    tm_sha(2,ip,iq) = tm_sha(2,ip,iq) + w
++    if (abs(dev) > tm_sha(3,ip,iq)) then
++      tm_sha(3,ip,iq) = abs(dev); tm_sha(4,ip,iq) = k; tm_sha(5,ip,iq) = lat; tm_sha(6,ip,iq) = lon
++    endif
++  end subroutine tm_sh_acc
++
++  !> dynamics frame: measure (ip > 0, only if tm_sh_on) then reset (mode 1: sh_v = sum water, 2: sh_v = sphum, 0: none)
++  subroutine tm_sh_dyn(ip, isd, jsd, is, ie, js, je, npz, q, delp, area, agrid, mode)
++    integer, intent(in) :: ip, isd, jsd, is, ie, js, je, npz, mode
++    real(8), intent(inout) :: q(isd:, jsd:, :, :)
++    real(8), intent(in) :: delp(isd:, jsd:, :), area(isd:, jsd:), agrid(isd:, jsd:, :)
++    real(8) :: sw, sc, w, rd, rp, d(5), lat, lon, dt(7)
++    integer :: i, j, k, m, jd, jm, jp, jv, n
++    jd = tm_shi(1); jm = tm_shi(2); jp = tm_shi(3); jv = tm_shi(4)
++    if (min(jd, jm, jp, jv) <= 0) return
++    do k = 1, npz
++      do j = js, je
++        do i = is, ie
++          sc = 0.d0
++          do m = 2, 6
++            sc = sc + q(i,j,k,tm_wi(m))
++          enddo
++          sw = sc + q(i,j,k,tm_wi(1))
++          rd = tm_c0*(1.d0 - sw); rp = tm_c0*(1.d0 - sc)
++          if (ip > 0 .and. tm_sh_on) then
++            w = delp(i,j,k)*(1.d0 - sw)*area(i,j)
++            d(1) = q(i,j,k,jd)/rd - 1.d0
++            d(2) = q(i,j,k,jm)/tm_c0 - 1.d0
++            d(3) = q(i,j,k,jp)/rp - 1.d0
++            d(4) = (sw - q(i,j,k,jv))/(1.d0 - sw)
++            d(5) = d(1) - d(4)
++            lat = agrid(i,j,2)*57.29577951308232d0; lon = agrid(i,j,1)*57.29577951308232d0
++            do m = 1, 5
++              call tm_sh_acc(ip, m, w, d(m), k, lat, lon)
++            enddo
++            do n = 1, 5
++              if (tm_tgi(n) > 0 .and. tm_tgp(n) /= ip) q(i,j,k,tm_tgi(n)) = q(i,j,k,tm_tgi(n)) - d(1)*rd
++            enddo
++            if (ip == 18) then
++              dt = 0.d0
++              do n = 1, 6
++                if (tm_tgi(n) > 0) dt(n) = q(i,j,k,tm_tgi(n))/rd - 1.d0
++              enddo
++              dt(7) = sum(dt(1:5)) - dt(6)
++              do n = 1, 7
++                tm_tga(1,n) = tm_tga(1,n) + w*dt(n)*dt(n); tm_tga(2,n) = tm_tga(2,n) + w
++                if (abs(dt(n)) > tm_tga(3,n)) then
++                  tm_tga(3,n) = abs(dt(n)); tm_tga(4,n) = k; tm_tga(5,n) = lat; tm_tga(6,n) = lon
++                endif
++              enddo
++            endif
++          endif
++          if (mode > 0 .and. .not. tm_sh_on) then
++            do n = 1, 5
++              if (tm_tgi(n) > 0) q(i,j,k,tm_tgi(n)) = rd
++            enddo
++          endif
++          if (mode > 0) then
++            q(i,j,k,jd) = rd; q(i,j,k,jm) = tm_c0; q(i,j,k,jp) = rp
++            if (mode == 1) then
++              q(i,j,k,jv) = sw
++            else
++              q(i,j,k,jv) = q(i,j,k,tm_wi(1))
++            endif
++          endif
++        enddo
++      enddo
++    enddo
++  end subroutine tm_sh_dyn
++
++  !> physics frame (k=1 at surface, dp = prsi(k)-prsi(k+1)); references from qgrs: qv_in, condensate_in.
++  !! measure (ip > 0) then reset (mode 1: physics references, 2: write-back references, 0: none)
++  subroutine tm_sh_phys(ip, im, levs, gq0, qgrs, prsi, area, mode)
++    integer, intent(in) :: ip, im, levs, mode
++    real(8), intent(inout) :: gq0(:,:,:)
++    real(8), intent(in) :: qgrs(:,:,:), prsi(:,:), area(:)
++    real(8) :: qv, sc, w, rd, rm, d(5), wo
++    integer :: i, k, m, jd, jm, jp, jv, n
++    jd = tm_shi(1); jm = tm_shi(2); jp = tm_shi(3); jv = tm_shi(4)
++    if (min(jd, jm, jp, jv) <= 0 .or. .not. tm_sh_on) return
++    do k = 1, levs
++      do i = 1, im
++        qv = qgrs(i,k,tm_wi(1))
++        sc = 0.d0
++        do m = 2, 6
++          sc = sc + qgrs(i,k,tm_wi(m))
++        enddo
++        rd = tm_c0*(1.d0 - qv); rm = tm_c0*(1.d0 + sc)
++        if (ip > 0) then
++          w = (prsi(i,k) - prsi(i,k+1))*(1.d0 - qv)*area(i)
++          d(1) = gq0(i,k,jd)/rd - 1.d0
++          d(2) = gq0(i,k,jm)/rm - 1.d0
++          d(3) = gq0(i,k,jp)/tm_c0 - 1.d0
++          d(4) = (qv - gq0(i,k,jv))/(1.d0 - qv)
++          d(5) = d(1) - d(4)
++          do m = 1, 5
++            call tm_sh_acc(ip, m, w, d(m), k, 0.d0, 0.d0)
++          enddo
++          if (mode > 0) then
++            do n = 1, 5
++              if (tm_tgi(n) > 0 .and. tm_tgp(n) /= ip) gq0(i,k,tm_tgi(n)) = gq0(i,k,tm_tgi(n)) - d(1)*rd
++            enddo
++          endif
++        endif
++        if (mode == 1) then
++          gq0(i,k,jd) = rd; gq0(i,k,jm) = rm; gq0(i,k,jp) = tm_c0; gq0(i,k,jv) = qv
++        elseif (mode == 2) then
++          wo = 0.d0
++          do m = 1, 6
++            wo = wo + gq0(i,k,tm_wi(m))
++          enddo
++          gq0(i,k,jd) = rd; gq0(i,k,jm) = tm_c0*(1.d0 - qv + wo); gq0(i,k,jp) = tm_c0; gq0(i,k,jv) = wo
++        endif
++      enddo
++    enddo
++  end subroutine tm_sh_phys
++
++  !> IC check of pt_udry (dry dev) and pt_umoist (moist dev): r(1:6) dry, r(7:12) moist (sum W dev^2, sum W, max, k, lat, lon)
++  subroutine tm_sh_icstat(isd, jsd, is, ie, js, je, npz, iud, ium, q, delp, area, agrid, r)
++    integer, intent(in) :: isd, jsd, is, ie, js, je, npz, iud, ium
++    real(8), intent(in) :: q(isd:, jsd:, :, :), delp(isd:, jsd:, :), area(isd:, jsd:), agrid(isd:, jsd:, :)
++    real(8), intent(out) :: r(12)
++    real(8) :: sw, w, dev
++    integer :: i, j, k, m
++    r = 0.d0
++    do k = 1, npz
++      do j = js, je
++        do i = is, ie
++          sw = 0.d0
++          do m = 1, 6
++            sw = sw + q(i,j,k,tm_wi(m))
++          enddo
++          w = delp(i,j,k)*(1.d0 - sw)*area(i,j)
++          if (iud > 0) then
++            dev = q(i,j,k,iud)/(tm_c0*(1.d0 - sw)) - 1.d0
++            r(1) = r(1) + w*dev*dev; r(2) = r(2) + w
++            if (abs(dev) > r(3)) then
++              r(3) = abs(dev); r(4) = k; r(5) = agrid(i,j,2)*57.29577951308232d0; r(6) = agrid(i,j,1)*57.29577951308232d0
++            endif
++          endif
++          if (ium > 0) then
++            dev = q(i,j,k,ium)/tm_c0 - 1.d0
++            r(7) = r(7) + w*dev*dev; r(8) = r(8) + w
++            if (abs(dev) > r(9)) then
++              r(9) = abs(dev); r(10) = k; r(11) = agrid(i,j,2)*57.29577951308232d0; r(12) = agrid(i,j,1)*57.29577951308232d0
++            endif
++          endif
++        enddo
++      enddo
++    enddo
++  end subroutine tm_sh_icstat
+ end module tm_meter
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-17 20:41:58.000000000 -0500
+@@ -212,7 +212,8 @@
+ use fv_sg_mod,          only: fv_subgrid_z
+ use fv_update_phys_mod, only: fv_update_phys
+ use tm_meter,          only: tm_dyn_rec, tm_phys_mass, tm_pt_zero, tm_pt_add, tm_pts, tm_acc, tm_np, tm_nslot, tm_neu, tm_iu, tm_umax, tm_cfl, &
+-                              tm_iud, tm_icnv, tm_dr, tm_drs, tm_dry_phys, tm_osc, tm_cflh
++                              tm_iud, tm_icnv, tm_dr, tm_drs, tm_dry_phys, tm_osc, tm_cflh, &
++                              tm_sh_dyn, tm_sh_phys, tm_sh_icstat, tm_shi, tm_wi, tm_sh_on, tm_sha, tm_shnp, tm_tgi, tm_tga
+ use fv_io_mod,          only: fv_io_register_nudge_restart
+ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
+@@ -464,6 +465,7 @@
+    ! *DH 20210326
+ 
+    call fv_restart(Atm(mygrid)%domain, Atm, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
++   call tm_sh_ic(1)
+ 
+    fv_time = Time
+ 
+@@ -579,6 +581,7 @@
+            call prt_maxmin('Before adi: W', Atm(mygrid)%w, isc, iec, jsc, jec, Atm(mygrid)%ng, npz, 1.)
+       endif
+       call adiabatic_init(zvir,Atm(mygrid)%flagstruct%nudge_dz, time)
++      call tm_sh_ic(2)
+       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
+            call prt_maxmin('After adi: W', Atm(mygrid)%w, isc, iec, jsc, jec, Atm(mygrid)%ng, npz, 1.)
+ ! Not nested?
+@@ -699,6 +702,7 @@
+ 
+    tm_iud = max(get_tracer_index(MODEL_ATMOS, 'pt_udry'), 0); tm_icnv = max(get_tracer_index(MODEL_ATMOS, 'pt_cnv'), 0)
+    tm_iu = max(get_tracer_index(MODEL_ATMOS, 'pt_umoist'), 0)
++   if (tm_first) call tm_sh_ic(3)
+    if (tm_first) then   ! TEST HOOK: exact uniform test tracers after the IC remap
+      do tm_k = 1, npz
+        do tm_j = jsc, jec
+@@ -713,6 +717,11 @@
+      tm_first = .false.
+    endif
+    call tm_dyn_rec(1, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   call tm_sh_set_idx()
++   call tm_sh_dyn(1, isd, jsd, isc, iec, jsc, jec, npz, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%agrid_64, 1)
++   if (.not. tm_sh_on) then
++     tm_sha = 0.d0; tm_sh_on = .true.
++   endif
+    do psc=1,abs(p_split)
+       p_step = psc
+                     call timing_on('fv_dynamics')
+@@ -751,6 +760,7 @@
+ 
+     enddo !p_split
+     call tm_dyn_rec(10, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++    call tm_sh_dyn(8, isd, jsd, isc, iec, jsc, jec, npz, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%agrid_64, 1)
+     if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+         Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+         if(Atm(n)%flagstruct%nf_omega>0)   then
+@@ -831,6 +841,7 @@
+     t_dt = 0.
+ 
+    call tm_dyn_rec(11, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   call tm_sh_dyn(9, isd, jsd, isc, iec, jsc, jec, npz, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%agrid_64, 2)
+    call mpp_clock_end (id_subgridz)
+ 
+  end subroutine atmosphere_dynamics
+@@ -1654,6 +1665,7 @@
+ !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
+ !     This call may be commented out if RAS or other positivity-preserving CPS is used.
+      blen = Atm_block%blksz(nb)
++     call tm_sh_phys(10, blen, npz, IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), 0)
+      call tm_phys_mass(blen, npz, nq, IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,1,nb))
+      if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,1,nb))
+      call tm_phys_mass(blen, npz, nq, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,2,nb))
+@@ -1674,6 +1686,7 @@
+      enddo
+      call tm_phys_mass(blen, npz, nq, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bs(:,:,4,nb))
+      if (tm_iud > 0) call tm_dry_phys(blen, npz, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,tm_iud), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,1), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), tm_bd(:,4,nb))
++     call tm_sh_phys(16, blen, npz, IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), tm_ar(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb)), 2)
+ 
+ 
+      do k = 1, npz
+@@ -1756,6 +1769,7 @@
+    enddo
+    deallocate(tm_bs, tm_ar, tm_bd)
+    call tm_dyn_rec(17, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   call tm_sh_dyn(17, isd, jsd, isc, iec, jsc, jec, npz, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%agrid_64, 1)
+ 
+ ! dry mass fixer in IAU interval following
+ ! https://onlinelibrary.wiley.com/doi/full/10.1111/j.1600-0870.2007.00299.x
+@@ -1826,7 +1840,9 @@
+        call timing_off('FV_UPDATE_PHYS')
+    call mpp_clock_end (id_dynam)
+    call tm_dyn_rec(18, isd, jsd, isc, iec, jsc, jec, npz, nq, Atm(n)%flagstruct%nwat, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64)
++   call tm_sh_dyn(18, isd, jsd, isc, iec, jsc, jec, npz, Atm(n)%q, Atm(n)%delp, Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%agrid_64, 1)
+    call tm_report(Atm(n), nq)
++   call tm_sh_report()
+ 
+ !--- nesting update after updating atmospheric variables with
+ !--- physics tendencies
+@@ -1857,6 +1873,86 @@
+ 
+  end subroutine atmosphere_state_update
+ 
++ !> shadow meter: tracer indices
++ subroutine tm_sh_set_idx()
++   tm_shi(1) = max(get_tracer_index(MODEL_ATMOS, 'sh_d'), 0); tm_shi(2) = max(get_tracer_index(MODEL_ATMOS, 'sh_m'), 0)
++   tm_shi(3) = max(get_tracer_index(MODEL_ATMOS, 'sh_p'), 0); tm_shi(4) = max(get_tracer_index(MODEL_ATMOS, 'sh_v'), 0)
++   tm_wi(1) = get_tracer_index(MODEL_ATMOS, 'sphum'); tm_wi(2) = get_tracer_index(MODEL_ATMOS, 'liq_wat')
++   tm_wi(3) = get_tracer_index(MODEL_ATMOS, 'ice_wat'); tm_wi(4) = get_tracer_index(MODEL_ATMOS, 'rainwat')
++   tm_wi(5) = get_tracer_index(MODEL_ATMOS, 'snowwat'); tm_wi(6) = get_tracer_index(MODEL_ATMOS, 'graupel')
++   tm_tgi(1) = max(get_tracer_index(MODEL_ATMOS, 'tg_adv'), 0); tm_tgi(2) = max(get_tracer_index(MODEL_ATMOS, 'tg_rmp'), 0)
++   tm_tgi(3) = max(get_tracer_index(MODEL_ATMOS, 'tg_pbl'), 0); tm_tgi(4) = max(get_tracer_index(MODEL_ATMOS, 'tg_dcv'), 0)
++   tm_tgi(5) = max(get_tracer_index(MODEL_ATMOS, 'tg_scv'), 0); tm_tgi(6) = max(get_tracer_index(MODEL_ATMOS, 'pt_udry'), 0)
++ end subroutine tm_sh_set_idx
++
++ !> shadow meter: IC check of pt_udry / pt_umoist (label 1 after fv_restart, 2 after adiabatic_init, 3 first dynamics call)
++ subroutine tm_sh_ic(label)
++   use mpp_mod, only: mpp_sum, mpp_max, mpp_pe, mpp_root_pe
++   integer, intent(in) :: label
++   real(8) :: r(12), s(4), v(2), vl(2), l(6)
++   integer :: iud, ium
++   call tm_sh_set_idx()
++   iud = max(get_tracer_index(MODEL_ATMOS, 'pt_udry'), 0); ium = max(get_tracer_index(MODEL_ATMOS, 'pt_umoist'), 0)
++   call tm_sh_icstat(isd, jsd, isc, iec, jsc, jec, Atm(mygrid)%npz, iud, ium, Atm(mygrid)%q, Atm(mygrid)%delp, &
++                     Atm(mygrid)%gridstruct%area_64, Atm(mygrid)%gridstruct%agrid_64, r)
++   s = (/ r(1), r(2), r(7), r(8) /); call mpp_sum(s, 4)
++   v = (/ r(3), r(9) /); vl = v; call mpp_max(v, 2)
++   l = (/ r(4), r(5), r(6), r(10), r(11), r(12) /)
++   if (vl(1) /= v(1)) l(1:3) = -1.d30
++   if (vl(2) /= v(2)) l(4:6) = -1.d30
++   call mpp_max(l, 6)
++   if (mpp_pe() == mpp_root_pe()) write(*,'(a,i3,2(es12.4,es12.4,f6.0,2f9.2))') 'SI ', label, &
++        sqrt(s(1)/max(s(2),1.d-300)), v(1), l(1:3), sqrt(s(3)/max(s(4),1.d-300)), v(2), l(4:6)
++ end subroutine tm_sh_ic
++
++ !> shadow meter: reduce and print per-step stats, then zero
++ subroutine tm_sh_report()
++   use mpp_mod, only: mpp_sum, mpp_max, mpp_pe, mpp_root_pe
++   integer, save :: st = 0
++   integer, parameter :: nn = tm_shnp*5
++   real(8) :: s(2*nn), v(nn), vl(nn), lk(nn), la(nn), lo(nn)
++   integer :: ip, iq, ix
++   st = st + 1
++   do iq = 1, 5
++     do ip = 1, tm_shnp
++       ix = (iq-1)*tm_shnp + ip
++       s(2*ix-1) = tm_sha(1,ip,iq); s(2*ix) = tm_sha(2,ip,iq)
++       v(ix) = tm_sha(3,ip,iq); lk(ix) = tm_sha(4,ip,iq); la(ix) = tm_sha(5,ip,iq); lo(ix) = tm_sha(6,ip,iq)
++     enddo
++   enddo
++   call mpp_sum(s, 2*nn)
++   vl = v; call mpp_max(v, nn)
++   where (vl /= v)
++     lk = -1.d30; la = -1.d30; lo = -1.d30
++   end where
++   call mpp_max(lk, nn); call mpp_max(la, nn); call mpp_max(lo, nn)
++   if (mpp_pe() == mpp_root_pe()) then
++     do ip = 1, tm_shnp
++       do iq = 1, 5
++         ix = (iq-1)*tm_shnp + ip
++         if (s(2*ix) > 0.d0) write(*,'(a,i5,i3,i2,2es12.4,f6.0,2f9.2)') 'SH ', st, ip, iq, s(2*ix-1)/s(2*ix), v(ix), &
++              lk(ix), la(ix), lo(ix)
++       enddo
++     enddo
++   endif
++   tm_sha = 0.d0
++   s(1:14) = reshape(tm_tga(1:2,1:7), (/14/)); call mpp_sum(s(1:14), 14)
++   v(1:7) = tm_tga(3,1:7); vl(1:7) = v(1:7); call mpp_max(v(1:7), 7)
++   lk(1:7) = tm_tga(4,1:7); la(1:7) = tm_tga(5,1:7); lo(1:7) = tm_tga(6,1:7)
++   do ix = 1, 7
++     if (vl(ix) /= v(ix)) then
++       lk(ix) = -1.d30; la(ix) = -1.d30; lo(ix) = -1.d30
++     endif
++   enddo
++   call mpp_max(lk(1:7), 7); call mpp_max(la(1:7), 7); call mpp_max(lo(1:7), 7)
++   if (mpp_pe() == mpp_root_pe()) then
++     do ix = 1, 7
++       if (s(2*ix) > 0.d0) write(*,'(a,i5,i3,2es12.4,f6.0,2f9.2)') 'TG ', st, ix, sqrt(s(2*ix-1)/s(2*ix)), v(ix), lk(ix), la(ix), lo(ix)
++     enddo
++   endif
++   tm_tga = 0.d0
++ end subroutine tm_sh_report
++
+  !> tracer-mass meter report (diagnostic builds only): gather rank Neumaier pairs, sum on root in PE order
+  subroutine tm_report(A, nq)
+    use mpp_mod, only: mpp_gather, mpp_npes, mpp_pe, mpp_root_pe, mpp_min, mpp_max, mpp_sum
+--- a/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-17 20:52:06.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90	2026-10-17 20:25:19.000000000 -0500
+@@ -149,7 +149,7 @@
+    use field_manager_mod,   only: MODEL_ATMOS
+    use tracer_manager_mod,  only: get_tracer_index
+    use fv_sg_mod,           only: neg_adj3, neg_adj2, neg_adj4
+-   use tm_meter,            only: tm_dyn_rec
++   use tm_meter,            only: tm_dyn_rec, tm_sh_dyn
+    use fv_nesting_mod,      only: setup_nested_grid_BCs
+    use fv_regional_mod,     only: regional_boundary_update, set_regional_BCs
+    use fv_regional_mod,     only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
+@@ -696,6 +696,7 @@
+          call start_group_halo_update(i_pack(13), dp1, domain)
+       endif
+       call tm_dyn_rec(2+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
++      call tm_sh_dyn(merge(2, 5, n_map==1), isd, jsd, is, ie, js, je, npz, q, delp, gridstruct%area_64, gridstruct%agrid_64, 1)
+ 
+       if ( n_map==k_split ) GFDL_interstitial%last_step = .true.
+ 
+@@ -759,6 +760,7 @@
+        endif
+                                              call timing_off('tracer_2d')
+       call tm_dyn_rec(3+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
++      call tm_sh_dyn(3, isd, jsd, is, ie, js, je, npz, q, delp, gridstruct%area_64, gridstruct%agrid_64, 1)
+     
+ #ifdef FILL2D
+      if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
+@@ -819,6 +821,7 @@
+      
+                                                   call timing_off('Remapping')
+       call tm_dyn_rec(4+3*(min(n_map,2)-1), isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
++      call tm_sh_dyn(4, isd, jsd, is, ie, js, je, npz, q, delp, gridstruct%area_64, gridstruct%agrid_64, 1)
+ 
+      if ( flagstruct%molecular_diffusion ) then
+ ! do thermosphere adjustment if it is turned on and at GFDL_interstitial%last_step.
+@@ -951,6 +954,7 @@
+   endif
+ 
+   call tm_dyn_rec(8, isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
++      call tm_sh_dyn(6, isd, jsd, is, ie, js, je, npz, q, delp, gridstruct%area_64, gridstruct%agrid_64, 1)
+   if( nwat == 6 ) then
+      if (cld_amt > 0) then
+       call neg_adj3(is, ie, js, je, ng, npz,        &
+@@ -986,6 +990,7 @@
+   endif
+ 
+   call tm_dyn_rec(9, isd, jsd, is, ie, js, je, npz, nq, nwat, q, delp, gridstruct%area_64)
++      call tm_sh_dyn(7, isd, jsd, is, ie, js, je, npz, q, delp, gridstruct%area_64, gridstruct%agrid_64, 1)
+   if( nwat == 5 ) then
+      if (cld_amt > 0) then
+       call neg_adj2(is, ie, js, je, ng, npz,        &

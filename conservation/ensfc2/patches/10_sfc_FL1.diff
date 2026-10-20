@@ -1,0 +1,30 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -588,6 +588,7 @@
+       real (kind=kind_phys) :: dt2, dt4, dt6, h1, h2, dh, wrk, wrk1,    &
+      &                         dt2i, hdi, hsni, ai, bi, a1, b1, a10, b10&
+      &,                        c1, ip, k12, k32, tsf, f1, tmelt, bmelt
++      real (kind=kind_phys) :: hold, efl, bfl
+ 
+       integer :: i
+ !
+@@ -606,7 +607,19 @@
+           if (hice(i) < hdi) then
+             snowd(i) = snowd(i) + hice(i) - hdi
+             hsni     = (hdi - hice(i)) * dsdi
++            hold     = hice(i)
+             hice (i) = hice(i) + hsni
++!           flooded snow (heat content -li) joins both layers
++            efl = min(stsice(i,2)-t0c, tfi0)
++            efl = (hold*(ci*(efl-tfi)-li) - hsni*li) / hice(i)
++            stsice(i,2) = tfi + (efl+li)/ci + t0c
++            bfl = min(stsice(i,1)-t0c, tfi0)
++            efl = (hold*(ci*(bfl-tfi)-li*(one-tfi/bfl)) - hsni*li)
++     &          / hice(i)
++            bfl = efl + ci*tfi + li
++            stsice(i,1) = (bfl - sqrt(bfl*bfl
++     &                  - 4.0_kind_phys*ci*li*tfi))
++     &                  / (ci+ci) + t0c
+           endif
+ 
+           snof(i)     = snof(i) * dwds

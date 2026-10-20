@@ -1,0 +1,128 @@
+From 080883869a7510adc8be907cc4b03721415c457e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:51 -0500
+Subject: [PATCH 1/4] SAMF: release the heat of fusion when detrained
+ condensate becomes ice
+
+samfdeepcnv and samfshalcnv split detrained condensate into ice with a
+temperature ramp (263 K to 233 K) but release no heat of fusion. Their
+moist static energy is liquid-referenced, so the frozen part's energy is
+lost.
+
+Heat the layer by hfus/cp times the frozen part (new argument hfus,
+latent_heat_of_fusion_of_water_at_0C).
+
+Measured (C96 control_p8_ugwpv1, 24 h): deep -0.4195 -> -8e-14 W/m2,
+shallow -0.0179 -> -2e-14. +0.016 K at 500-200 hPa (noise -1e-5 K), 91 % of
+the heat there, local maximum 4.4 K/day.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/CONV/SAMF/samfdeepcnv.f    | 6 +++++-
+ physics/CONV/SAMF/samfdeepcnv.meta | 8 ++++++++
+ physics/CONV/SAMF/samfshalcnv.f    | 6 +++++-
+ physics/CONV/SAMF/samfshalcnv.meta | 8 ++++++++
+ 4 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 8f862c9b..36283463 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -76,7 +76,7 @@
+ !!  \section samfdeep_detailed GFS samfdeepcnv Detailed Algorithm
+       subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &    tmf,qmicro,itc,ntc,cliq,cp,cvap,                              
+-     &    eps,epsm1,fv,grav,hvap,rd,rv,                                 
++     &    eps,epsm1,fv,grav,hvap,hfus,rd,rv,                            
+      &    t0c,delt,ntk,ntr,delp, ten_t, ten_u, ten_v, ten_q,            
+      &    prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,      
+      &    hwrf_samfdeep,progsigma,progomega,cldwrk,rn,kbot,ktop,kcnv,   
+@@ -94,6 +94,7 @@
+       use funcphys , only : fpvs
+ 
+       implicit none
++      real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+       integer, intent(in)  :: islimsk(:)
+@@ -3744,6 +3745,9 @@ c
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1  ! ice
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1) ! water
++!               freezing of the ice part releases hfus (h is liquid-referenced)
++                new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
++     &                      / real(cp, kind=conv_wp) * tem * tem1
+               else
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem
+               endif
+diff --git a/physics/CONV/SAMF/samfdeepcnv.meta b/physics/CONV/SAMF/samfdeepcnv.meta
+index ed205416..254051f6 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.meta
++++ b/physics/CONV/SAMF/samfdeepcnv.meta
+@@ -171,6 +171,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [rd]
+   standard_name = gas_constant_of_dry_air
+   long_name = ideal gas constant for dry air
+diff --git a/physics/CONV/SAMF/samfshalcnv.f b/physics/CONV/SAMF/samfshalcnv.f
+index dc2e8996..0245f37c 100644
+--- a/physics/CONV/SAMF/samfshalcnv.f
++++ b/physics/CONV/SAMF/samfshalcnv.f
+@@ -52,7 +52,7 @@
+ !!  -# For the "feedback control", calculate updated values of the state variables by multiplying the cloud base mass flux and the tendencies calculated per unit cloud base mass flux from the static control.
+ !!  \section det_samfshalcnv GFS samfshalcnv Detailed Algorithm
+       subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+-     &     eps,epsm1,fv,grav,hvap,rd,rv,                                &
++     &     eps,epsm1,fv,grav,hvap,hfus,rd,rv,                           &
+      &     t0c,delt,ntk,ntr,delp,first_time_step,restart,               & 
+      &     tmf,qmicro,progsigma,progomega,                              &
+      &     prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,     &
+@@ -66,6 +66,7 @@
+       use funcphys , only : fpvs
+ 
+       implicit none
++      real(kind=kind_phys), intent(in) :: hfus
+ !
+       integer, intent(in)  :: im, km, nn, itc, ntc, ntk, ntr, ncloud
+       integer, intent(in)  :: islimsk(:)
+@@ -2683,6 +2684,9 @@ c
+               if (new_qtr(i,k,2) > -999.0_conv_wp) then
+                 ! Ice
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1
++!               freezing of the ice part releases hfus (h is liquid-referenced)
++                new_t1(i,k) = new_t1(i,k) + real(hfus, kind=conv_wp)
++     &                      / real(cp, kind=conv_wp) * tem * tem1
+                 ! Water
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1)
+diff --git a/physics/CONV/SAMF/samfshalcnv.meta b/physics/CONV/SAMF/samfshalcnv.meta
+index 7d9415ff..4be16e15 100644
+--- a/physics/CONV/SAMF/samfshalcnv.meta
++++ b/physics/CONV/SAMF/samfshalcnv.meta
+@@ -171,6 +171,14 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [rd]
+   standard_name = gas_constant_of_dry_air
+   long_name = ideal gas constant for dry air

@@ -1,0 +1,66 @@
+From eb7a6a544fe8867e8ff458acef8f45e6ad09106f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 16:38:55 -0600
+Subject: [PATCH 2/8] Noah-MP: move truncated thin snow to the soil instead of
+ deleting it
+
+Noah-MP sets snow without layers to zero when snowh <= 1e-6 m or
+sneqv <= 1e-3 mm (energy, snowh2o, and the end of noahmp_sflx), and the water
+goes nowhere. Ice dripping off the canopy (precip_heat) reaches the ground as
+~1e-4 mm of snowfall per step, so on snow-free ground snowh2o deleted it
+every step.
+
+Add the truncated snow to the top soil layer as ice, as snowh2o already does
+with excess sublimation. Snow with layers is unchanged. The glacier module (noahmp_glacier) has its
+own thin-snow truncations, which this commit does not change.
+
+Port of ufs-community/ccpp-physics fix H (same code), measured in UFS
+(C96 control_p8_ugwpv1, 24 h, 1.77M soil column-steps): errwat summed to
+-15.6 mm, all of it in this truncation (-0.009 % of global precipitation);
+with the fix -0.014 mm, the remainder being fix I.
+
+Measured with the rest of this series in the land component
+(datm_cdeps_lnd_gswp3, 24 h, a water meter in noahmpdrv_run): Noah-MP's
+water-check residual summed over land points was -1.50 mm (-5.2e-4 of the
+precipitation, one-signed) before the series and -2.3e-9 mm (-8e-13) after;
+the metered original reproduces the regression baseline.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ src/module_sf_noahmplsm.F90 | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/module_sf_noahmplsm.F90 b/src/module_sf_noahmplsm.F90
+index d7e8d97..b918b95 100644
+--- a/src/module_sf_noahmplsm.F90
++++ b/src/module_sf_noahmplsm.F90
+@@ -943,6 +943,8 @@ contains
+     end if
+ 
+     if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+     end if
+@@ -2045,6 +2047,8 @@ endif   ! croptype == 0
+ 
+      fsno = 0.
+      if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++       ! the truncated snow goes to the top soil layer as ice
++       if(isnow == 0) smc(1) = smc(1) + sneqv/(dzsnso(1)*1000.)
+        snowh = 0.0
+        sneqv = 0.0
+      end if
+@@ -8160,6 +8164,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+    end if
+ 
+    if(snowh <= 1.e-6 .or. sneqv <= 1.e-3) then
++     ! the truncated snow goes to the top soil layer as ice
++     if(isnow == 0) sice(1) = sice(1) + sneqv/(dzsnso(1)*1000.)
+      snowh = 0.0
+      sneqv = 0.0
+    end if
+-- 
+2.55.0
+

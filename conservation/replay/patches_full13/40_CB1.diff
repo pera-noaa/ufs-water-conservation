@@ -1,0 +1,48 @@
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmp_glacier.F90
+@@ -3120,17 +3120,12 @@
+     dzc = dz+dz2
+     wicec = (wice+wice2)
+     wliqc = (wliq+wliq2)
+-    h = (cice*wice+cwat*wliq) * (t-tfrz)+hfus*wliq
+-    h2= (cice*wice2+cwat*wliq2) * (t2-tfrz)+hfus*wliq2
++    ! cb1: per-kg heat capacities (cice, cwat are per m3); phases kept, phasechange settles them
++    h = (cice/denice*wice+cwat/denh2o*wliq) * (t-tfrz)+hfus*wliq
++    h2= (cice/denice*wice2+cwat/denh2o*wliq2) * (t2-tfrz)+hfus*wliq2
+ 
+     hc = h + h2
+-    if(hc < 0.)then
+-       tc = tfrz + hc/(cice*wicec + cwat*wliqc)
+-    else if (hc.le.hfus*wliqc) then
+-       tc = tfrz
+-    else
+-       tc = tfrz + (hc - hfus*wliqc) / (cice*wicec + cwat*wliqc)
+-    end if
++    tc = tfrz + (hc - hfus*wliqc) / (cice/denice*wicec + cwat/denh2o*wliqc)
+ 
+     dz = dzc
+     wice = wicec
+--- fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ fx/ufs-weather-model/UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7999,17 +7999,12 @@
+     dzc = dz+dz2
+     wicec = (wice+wice2)
+     wliqc = (wliq+wliq2)
+-    h = (cice*wice+cwat*wliq) * (t-tfrz)+hfus*wliq
+-    h2= (cice*wice2+cwat*wliq2) * (t2-tfrz)+hfus*wliq2
++    ! cb1: per-kg heat capacities (cice, cwat are per m3); phases kept, phasechange settles them
++    h = (cice/denice*wice+cwat/denh2o*wliq) * (t-tfrz)+hfus*wliq
++    h2= (cice/denice*wice2+cwat/denh2o*wliq2) * (t2-tfrz)+hfus*wliq2
+ 
+     hc = h + h2
+-    if(hc < 0.)then
+-       tc = tfrz + hc/(cice*wicec + cwat*wliqc)
+-    else if (hc.le.hfus*wliqc) then
+-       tc = tfrz
+-    else
+-       tc = tfrz + (hc - hfus*wliqc) / (cice*wicec + cwat*wliqc)
+-    end if
++    tc = tfrz + (hc - hfus*wliqc) / (cice/denice*wicec + cwat/denh2o*wliqc)
+ 
+     dz = dzc
+     wice = wicec

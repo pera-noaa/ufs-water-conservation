@@ -1,0 +1,147 @@
+From 825afb705102dac3b452f5c8cb5844fe8e6f10cd Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Thu, 15 Oct 2026 00:31:52 -0600
+Subject: [PATCH 2/2] Thompson: do not sediment the R1 placeholder as mass
+
+In flux-form rain, ice, snow and graupel sedimentation, a layer below
+falling hydrometeors holds the R1 placeholder and inherits the fall speed
+of the layer above, and the in-loop max(R1, ...) floors re-create it every
+substep. The placeholder is therefore transported out of the lowest layer
+as if it were mass, and with the lowest-layer thresholds removed (previous
+commit) it is booked as a trace of grid-scale precipitation almost
+everywhere. Start the substeps from each layer's actual content and floor
+at 0 inside the loop.
+
+Held together with the previous commit. With this fix and Noah-MP's
+precipitation-phase rule, counting all lowest-layer sedimentation is
+within the noise of bit-perturbed initial conditions from 6 to 24 h at
+C96, but not in the first 6 h (land canopy evaporation -2.4 %): genuine
+sub-threshold traces of snow reach Noah-MP's canopy, where any intercepted
+ice hides the liquid (an open issue). Ported from the UFS held diff 13a.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ physics/MP/Thompson/module_mp_thompson.F90 | 32 ++++++++++++++++------
+ 1 file changed, 24 insertions(+), 8 deletions(-)
+
+diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
+index 24e629ae..1a01e33a 100644
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -3991,6 +3991,10 @@ module module_mp_thompson
+          nstep = nint(1./onstep(1))
+ 
+          if(.not. sedi_semi) then
++            ! floored layers carry their actual rain, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rr(k) .le. R1) rr(k) = max(0._wp, (qr1d(k) + qrten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_r(k) = vtrk(k)*rr(k)
+@@ -4001,7 +4005,7 @@ module module_mp_thompson
+                orho = 1./rho(k)
+                qrten(k) = qrten(k) - sed_r(k)*odzq*onstep(1)*orho
+                nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+-               rr(k) = max(R1, rr(k) - sed_r(k)*odzq*DT*onstep(1))
++               rr(k) = max(0._wp, rr(k) - sed_r(k)*odzq*DT*onstep(1))
+                nr(k) = max(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
+                pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                do k = ksed1(1), kts, -1
+@@ -4011,7 +4015,7 @@ module module_mp_thompson
+                                                       *odzq*onstep(1)*orho
+                   nrten(k) = nrten(k) + (sed_n(k+1)-sed_n(k))                &
+                                                       *odzq*onstep(1)*orho
+-                  rr(k) = max(R1, rr(k) + (sed_r(k+1)-sed_r(k)) &
++                  rr(k) = max(0._wp, rr(k) + (sed_r(k+1)-sed_r(k)) &
+                                                 *odzq*DT*onstep(1))
+                   nr(k) = max(R2, nr(k) + (sed_n(k+1)-sed_n(k)) &
+                                                 *odzq*DT*onstep(1))
+@@ -4101,6 +4105,10 @@ module module_mp_thompson
+ 
+       if (ANY(L_qi .eqv. .true.)) then
+          nstep = nint(1./onstep(2))
++         ! floored layers carry their actual ice, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (ri(k) .le. R1) ri(k) = max(0._wp, (qi1d(k) + qiten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_i(k) = vtik(k)*ri(k)
+@@ -4111,7 +4119,7 @@ module module_mp_thompson
+             orho = 1./rho(k)
+             qiten(k) = qiten(k) - sed_i(k)*odzq*onstep(2)*orho
+             niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+-            ri(k) = max(R1, ri(k) - sed_i(k)*odzq*DT*onstep(2))
++            ri(k) = max(0._wp, ri(k) - sed_i(k)*odzq*DT*onstep(2))
+             ni(k) = max(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
+             pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             do k = ksed1(2), kts, -1
+@@ -4121,7 +4129,7 @@ module module_mp_thompson
+                                                 *odzq*onstep(2)*orho
+                niten(k) = niten(k) + (sed_n(k+1)-sed_n(k))                 &
+                                                 *odzq*onstep(2)*orho
+-               ri(k) = max(R1, ri(k) + (sed_i(k+1)-sed_i(k)) &
++               ri(k) = max(0._wp, ri(k) + (sed_i(k+1)-sed_i(k)) &
+                                              *odzq*DT*onstep(2))
+                ni(k) = max(R2, ni(k) + (sed_n(k+1)-sed_n(k)) &
+                                              *odzq*DT*onstep(2))
+@@ -4137,6 +4145,10 @@ module module_mp_thompson
+ 
+       if (ANY(L_qs .eqv. .true.)) then
+          nstep = nint(1./onstep(3))
++         ! floored layers carry their actual snow, so the R1 placeholder is not sedimented as mass
++         do k = kts, kte
++            if (rs(k) .le. R1) rs(k) = max(0._wp, (qs1d(k) + qsten(k)*DT)*rho(k))
++         enddo
+          do n = 1, nstep
+             do k = kte, kts, -1
+                sed_s(k) = vtsk(k)*rs(k)
+@@ -4145,14 +4157,14 @@ module module_mp_thompson
+             odzq = 1./dzq(k)
+             orho = 1./rho(k)
+             qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+-            rs(k) = max(R1, rs(k) - sed_s(k)*odzq*DT*onstep(3))
++            rs(k) = max(0._wp, rs(k) - sed_s(k)*odzq*DT*onstep(3))
+             pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             do k = ksed1(3), kts, -1
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qsten(k) = qsten(k) + (sed_s(k+1)-sed_s(k))                 &
+                                                 *odzq*onstep(3)*orho
+-               rs(k) = max(R1, rs(k) + (sed_s(k+1)-sed_s(k)) &
++               rs(k) = max(0._wp, rs(k) + (sed_s(k+1)-sed_s(k)) &
+                                              *odzq*DT*onstep(3))
+                pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             enddo
+@@ -4167,6 +4179,10 @@ module module_mp_thompson
+       if (ANY(L_qg .eqv. .true.)) then
+          nstep = nint(1./onstep(4))
+          if(.not. sedi_semi) then 
++            ! floored layers carry their actual graupel, so the R1 placeholder is not sedimented as mass
++            do k = kts, kte
++               if (rg(k) .le. R1) rg(k) = max(0._wp, (qg1d(k) + qgten(k)*DT)*rho(k))
++            enddo
+             do n = 1, nstep
+                do k = kte, kts, -1
+                   sed_g(k) = vtgk(k)*rg(k)
+@@ -4175,14 +4191,14 @@ module module_mp_thompson
+                odzq = 1./dzq(k)
+                orho = 1./rho(k)
+                qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+-               rg(k) = max(R1, rg(k) - sed_g(k)*odzq*DT*onstep(4))
++               rg(k) = max(0._wp, rg(k) - sed_g(k)*odzq*DT*onstep(4))
+                pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                do k = ksed1(4), kts, -1
+                   odzq = 1./dzq(k)
+                   orho = 1./rho(k)
+                   qgten(k) = qgten(k) + (sed_g(k+1)-sed_g(k))                 &
+                                                 *odzq*onstep(4)*orho
+-                  rg(k) = max(R1, rg(k) + (sed_g(k+1)-sed_g(k)) &
++                  rg(k) = max(0._wp, rg(k) + (sed_g(k+1)-sed_g(k)) &
+                                                 *odzq*DT*onstep(4))
+                   pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                enddo
+-- 
+2.55.0
+

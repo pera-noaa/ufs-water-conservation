@@ -1,0 +1,94 @@
+From dc53c10146ce149bf5d9c4e3e208569cdedfe2d3 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 18:52:30 -0600
+Subject: [PATCH 3/5] Thompson: take the layer mass from WRF's dry-air density
+
+Thompson computes its own dry density, rho_t = 0.622 p/(R T (qv+0.622)),
+and uses rho_t*dz as each layer's air mass, while WRF's dry-air mass per
+layer is rho*dz8w with rho = 1/alt from the dynamics. The two differ by
+about R/R_d - 1 (287.04 vs 287), so sedimentation moved WRF's water by the
+wrong amount (the WRF counterpart of ufs-community/ccpp-physics fix M4).
+mp_gt_driver gets an optional rho_dry and, when present, sets
+dz1d = dz*rho_dry/rho_t, so Thompson's rho*dz is WRF's dry-air mass to
+rounding; the three Thompson calls in module_microphysics_driver pass
+rho_dry = rho. WRF calls Thompson once per step with no inner loop, so dz1d
+and rho_t refer to the same state.
+
+Measured in WRF (em_quarter_ss, doubly periodic, no surface fluxes, 2 h,
+600 microphysics calls) with a meter around mp_gt_driver: microphysics water
+change in WRF's dry-air mass plus precipitation, as a fraction of
+precipitation, original +1.5e-2; with the previous two commits -1.4e-4; with
+this one +1.7e-6. In the same runs the domain's total water changes by
+-1.1e-3 of the precipitation outside the microphysics: it is WRF's
+diff_opt=2 horizontal scalar diffusion with TKE eddy diffusivity
+(horizontal_diffusion_s), which disappears with diff_opt=0 (-1.8e-6) or
+constant K (-2.7e-5).
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ phys/module_microphysics_driver.F | 3 +++
+ phys/module_mp_thompson.F         | 6 +++++-
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/phys/module_microphysics_driver.F b/phys/module_microphysics_driver.F
+index 114fe57b..a1093c15 100644
+--- a/phys/module_microphysics_driver.F
++++ b/phys/module_microphysics_driver.F
+@@ -1197,6 +1197,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+@@ -1292,6 +1293,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+@@ -1365,6 +1367,7 @@ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &
+                      P=p,                                &
+                      W=w,                                &
+                      DZ=dz8w,                            &
++                     RHO_DRY=rho,                        &
+                      DT_IN=dt,                           &
+                      ITIMESTEP=itimestep,                &
+                      RAINNC=RAINNC,                      &
+diff --git a/phys/module_mp_thompson.F b/phys/module_mp_thompson.F
+index 1d5275d4..cd4b1674 100644
+--- a/phys/module_mp_thompson.F
++++ b/phys/module_mp_thompson.F
+@@ -1070,7 +1070,7 @@
+       SUBROUTINE mp_gt_driver(qv, qc, qr, qi, qs, qg, qb, ni, nr, nc, ng,&
+                               nwfa, nifa, nbca, nwfa2d, nifa2d, nbca2d,  &
+                               aer_init_opt, wif_input_opt,               &
+-                              th, pii, p, w, dz,                         &
++                              th, pii, p, w, dz, rho_dry,                &
+                               dt_in, itimestep,                          &
+                               RAINNC, RAINNCV, &
+                               SNOWNC, SNOWNCV, &
+@@ -1095,6 +1095,7 @@
+                           qv, qc, qr, qi, qs, qg, ni, nr, th
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(INOUT):: &
+                           nc, nwfa, nifa, nbca, qb, ng
++      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: rho_dry
+       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(IN):: nwfa2d, nifa2d, &
+                                                                 nbca2d
+       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT):: &
+@@ -1223,6 +1224,9 @@
+             p1d(k) = p(i,k,j)
+             w1d(k) = w(i,k,j)
+             dz1d(k) = dz(i,k,j)
++            ! with the host's dry density, Thompson's rho*dz is exactly the host's dry-air mass
++            if (present(rho_dry)) dz1d(k) = dz(i,k,j)*rho_dry(i,k,j) &
++                 *R*t1d(k)*(MAX(1.E-10,qv(i,k,j))+0.622)/(0.622*p1d(k))
+             qv1d(k) = qv(i,k,j)
+             qc1d(k) = qc(i,k,j)
+             qi1d(k) = qi(i,k,j)
+-- 
+2.55.0
+

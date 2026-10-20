@@ -1,0 +1,124 @@
+From d00dac9b4099fb56195cbaa324e5efebb571d585 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 15:46:33 -0600
+Subject: [PATCH 1/2] Noah-MP: send truncated canopy water to the ground
+ instead of deleting it
+
+canwater sets canopy liquid and canopy ice to zero when either is at or below
+1e-6 mm, and the water goes nowhere. Light rain or snow intercepted by the
+canopy often leaves exactly that much after evaporation and dew, so the water
+vanished on about 5 % of land column-steps; Noah-MP's own water check (errwat)
+saw the loss but nothing acts on it.
+
+canwater now returns the truncated liquid and ice (qcanl, qcani), and water()
+adds them to the rain and snowfall reaching the ground (the ice at the
+fresh-snow density). There is no phase change, so no latent heat is created
+or lost; evaporating the water through ecan instead would hand the atmosphere
+vapour whose latent heat fcev never paid.
+
+Measured with in-model meters (C96 control_p8_ugwpv1, 1.77M soil
+column-steps in 24 h): errwat summed to -0.0141 mm, and the deleted canopy
+water to 0.0141 mm, matching in every snow state to better than 1 part in
+1e4. With the fix, errwat over 6 h (431,549 column-steps) is -3.1e-9 mm
+(rounding; -2.5e-3 mm without the fix), and no column-step exceeds 1e-7 mm.
+---
+ .../Land/Noahmp/module_sf_noahmplsm.F90       | 27 ++++++++++++++-----
+ 1 file changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index b82a541f..e3f709af 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -7131,6 +7131,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ ! local
+   integer                                        :: iz
+   real (kind=kind_phys)                                           :: qinsur  !water input on soil surface [m/s]
++  real (kind=kind_phys)                                           :: qcanl, qcani !truncated canopy water, ice to the ground (mm/s)
+   real (kind=kind_phys)                                           :: qseva   !soil surface evap rate [mm/s]
+   real (kind=kind_phys)                                           :: qsdew   !soil surface dew rate [mm/s]
+   real (kind=kind_phys)                                           :: qsnfro  !snow surface frost rate[mm/s]
+@@ -7159,7 +7160,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                   esai   ,tg     ,fveg   ,iloc   , jloc, & !in
+                   bdfall ,frozen_canopy  , & !in     
+                   canliq ,canice ,tv     ,                 & !inout
+-                  cmc    ,ecan   ,etran  , & !out
++                  cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+                   fwet      )                           !out
+ 
+ ! sublimation, frost, evaporation, and dew
+@@ -7178,8 +7179,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+      qsdew = qdew - qsnfro
+ 
+      call snowwater (parameters,nsnow  ,nsoil  ,imelt  ,dt     ,zsoil  , & !in
+-          &          sfctmp ,snowhin,qsnow  ,qsnfro ,qsnsub , & !in
+-          &          qrain  ,ficeold,iloc   ,jloc   ,         & !in
++          &          sfctmp ,snowhin+qcani/bdfall,qsnow+qcani,qsnfro ,qsnsub , & !in
++          &          qrain+qcanl,ficeold,iloc   ,jloc   ,         & !in
+           &          isnow  ,snowh  ,sneqv  ,snice  ,snliq  , & !inout
+           &          sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+           &          qsnbot ,snoflow,ponding1       ,ponding2)  !out
+@@ -7201,7 +7202,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ !    qinsur = ponding/dt * 0.001
+ 
+     if(isnow == 0) then
+-       qinsur = qinsur+(qsnbot + qsdew + qrain) * 0.001
++       qinsur = qinsur+(qsnbot + qsdew + qrain + qcanl) * 0.001
+     else
+        qinsur = qinsur+(qsnbot + qsdew) * 0.001
+     endif
+@@ -7267,7 +7268,7 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+                        esai   ,tg     ,fveg   ,iloc   , jloc , & !in
+                        bdfall ,frozen_canopy  ,  & !in      
+                        canliq ,canice ,tv     ,                 & !inout
+-                       cmc    ,ecan   ,etran  , & !out
++                       cmc    ,ecan   ,etran  ,qcanl  ,qcani  , & !out
+                        fwet      )                           !out
+ 
+ ! ------------------------ code history ------------------------------
+@@ -7300,6 +7301,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+   real (kind=kind_phys), intent(out)   :: ecan    !< evaporation of intercepted water (mm/s) [+]
+   real (kind=kind_phys), intent(out)   :: etran   !< transpiration rate (mm/s) [+]
+   real (kind=kind_phys), intent(out)   :: fwet    !< wetted or snowed fraction of the canopy (-)
++  real (kind=kind_phys), intent(out)   :: qcanl   !< truncated canopy water to the ground (mm/s)
++  real (kind=kind_phys), intent(out)   :: qcani   !< truncated canopy ice to the ground (mm/s)
+ ! --------------------------------------------------------------------
+ 
+ ! ------------------------ local variables ---------------------------
+@@ -7316,6 +7319,8 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ ! initialization
+ 
+       ecan    = 0.0
++      qcanl   = 0.0
++      qcani   = 0.0
+ 
+ ! --------------------------- liquid water ------------------------------
+ ! maximum canopy water
+@@ -7343,7 +7348,11 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+        qevac = min(canliq/dt,qevac)
+        canliq=max(0.,canliq+(qdewc-qevac)*dt)
+-       if(canliq <= 1.e-06) canliq = 0.0
++       if(canliq <= 1.e-06) then
++         ! the truncated canopy water drips to the ground
++         qcanl  = canliq/dt
++         canliq = 0.0
++       end if
+ 
+ ! --------------------------- canopy ice ------------------------------
+ ! for canopy ice
+@@ -7352,7 +7361,11 @@ zolmax = xkrefsqr / sqrt(xkzo)   ! maximum z/L
+ 
+       qsubc = min(canice/dt,qsubc) 
+       canice= max(0.,canice + (qfroc-qsubc)*dt)
+-      if(canice.le.1.e-6) canice = 0.
++      if(canice.le.1.e-6) then
++        ! the truncated canopy ice falls to the ground
++        qcani  = canice/dt
++        canice = 0.
++      end if
+      
+ ! wetted fraction of canopy
+ 
+-- 
+2.55.0
+

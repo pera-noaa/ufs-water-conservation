@@ -1,0 +1,75 @@
+From b6b9565f8d0e2676e68af81b7c7137c5e641090e Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:52 -0500
+Subject: [PATCH 1/4] sfc_sice: step the sea ice once per time step
+
+In a cell with ice and open water, NSST re-flags the cell for the second
+surface iteration, and sfc_sice steps the ice again from the state the first
+pass updated: 1.9 % of ice column-steps were stepped twice (calls per
+column-step 1.0186).
+
+Pass the CCPP loop counter as an optional iter and compute the ice on the
+first pass only.
+
+Measured (C96 control_p8_ugwpv1, 24 h): calls per column-step 1.0000;
+about -0.010 W/m2 of ice energy. With the ice3lay fixes: ice thickness rms
+1.7e-3 m (noise 8e-5), snow over ice rms 0.105 (noise 0.052); other fields
+at noise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/SFC_Models/SeaIce/CICE/sfc_sice.f    | 5 ++++-
+ physics/SFC_Models/SeaIce/CICE/sfc_sice.meta | 8 ++++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/physics/SFC_Models/SeaIce/CICE/sfc_sice.f b/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+index 6e0aa67d..3d7ecd2d 100644
+--- a/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
++++ b/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+@@ -43,7 +43,7 @@
+      &       hice, fice, tice, weasd, tsfc_wat, tprcp, tiice, ep,       & !  ---  input/outputs:
+      &       snwdph, qss_i, qss_w, snowmt, gflux, cmm, chh,             &
+      &       evapi, evapw, hflxi, hflxw, islmsk,                        &
+-     &       errmsg, errflg
++     &       errmsg, errflg, iter
+      &     )
+ 
+ ! ===================================================================== !
+@@ -155,6 +155,7 @@
+ 
+ !  ---  inputs:
+       integer, intent(in) :: im, kice, ipr
++      integer, optional, intent(in) :: iter
+       logical, intent(in) :: lprnt
+       logical, intent(in) :: thsfc_loc
+ 
+@@ -218,6 +219,8 @@
+       do i = 1, im
+         flag(i) = islmsk(i) == 2 .and. flag_iter(i)                     &
+      &                           .and. use_lake_model(i) /=1
++!       ice is stepped once: an icy cell with open water is re-flagged for NSST's second pass
++        if (present(iter)) flag(i) = flag(i) .and. iter == 1
+         do_sice = do_sice .or. flag(i)
+ !       if (flag_iter(i) .and. islmsk(i) < 2) then
+ !         hice(i) = zero
+diff --git a/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta b/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+index 7c3b93a0..a9a4f676 100644
+--- a/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
++++ b/physics/SFC_Models/SeaIce/CICE/sfc_sice.meta
+@@ -439,3 +439,11 @@
+   dimensions = ()
+   type = integer
+   intent = out
++[iter]
++  standard_name = ccpp_loop_counter
++  long_name = loop counter for subcycling loops in CCPP
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++  optional = True
+-- 
+2.31.1
+

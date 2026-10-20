@@ -1,0 +1,3 @@
+patching file UFSATM/ccpp/physics/physics/SFC_Models/SeaIce/CICE/sfc_sice.f
+Hunk #1 succeeded at 591 (offset 3 lines).
+Hunk #2 succeeded at 610 (offset 3 lines).

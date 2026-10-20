@@ -1,0 +1,3 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+patching file UFSATM/ccpp/physics/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90

@@ -1,0 +1,10 @@
+patching file UFSATM/ccpp/data/GFS_typedefs.F90
+patching file UFSATM/ccpp/data/GFS_typedefs.meta
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.meta
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+patching file UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.meta
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90
+patching file UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.meta
+patching file UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90

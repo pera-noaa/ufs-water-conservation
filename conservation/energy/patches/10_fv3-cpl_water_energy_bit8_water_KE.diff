@@ -1,0 +1,31 @@
+diff -ruN a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90 b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90
+--- a/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-18 01:11:32.000000000 -0500
++++ b/UFSATM/fv3/atmos_cubed_sphere/driver/UFS/atmosphere.F90	2026-10-18 01:11:40.000000000 -0500
+@@ -2728,7 +2728,7 @@
+    real(kind=kind_phys), parameter :: c_liq = 4.1855e+3, c_ice = 1972., t_frz = 273.15  ! = fv_mapz c_liq, c_ice
+    real(kind=kind_phys) :: dpn(npz), dm(npz), dmv(npz), tk(npz), phib(npz+1), ftop(npz+1)
+    real(kind=kind_phys) :: qpe(npz), qfw(npz), qse(npz), qp, cb, e
+-   real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr
++   real(kind=kind_phys) :: fpl(npz+1), fpi(npz+1), fr, ked(npz)
+    integer :: ix, i, j, im, k, k1, n, nwat
+    n = mygrid
+    nwat = Atm(n)%flagstruct%nwat
+@@ -2753,6 +2753,10 @@
+          dm(k1) = dpn(k1) - Atm(n)%delp(i,j,k1)
+          dmv(k1) = qp*IPD_Stateout%gq0(im,k,sphum) - Atm(n)%delp(i,j,k1)*Atm(n)%q(i,j,k1,sphum)
+          tk(k1) = Atm(n)%pt(i,j,k1)
++         ! KE (FV3 total-energy form: D-grid KE + w^2/2) the written water mass carries
++         ked(k1) = 0.25*Atm(n)%gridstruct%rsin2(i,j)*(Atm(n)%u(i,j,k1)**2 + Atm(n)%u(i,j+1,k1)**2       &
++                 + Atm(n)%v(i,j,k1)**2 + Atm(n)%v(i+1,j,k1)**2 - (Atm(n)%u(i,j,k1) + Atm(n)%u(i,j+1,k1))   &
++                 *(Atm(n)%v(i,j,k1) + Atm(n)%v(i+1,j,k1))*Atm(n)%gridstruct%cosa_s(i,j)) + 0.5*Atm(n)%w(i,j,k1)**2
+       enddo
+       ! net downward water flux through the top of each layer (Pa); ftop(npz+1) = P - E
+       ftop(1) = 0.
+@@ -2785,6 +2789,7 @@
+          if (iand(ibits, 1) /= 0) e = e + qpe(k1)
+          if (iand(ibits, 2) /= 0) e = e + qfw(k1)
+          if (iand(ibits, 4) /= 0) e = e + qse(k1)
++         if (iand(ibits, 8) /= 0) e = e - dm(k1)*ked(k1)
+          ! fv_update_phys injects cp_air*t_dt*dt*delp_new/grav
+          t_dt(i,j,k1) = t_dt(i,j,k1) + e*rdt/(cp_air*dpn(k1))
+       enddo

@@ -1,0 +1,4 @@
+d2_0|fv3_c_b1.exe|^n_split=8|s/^(dt_atmos:\s+).*/\11440/||all|30
+d2_S1|fv3_c_b1.exe|^n_split=8,nst_spray_opt=1|s/^(dt_atmos:\s+).*/\11440/||all|30
+t10_0|fv3_c_b1.exe||s/^(nhours_fcst:\s+).*/\1240/; s/^(restart_interval:\s+).*/\1240/; s/^(output_fh:\s+).*/\10 24 48 72 96 120 144 168 192 216 240/||all|100
+t10_S1|fv3_c_b1.exe|nst_spray_opt=1|s/^(nhours_fcst:\s+).*/\1240/; s/^(restart_interval:\s+).*/\1240/; s/^(output_fh:\s+).*/\10 24 48 72 96 120 144 168 192 216 240/||all|100

@@ -1,0 +1,16 @@
+# mT8F1/out: 119 steps, frame F, W m-2
+E_F(end) - E_F(start)                                              +5.209677e+00
+F_F = F_P + DEF (rad + SH + water boundary enthalpy)               +5.054211e+00
+RESIDUAL                                                           +1.554659e-01
+ dycore: fixer window                                              +2.026852e-10
+ dycore: other (fv_sg heat; its KE in coupling)                    +4.130856e-03
+ physics: sum of scheme residuals r_P (physics frame)              +1.697476e-01
+ coupling in frame F: E_F(6)-E_F(4) - dE_P - DEF                   -1.841253e-02
+   S_rem: physics latent heats vs Kirchhoff L(T)                   -1.904237e-02
+   KE: write + update (KD+KW) - physics dK                         -2.307564e-02
+   thermodynamic remainder (R_thermo) = coupling - S_rem - KE      +2.370548e-02
+   applied C1 heating (encpl meter)                                -5.801450e-01
+declared: surface hand-off heating (segment 3: ensfc2 LW1 + EV1, booked surface flux) +1.554492e-01
+declared: h2ophys chemical water source S_chem = hvap*dWv          +1.436427e-05
+RESIDUAL net of the declared terms                                 +2.347718e-06
+# note: RESIDUAL = dycore + r_P + coupling_F; r_P + S_rem is the scheme-vs-Kirchhoff remainder

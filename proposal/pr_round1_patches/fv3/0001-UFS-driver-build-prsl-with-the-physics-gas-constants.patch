@@ -1,0 +1,54 @@
+From c65acaf979f6295b3047a0f005361e6d9eb2cf2f Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:50 -0500
+Subject: [PATCH 1/6] UFS driver: build prsl with the physics' gas constants
+
+atmos_phys_driver_statein gives the physics the layer pressure
+prsl = dm*rTv/dphi with rTv = rdgas*T*(1+zvir*q), using the dycore's
+constants. The physics turns prsl back into density with its own con_rd
+and con_fvirt (the boundary layer's rho_a, Noah-MP's density). In a 32-bit
+build rdgas is single precision (287.04998779 for 287.05), so that density
+differs from the layer's actual mass per volume, dm/dphi, by 4.25e-8.
+
+The boundary layer adds evap*del/(g*dz) of water but books evap*rho_a,
+which is also what Noah-MP debits from the land: the atmosphere received
+4.1e-8 of surface evaporation more than the land lost.
+
+Compute rTv with con_rd and con_fvirt.
+
+Measured with in-model meters (C96 control_p8_ugwpv1, 32-bit dycore): added
+minus booked fell from +4.11e-8 of evaporation (+3.1e-8 kg/m2 per 6 h) to
+1.6e-16.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ driver/UFS/atmosphere.F90 | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/driver/UFS/atmosphere.F90 b/driver/UFS/atmosphere.F90
+index f2654b5..4e6c0ab 100644
+--- a/driver/UFS/atmosphere.F90
++++ b/driver/UFS/atmosphere.F90
+@@ -155,6 +155,7 @@ use constantsR4_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+ #else
+ use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+ #endif
++use physcons,               only: con_rd, con_fvirt
+ use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
+                                   operator(-), operator(/), time_type_to_real
+ use fms_mod,                only: error_mesg, FATAL,                 &
+@@ -2295,7 +2296,8 @@ contains
+            rTv = rdgas*IPD_Statein%tgrs(im,k)*virq_max(q_grs(:),q_min)
+ #else
+            qgrs_rad = max(qmin,IPD_Statein%qgrs(im,k,sphum))
+-           rTv = rdgas*IPD_Statein%tgrs(im,k)*(1.+zvir*qgrs_rad)
++           ! the physics' constants: it turns prsl back into density with con_rd
++           rTv = con_rd*IPD_Statein%tgrs(im,k)*(1.+con_fvirt*qgrs_rad)
+ #endif
+            if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure )   &
+                 IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) &
+-- 
+2.31.1
+

@@ -1,0 +1,166 @@
+From 8486c044e604e7ddfecf3fb4ec0d93e3e017a208 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:48 -0500
+Subject: [PATCH 6/6] Thompson: send water at or below R1 to vapour instead of
+ deleting it
+
+Three places delete hydrometeor mass at the R1 (1e-12) threshold:
+
+- On entry, condensate with q <= R1 is set to zero and returned to the
+  host that way.
+- semi_lagrange_sedim leaves inputs <= R1 (including the R1 placeholders
+  for absent rain and graupel) out of the transport and floors its output
+  at R1, so rain falling into an empty layer is booked R1 short and a
+  layer that empties is left at R1.
+- Where the rain left after the source/sink terms is <= R1, qrten is set
+  to -qr1d/dt, discarding the rain those terms produced.
+
+On entry and for the leftover rain, the water now goes to vapour with its
+latent heat, as for condensate clipped at the end of the step. A column
+whose entry exchange leaves vapour below the floor (negative condensate
+larger than the vapour) skips the no-microphysics early return, so the
+end-of-step refill handles it rather than mp_gt_driver's negative-vapour
+fixer, which sets the vapour to the mean of its neighbours. Such columns
+then run the full microphysics, and the refill may borrow vapour from other
+layers; the water involved is negligible.
+semi_lagrange_sedim returns the mass it did not transport unchanged and
+no longer floors its output; the rain-number floor R2 moves to the caller.
+Layers that Thompson holds at the R1 floor before rain and graupel
+sedimentation (rr = max(R1, ...)) start it from their actual content, so
+the floor is not transported as mass. Later uses of rain and graupel
+density are already guarded by > R1.
+
+Measured with a double-precision meter that closes the physics' column
+water against its own surface fluxes every step (C96 control_p8_ugwpv1,
+24 h, all other water-conservation fixes applied, and Thompson's
+lowest-layer precipitation thresholds also removed, a change held
+separately): the physics lost
+6.0e-8 kg/m2 (2e-8 of precipitation), all of it in these three places;
+with the fix 4.0e-15, and the largest single-column residual fell from
+1.6e-8 to 2e-13 kg/m2. Without the floor start, the transported floor left
+1.2e-8 kg/m2 per day of negative rain at the end of the step; with it,
+1e-17.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/MP/Thompson/module_mp_thompson.F90 | 34 +++++++++++++++++++++-
+ 1 file changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
+index 9f2038f0..c1f22194 100644
+--- a/physics/MP/Thompson/module_mp_thompson.F90
++++ b/physics/MP/Thompson/module_mp_thompson.F90
+@@ -2275,6 +2275,9 @@ module module_mp_thompson
+                endif
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qc1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qc1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qc1d(k) = 0.0
+             nc1d(k) = 0.0
+             rc(k) = R1
+@@ -2302,6 +2305,9 @@ module module_mp_thompson
+                ni(k) = cig(1)*oig2*ri(k)/am_i*lami**bm_i
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qi1d(k)
++            t1d(k) = t1d(k) - lsub*qi1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qi1d(k) = 0.0
+             ni1d(k) = 0.0
+             ri(k) = R1
+@@ -2331,6 +2337,9 @@ module module_mp_thompson
+                nr(k) = crg(2)*org3*rr(k)*lamr**bm_r / am_r
+             endif
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qr1d(k)
++            t1d(k) = t1d(k) - (lvap0 + (2106.0 - 4218.0)*(t1d(k)-273.15))*qr1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qr1d(k) = 0.0
+             nr1d(k) = 0.0
+             rr(k) = R1
+@@ -2342,6 +2351,9 @@ module module_mp_thompson
+             rs(k) = qs1d(k)*rho(k)
+             L_qs(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qs1d(k)
++            t1d(k) = t1d(k) - lsub*qs1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qs1d(k) = 0.0
+             rs(k) = R1
+             L_qs(k) = .false.
+@@ -2351,6 +2363,9 @@ module module_mp_thompson
+             rg(k) = qg1d(k)*rho(k)
+             L_qg(k) = .true.
+          else
++            ! at or below R1: to vapour with its latent heat, not deleted
++            qv1d(k) = qv1d(k) + qg1d(k)
++            t1d(k) = t1d(k) - lsub*qg1d(k)/(Cp*(1.+0.887*qv(k)))*(1-IFDRY)
+             qg1d(k) = 0.0
+             rg(k) = R1
+             L_qg(k) = .false.
+@@ -2407,6 +2422,10 @@ module module_mp_thompson
+ !! condense cloud water, just exit quickly!
+ !+---+-----------------------------------------------------------------+
+ 
++!..Entry exchanges can leave vapour below the floor; such a column goes through the end-of-step refill.
++      do k = kts, kte
++         if (qv1d(k) .lt. 1.E-10) no_micro = .false.
++      enddo
+       if (no_micro) return
+ 
+ !+---+-----------------------------------------------------------------+
+@@ -3352,6 +3371,9 @@ module module_mp_thompson
+                nrten(k) = (xnr-nr1d(k)*rho(k))*odts*orho
+             endif
+          else
++            ! rain left at or below R1 goes to vapour with its latent heat, not deleted
++            qvten(k) = qvten(k) + (qr1d(k) + qrten(k)*dtsave)*odts
++            tten(k) = tten(k) - lvap(k)*ocp(k)*(qr1d(k) + qrten(k)*dtsave)*odts*(1-IFDRY)
+             qrten(k) = -qr1d(k)*odts
+             nrten(k) = -nr1d(k)*odts
+          endif
+@@ -4016,11 +4038,16 @@ module module_mp_thompson
+             dtcfl = dt
+             niter = int(nstep/max(decfl,1)) + 1
+             dtcfl = dt/niter
++            ! floored layers carry their actual rain, so the R1 floor is not sedimented as mass
++            do k = kts, kte
++               if (rr(k) .le. R1) rr(k) = (qr1d(k) + qrten(k)*DT)*rho(k)
++            enddo
+             do n = 1, niter
+                rr_tmp(:) = rr(:)
+                nr_tmp(:) = nr(:)
+                call semi_lagrange_sedim(kte,dzq,vtrk,rr,rainsfc,pfll,dtcfl,R1)
+                call semi_lagrange_sedim(kte,dzq,vtnrk,nr,vtr,pdummy,dtcfl,R2)
++               nr(:) = max(nr(:), R2)
+                do k = kts, kte
+                   orhodt = 1./(rho(k)*dt)
+                   qrten(k) = qrten(k) + (rr(k) - rr_tmp(k)) * orhodt
+@@ -4183,6 +4210,10 @@ module module_mp_thompson
+             dtcfl = dt
+             niter = int(nstep/max(decfl,1)) + 1
+             dtcfl = dt/niter
++            ! floored layers carry their actual graupel, so the R1 floor is not sedimented as mass
++            do k = kts, kte
++               if (rg(k) .le. R1) rg(k) = (qg1d(k) + qgten(k)*DT)*rho(k)
++            enddo
+ 
+             do n = 1, niter
+                rg_tmp(:) = rg(:)
+@@ -6554,7 +6585,8 @@ module module_mp_thompson
+       enddo
+ !
+ ! replace the new values
+-      rql(:) = max(qn(:),R1)
++      ! mass not transported (inputs <= R1) stays in place; no floor, so the column change is -precip
++      rql(:) = qn(:) + (rql(:) - qq(:))
+ 
+    END SUBROUTINE semi_lagrange_sedim
+ 
+-- 
+2.31.1
+

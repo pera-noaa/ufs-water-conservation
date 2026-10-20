@@ -1,0 +1,40 @@
+From 8b1964b10d3fa0973cebb2e0d095b2528bfd5344 Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Mon, 19 Oct 2026 12:24:55 -0500
+Subject: [PATCH 1/2] GFDL MP v3: convert back to specific ratios on the input
+ mass basis
+
+The species enter as mixing ratios with 1/(1 - qv_in) and leave with
+1/(1 + qv_new), so the host's species mass is the true mass divided by
+(1 - qv_in)*(1 + r_v,new). The same defect was fixed in Thompson.
+
+Convert back with 1/(1 - qv_in): the host keeps the input layer mass.
+
+Measured (control_iovr4_gfdlmpv3, C96, 24 h): microphysics water residual
+-8.39e-3 -> -9.3e-16 kg/m2/day (-1.03 % of its precipitation). T +0.001 K,
+precipitation +0.15 %, rms 1.1-1.3x noise.
+
+Part of a water-conservation project for UFS physics (NOAA GML / CIRES).
+
+AI-assisted: written with Claude Opus 5.5; reviewed by author
+---
+ physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90 | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90 b/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+index 55aaa9e0..b5c24030 100644
+--- a/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
++++ b/physics/MP/GFDL/v3_2022/gfdl_cloud_microphys_v3_mod.F90
+@@ -1220,7 +1220,8 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
+                 q_cond = qlz (k) + qrz (k) + qiz (k) + qsz (k) + qgz (k)
+                 con_r8 = one_r8 + qvz (k) + q_cond
+             else
+-                con_r8 = one_r8 + qvz (k)
++                ! host keeps the input layer mass: back to specific ratios on the input basis (dp = delp*(1-qv_in))
++                con_r8 = one_r8 / (one_r8 - qv (i, k))
+             endif
+ 
+             delp (i, k) = dp (k) * con_r8
+-- 
+2.31.1
+

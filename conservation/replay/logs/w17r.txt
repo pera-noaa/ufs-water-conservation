@@ -1,0 +1,14 @@
+dev + water 01-16: 16 diffs applied at -F0
+arm 17r:
+  17r_NM10r_noahmp_precip_phase.diff on a17r: applies (offsets 0, failed hunks 0)
+  18_NM11_noahmp_ground_vapour_latent_heat.diff on a17r: applies (offsets 3, failed hunks 0)
+reference arm 17:
+  17_NM10_noahmp_precip_phase.diff on a17: applies (offsets 0, failed hunks 0)
+  18_NM11_noahmp_ground_vapour_latent_heat.diff on a17: applies (offsets 0, failed hunks 0)
+known-bad: 17r after 17 (dry run):
+  17r_NM10r_noahmp_precip_phase.diff on kb1: FAILS (offsets 0, failed hunks 3)
+known-bad: 17r on bare develop (dry run):
+  17r_NM10r_noahmp_precip_phase.diff on dev: applies (offsets 8, failed hunks 0)
+17r arm vs 17 arm, files differing:
+Files a17r/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 and a17/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 differ
+Files a17r/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 and a17/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 differ

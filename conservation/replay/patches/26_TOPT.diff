@@ -1,0 +1,183 @@
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_GWD_generic_post.F90	2026-10-18 00:18:31
+@@ -93,7 +93,9 @@
+         case (4) !Current state unchanged
+                   !Accumulated tendency unchanged
+                   !Current tendency unchanged (but will be overwritten during next primary scheme)
+-          exit case_GWD_ten
++          errflg = 1
++          errmsg = 'tend_opt_gwd = 4 would discard the GWD tendencies (no other scheme applies them): use 1, 2 or 3'
++          return
+         case default
+           errflg = 1
+           errmsg = 'A tendency application control was outside of the acceptable range (1-4)'
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_post.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_post.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_post.F90	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_post.F90	2026-10-18 00:18:31
+@@ -408,7 +408,9 @@
+         case (4) !Current state unchanged
+                   !Accumulated tendency unchanged
+                   !Current tendency unchanged (but will be overwritten during next primary scheme)
+-          exit case_PBL_ten
++          errflg = 1
++          errmsg = 'tend_opt_pbl = 4 would discard the PBL tendencies (no other scheme applies them): use 1, 2 or 3'
++          return
+         case default
+           errflg = 1
+           errmsg = 'A tendency application control was outside of the acceptable range (1-4)'
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.F90 b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.F90
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.F90	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.F90	2026-10-18 00:18:31
+@@ -15,7 +15,8 @@
+                first_time_step, restart,                                &
+                satmedmf, trans_trac, do_shoc, ltaerosol, ntrac, ntcw,   &
+                ntiw, ntclamt, ntrw, ntsw, ntrnc, ntsnc, ntgl, ntgnc,    &
+-               xlon, xlat, gt0, gq0, sigmain,sigmaout,qmicro,           &
++               xlon, xlat, gt0, gq0, gu0, gv0, dtp, dtdt, dudt, dvdt,   &
++               dqdt, sigmain,sigmaout,qmicro,                           &
+                omegain,omegaout,imp_physics, imp_physics_mg,            &
+                imp_physics_gfdl, imp_physics_thompson,                  &
+                imp_physics_wsm6, imp_physics_fer_hires, prsi,           &
+@@ -45,8 +46,11 @@
+       real(kind=kind_phys), intent(in   ), dimension(:,:)   :: prsl, prslk
+       real(kind=kind_phys), intent(in   ), dimension(:,:)   :: prsi
+       real(kind=kind_phys), intent(in   ), dimension(:)     :: xlon, xlat
+-      real(kind=kind_phys), intent(in   ), dimension(:,:)   :: gt0
+-      real(kind=kind_phys), intent(in   ), dimension(:,:,:) :: gq0
++      real(kind=kind_phys), intent(inout), dimension(:,:)   :: gt0, gu0, gv0
++      real(kind=kind_phys), intent(inout), dimension(:,:,:) :: gq0
++      real(kind=kind_phys), intent(in   )                   :: dtp
++      real(kind=kind_phys), intent(inout), dimension(:,:)   :: dtdt, dudt, dvdt
++      real(kind=kind_phys), intent(inout), dimension(:,:,:) :: dqdt
+ 
+       real(kind=kind_phys), intent(inout   ), dimension(:,:), optional :: sigmain, omegain
+       real(kind=kind_phys), intent(inout   ), dimension(:,:), optional :: sigmaout, qmicro, omegaout
+@@ -73,6 +77,22 @@
+       ! Initialize CCPP error handling variables
+       errmsg = ''
+       errflg = 0
++
++      ! apply the process-split sum still pending (a tend_opt_* = 2 with no later 3), once, before convection
++      do k=1,levs
++        do i=1,im
++          if (dtdt(i,k) /= zero) gt0(i,k) = gt0(i,k) + dtp*dtdt(i,k)
++          if (dudt(i,k) /= zero) gu0(i,k) = gu0(i,k) + dtp*dudt(i,k)
++          if (dvdt(i,k) /= zero) gv0(i,k) = gv0(i,k) + dtp*dvdt(i,k)
++          dtdt(i,k) = zero
++          dudt(i,k) = zero
++          dvdt(i,k) = zero
++          do n=1,ntrac
++            if (dqdt(i,k,n) /= zero) gq0(i,k,n) = gq0(i,k,n) + dtp*dqdt(i,k,n)
++            dqdt(i,k,n) = zero
++          enddo
++        enddo
++      enddo
+ 
+       ! In case of using prognostic updraft area fraction, initialize area fraction here
+       ! since progsigma_calc is called from both deep and shallow schemes.
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.meta b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.meta
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.meta	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_suite_interstitial_3.meta	2026-10-18 00:18:31
+@@ -234,7 +234,7 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  intent = in
++  intent = inout
+ [gq0]
+   standard_name = tracer_concentration
+   long_name = tracer concentration
+@@ -242,7 +242,63 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
+   type = real
+   kind = kind_phys
++  intent = inout
++[gu0]
++  standard_name = x_wind
++  long_name = zonal wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[gv0]
++  standard_name = y_wind
++  long_name = meridional wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics timestep
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
+   intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = air temperature tendency due to model physics
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = zonal wind tendency due to model physics
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = meridional wind tendency due to model physics
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [sigmain]
+   standard_name = physics_timestep_initial_updraft_area_fraction
+   long_name = convective updraft area fraction
+diff -ruN a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f
+--- a/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f	2026-10-18 00:18:31
+@@ -535,7 +535,10 @@
+         !Accumulated tendency unchanged
+         !Current tendency unchanged (but will be overwritten during 
+         !                            next primary scheme)
+-          exit case_rad_scaler_ten
++          errflg = 1
++          errmsg = 'tend_opt_rad_scaler = 4 would discard the '//
++     &             'radiative heating: use 1, 2 or 3'
++          return
+         case default
+           errflg = 1
+           write(errmsg,'(*(a))') 'A tendency application control was ', &
+diff -ruN a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper_post.F90 b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper_post.F90
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper_post.F90	2026-10-18 00:18:31
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper_post.F90	2026-10-18 00:18:31
+@@ -87,7 +87,9 @@
+       case (4) !Current state unchanged
+                 !Accumulated tendency unchanged
+                 !Current tendency unchanged (but will be overwritten during next primary scheme)
+-        exit case_pbl_ten
++        errflg = 1
++        errmsg = 'tend_opt_pbl = 4 would discard the PBL tendencies (no other scheme applies them): use 1, 2 or 3'
++        return
+       case default
+         errflg = 1
+         errmsg = 'A tendency application control was outside of the acceptable range (1-4)'

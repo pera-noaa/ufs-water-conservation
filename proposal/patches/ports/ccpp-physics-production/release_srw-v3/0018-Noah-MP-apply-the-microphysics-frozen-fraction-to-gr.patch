@@ -1,0 +1,82 @@
+From ab20da141c89ddee611b427a73b358c77013bbef Mon Sep 17 00:00:00 2001
+From: Ash Pera <ashley.pera@noaa.gov>
+Date: Wed, 14 Oct 2026 22:47:48 -0600
+Subject: [PATCH 18/18] Noah-MP: apply the microphysics' frozen fraction to
+ grid-scale precipitation only
+
+With opt_snf 4 or 5, atm sets the snow fraction fpice = prcp_frozen/prcpnonc,
+the microphysics' frozen fraction of grid-scale precipitation, and applies
+it to all precipitation, convective included. Where the grid-scale
+precipitation is only a trace of snow, fpice is 1 and the point's convective
+rain falls as snow; where there is no grid-scale precipitation, convective
+snow falls as rain.
+
+Apply the microphysics fraction to grid-scale precipitation only, and make
+convective precipitation snow below freezing. This is the host's own rule
+for the snow fraction srflag (GFS_MP_generic_post, convective snow when
+tsfc < 273.15 K, grid-scale phase from the microphysics); Noah-MP's atm
+has the air temperature, not the skin temperature. The fresh-snow density
+is blended by mass.
+
+Rain + snow = prcp to one rounding step. Without convective precipitation
+the result is bit-for-bit unchanged.
+
+Measured with a single-column noahmpdrv_run harness built from this
+branch's own sources: cold convective snow (265 K, no grid-scale
+precipitation) left 0.15 mm of snow over two days; now 7.8 mm. Tropical
+convective rain of 43 mm/day with 1e-14 mm/s of grid-scale snow no longer
+builds a snowpack at 300 K (6.6 mm before). Without convective
+precipitation the results are bit-for-bit unchanged over 24,000 fuzz
+calls. In 24-h C96 forecasts on ufs/dev (develop + all fixes) the change
+is within the noise of bit-perturbed initial conditions on every land and
+atmosphere metric checked. Ported from the ufs/dev change.
+
+Found while tracing a change in land evaporation: counting all
+sedimentation out of Thompson's lowest layer as precipitation (a change
+held separately) books a trace of the R1 placeholder as grid-scale snow,
+which this rule turned into snow from convective rain.
+
+AI-assisted: written with Claude Code (Anthropic); reviewed by the author.
+---
+ .../SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90    | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90 b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+index a8bd77ea..a734a61b 100644
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -1011,6 +1011,8 @@ contains
+ 
+   real (kind=kind_phys)                                        :: pair   !atm bottom level pressure (pa)
+   real (kind=kind_phys)                                        :: prcp_frozen   !total frozen precipitation [mm/s] ! mb/an : v3.7
++  real (kind=kind_phys)                                        :: fpcv          !frozen fraction of convective precipitation
++  real (kind=kind_phys)                                        :: bdfall0       !snow density before the mix [kg/m3]
+   real (kind=kind_phys), parameter                             :: rho_grpl = 500.0  ! graupel bulk density [kg/m3] ! mb/an : v3.7
+   real (kind=kind_phys), parameter                             :: rho_hail = 917.0  ! hail bulk density [kg/m3]    ! mb/an : v3.7
+ ! --------------------------------------------------------------------------------------------------
+@@ -1090,6 +1092,7 @@ contains
+ 
+      bdfall = min(120.,67.92+51.25*exp((sfctmp-tfrz)/2.59))       !mb/an: change to min  
+      if(opt_snf == 4 .or. opt_snf == 5) then
++        bdfall0 = bdfall
+         prcp_frozen = prcpsnow + prcpgrpl + prcphail
+         if(prcpnonc > 0. .and. prcp_frozen > 0.) then
+ 	  fpice = min(1.0,prcp_frozen/prcpnonc)
+@@ -1101,6 +1104,14 @@ contains
+ 	  fpice = 0.0
+         endif
+ 	
++        ! the microphysics fraction is for grid-scale precipitation; convective precipitation is snow below freezing
++        if(prcpconv + prcpshcv > 0.) then
++          fpcv = 0.0
++          if(sfctmp < tfrz) fpcv = 1.0
++          if(opt_snf == 4 .and. fpcv > 0. .and. fpice > 0.) bdfall = (bdfall*fpice*prcpnonc + &
++                 bdfall0*(prcpconv + prcpshcv)) / (fpice*prcpnonc + prcpconv + prcpshcv)
++          fpice = fpice + (fpcv - fpice)*(prcpconv + prcpshcv)/prcp
++        end if
+      endif
+ 
+      rain   = prcp * (1.-fpice)
+-- 
+2.55.0
+

@@ -1,0 +1,3442 @@
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p01.F90
++!! Energy meter probe 1 (diagnostic builds only).
++module em_p01
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p01_run Argument Table
++!! \htmlinclude em_p01_run.html
++!!
++  subroutine em_p01_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(1, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p01_run
++end module em_p01
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p01
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p01_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.F90	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p02.F90
++!! Energy meter probe 2 (diagnostic builds only).
++module em_p02
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p02_run Argument Table
++!! \htmlinclude em_p02_run.html
++!!
++  subroutine em_p02_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(2, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p02_run
++end module em_p02
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.meta	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p02
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p02_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.F90	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,65 @@
++!> \file em_p03.F90
++!! Energy meter probe 3 (diagnostic builds only).
++module em_p03
++  use machine, only: kind_phys
++  use energy_meter_common
++  use module_radsw_parameters, only: topfsw_type, sfcfsw_type
++  use module_radlw_parameters, only: topflw_type, sfcflw_type
++  implicit none
++contains
++!> \section arg_table_em_p03_run Argument Table
++!! \htmlinclude em_p03_run.html
++!!
++  subroutine em_p03_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, xmu, topfsw, topflw,  &
++       sfcfsw, sfcflw, adjsfcnsw, adjsfcdlw, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    real(kind=kind_phys), intent(in) :: xmu(:)
++    type(topfsw_type), intent(in) :: topfsw(:)
++    type(topflw_type), intent(in) :: topflw(:)
++    type(sfcfsw_type), intent(in) :: sfcfsw(:)
++    type(sfcflw_type), intent(in) :: sfcflw(:)
++    real(kind=kind_phys), intent(in) :: adjsfcnsw(:)
++    real(kind=kind_phys), intent(in) :: adjsfcdlw(:)
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(3, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++    do i = 1, im
++       emf(2, j0+i) = dtp*xmu(i)*(topfsw(i)%dnfxc - topfsw(i)%upfxc)
++       emf(3, j0+i) = -dtp*topflw(i)%upfxc
++       emf(4, j0+i) = dtp*xmu(i)*(sfcfsw(i)%dnfxc - sfcfsw(i)%upfxc)
++       emf(5, j0+i) = dtp*(sfcflw(i)%dnfxc - sfcflw(i)%upfxc)
++       emf(6, j0+i) = dtp*adjsfcnsw(i)
++       emf(7, j0+i) = dtp*adjsfcdlw(i)
++       emf(1, j0+i) = emf(2, j0+i) + emf(3, j0+i) - emf(4, j0+i) - emf(5, j0+i)
++    enddo
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p03_run
++end module em_p03
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.meta	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,250 @@
++[ccpp-table-properties]
++  name = em_p03
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90,../../Radiation/RRTMG/radsw_param.f,../../Radiation/RRTMG/radlw_param.f
++
++[ccpp-arg-table]
++  name = em_p03_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[xmu]
++  standard_name = zenith_angle_temporal_adjustment_factor_for_shortwave_fluxes
++  long_name = zenith angle temporal adjustment factor for shortwave fluxes
++  units = none
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[topfsw]
++  standard_name = sw_fluxes_top_atmosphere
++  long_name = sw radiation fluxes at toa
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = topfsw_type
++  intent = in
++[topflw]
++  standard_name = lw_fluxes_top_atmosphere
++  long_name = lw radiation fluxes at top
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = topflw_type
++  intent = in
++[sfcfsw]
++  standard_name = surface_sw_fluxes_assuming_total_and_clear_sky_on_radiation_timestep
++  long_name = sw radiation fluxes at sfc
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = sfcfsw_type
++  intent = in
++[sfcflw]
++  standard_name = surface_lw_fluxes_assuming_total_and_clear_sky_on_radiation_timestep
++  long_name = lw radiation fluxes at sfc
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = sfcflw_type
++  intent = in
++[adjsfcnsw]
++  standard_name = surface_net_downwelling_shortwave_flux
++  long_name = surface net downwelling shortwave flux at current time
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[adjsfcdlw]
++  standard_name = surface_downwelling_longwave_flux
++  long_name = surface downwelling longwave flux at current time
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.F90	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p04.F90
++!! Energy meter probe 4 (diagnostic builds only).
++module em_p04
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p04_run Argument Table
++!! \htmlinclude em_p04_run.html
++!!
++  subroutine em_p04_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(4, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p04_run
++end module em_p04
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.meta	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p04
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p04_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,53 @@
++!> \file em_p05.F90
++!! Energy meter probe 5 (diagnostic builds only).
++module em_p05
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p05_run Argument Table
++!! \htmlinclude em_p05_run.html
++!!
++  subroutine em_p05_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, dtsfc1, dqsfc1,  &
++       errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    real(kind=kind_phys), intent(in) :: dtsfc1(:)
++    real(kind=kind_phys), intent(in) :: dqsfc1(:)
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(5, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++    do i = 1, im
++       emf(8, j0+i) = dtp*dtsfc1(i)
++       emf(9, j0+i) = dtp*dqsfc1(i)
++    enddo
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p05_run
++end module em_p05
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,214 @@
++[ccpp-table-properties]
++  name = em_p05
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p05_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[dtsfc1]
++  standard_name = instantaneous_surface_upward_sensible_heat_flux
++  long_name = surface upward sensible heat flux valid for current call
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqsfc1]
++  standard_name = instantaneous_surface_upward_latent_heat_flux
++  long_name = surface upward latent heat flux valid for current call
++  units = W m-2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p06.F90
++!! Energy meter probe 6 (diagnostic builds only).
++module em_p06
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p06_run Argument Table
++!! \htmlinclude em_p06_run.html
++!!
++  subroutine em_p06_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(6, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p06_run
++end module em_p06
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p06
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p06_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p07.F90
++!! Energy meter probe 7 (diagnostic builds only).
++module em_p07
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p07_run Argument Table
++!! \htmlinclude em_p07_run.html
++!!
++  subroutine em_p07_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(7, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p07_run
++end module em_p07
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p07
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p07_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p08.F90
++!! Energy meter probe 8 (diagnostic builds only).
++module em_p08
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p08_run Argument Table
++!! \htmlinclude em_p08_run.html
++!!
++  subroutine em_p08_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(8, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p08_run
++end module em_p08
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p08
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p08_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p09.F90
++!! Energy meter probe 9 (diagnostic builds only).
++module em_p09
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p09_run Argument Table
++!! \htmlinclude em_p09_run.html
++!!
++  subroutine em_p09_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(9, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p09_run
++end module em_p09
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p09
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p09_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,46 @@
++!> \file em_p10.F90
++!! Energy meter probe 10 (diagnostic builds only).
++module em_p10
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p10_run Argument Table
++!! \htmlinclude em_p10_run.html
++!!
++  subroutine em_p10_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(10, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p10_run
++end module em_p10
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,198 @@
++[ccpp-table-properties]
++  name = em_p10
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p10_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,57 @@
++!> \file em_p11.F90
++!! Energy meter probe 11 (diagnostic builds only).
++module em_p11
++  use machine, only: kind_phys
++  use energy_meter_common
++  implicit none
++contains
++!> \section arg_table_em_p11_run Argument Table
++!! \htmlinclude em_p11_run.html
++!!
++  subroutine em_p11_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, prcp, snow, ice,  &
++       graupel, rainc, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    real(kind=kind_phys), intent(in) :: prcp(:)
++    real(kind=kind_phys), intent(in) :: snow(:)
++    real(kind=kind_phys), intent(in) :: ice(:)
++    real(kind=kind_phys), intent(in) :: graupel(:)
++    real(kind=kind_phys), intent(in) :: rainc(:)
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    call em_probe(11, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++    do i = 1, im
++       emf(10, j0+i) = 1000.d0*prcp(i)
++       emf(11, j0+i) = 1000.d0*(snow(i) + ice(i) + graupel(i))
++       emf(12, j0+i) = 1000.d0*rainc(i)
++    enddo
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p11_run
++end module em_p11
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta	2026-10-17 14:14:51.000000000 -0500
+@@ -0,0 +1,238 @@
++[ccpp-table-properties]
++  name = em_p11
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p11_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[prcp]
++  standard_name = lwe_thickness_of_explicit_precipitation_amount
++  long_name = explicit precipitation (rain, ice, snow, graupel, ...) on physics timestep
++  units = m
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[snow]
++  standard_name = lwe_thickness_of_snow_amount
++  long_name = snow fall on physics timestep
++  units = m
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[ice]
++  standard_name = lwe_thickness_of_ice_amount
++  long_name = ice fall on physics timestep
++  units = m
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[graupel]
++  standard_name = lwe_thickness_of_graupel_amount
++  long_name = graupel fall on physics timestep
++  units = m
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[rainc]
++  standard_name = lwe_thickness_of_convective_precipitation_amount_on_dynamics_timestep
++  long_name = convective rain at this time step
++  units = m
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90	2026-10-17 14:14:52.000000000 -0500
+@@ -0,0 +1,117 @@
++!> \file em_p12.F90
++!! Energy meter probe 12 (diagnostic builds only).
++module em_p12
++  use machine, only: kind_phys
++  use energy_meter_common
++  use mpi_f08
++  implicit none
++contains
++!> \section arg_table_em_p12_run Argument Table
++!! \htmlinclude em_p12_run.html
++!!
++  subroutine em_p12_run(im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, ntqv, ntcw,  &
++       ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, garea, mpicomm,  &
++       mpirank, mpiroot, errmsg, errflg)
++    integer, intent(in) :: im
++    integer, intent(in) :: levs
++    integer, intent(in) :: kdt
++    real(kind=kind_phys), intent(in) :: dtp
++    real(kind=kind_phys), intent(in) :: gt0(:,:)
++    real(kind=kind_phys), intent(in) :: gq0(:,:,:)
++    real(kind=kind_phys), intent(in) :: gu0(:,:)
++    real(kind=kind_phys), intent(in) :: gv0(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:)
++    real(kind=kind_phys), intent(in) :: dqdt(:,:,:)
++    real(kind=kind_phys), intent(in) :: dudt(:,:)
++    real(kind=kind_phys), intent(in) :: dvdt(:,:)
++    real(kind=kind_phys), intent(in) :: prsi(:,:)
++    integer, intent(in) :: ntqv
++    integer, intent(in) :: ntcw
++    integer, intent(in) :: ntiw
++    integer, intent(in) :: ntrw
++    integer, intent(in) :: ntsw
++    integer, intent(in) :: ntgl
++    real(kind=kind_phys), intent(in) :: con_g
++    real(kind=kind_phys), intent(in) :: con_cp
++    real(kind=kind_phys), intent(in) :: con_hvap
++    real(kind=kind_phys), intent(in) :: con_hfus
++    real(kind=kind_phys), intent(in) :: garea(:)
++    type(MPI_Comm), intent(in) :: mpicomm
++    integer, intent(in) :: mpirank
++    integer, intent(in) :: mpiroot
++    character(len=*), intent(out) :: errmsg
++    integer, intent(out) :: errflg
++    integer :: j0, i
++
++    ! segment s = probe s -> s+1; fluxes per segment (J m-2, kg m-2), residual r = dE - F
++    real(kind=8) :: d(7), e0, e1, f, w, frad, fpbl, fmp, wpbl, wmp, wcv, a
++    integer :: s, jj, ierr
++    real(kind=8) :: buf(10*emnp+12), rbuf(10*emnp+12)
++    if (kdt /= emkdt(12) .and. emkdt(12) >= 0) then
++       buf(1:10*emnp) = reshape(emg, (/10*emnp/))
++       buf(10*emnp+1:) = emx
++       if (mpirank == mpiroot) then
++          call MPI_Reduce(MPI_IN_PLACE, buf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++          do s = 1, emnp
++             write(*,'(a,i6,i3,10es25.16)') 'EMS ', emkdt(12), s, buf(10*(s-1)+1:10*s)
++          enddo
++          write(*,'(a,i6,12es25.16)') 'EMF ', emkdt(12), buf(10*emnp+1:)
++       else
++          call MPI_Reduce(buf, rbuf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, mpiroot, mpicomm, ierr)
++       endif
++       emg = 0.d0
++       emx = 0.d0
++    endif
++    call em_probe(12, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                  ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++    do i = 1, im
++       jj = j0 + i
++       a = garea(i)
++       frad = emf(1, jj)
++       fpbl = emf(8, jj) + emf(9, jj)
++       fmp = con_hfus*emf(11, jj)
++       wpbl = emf(9, jj)/con_hvap
++       wmp = -emf(10, jj)
++       wcv = -emf(12, jj)
++       do s = 1, emnp - 1
++          d = emc(:, s+1, jj) - emc(:, s, jj)
++          f = 0.d0
++          w = 0.d0
++          if (s == 2) f = frad
++          if (s == 4) then
++             f = fpbl
++             w = wpbl
++          endif
++          if (s == 10) then
++             f = fmp
++             w = wmp
++          endif
++          emg(1, s) = emg(1, s) + (d(1)+d(2)+d(3)+d(4))*a
++          emg(2:5, s) = emg(2:5, s) + d(1:4)*a
++          emg(6, s) = emg(6, s) + d(5)*a
++          emg(7, s) = emg(7, s) + f*a
++          emg(8, s) = emg(8, s) + abs(d(1)+d(2)+d(3)+d(4) - f)*a
++          emg(9, s) = emg(9, s) + (d(5) - w)*a
++          emg(10, s) = emg(10, s) + d(7)*a
++       enddo
++       ! slot 12: whole physics (probe 1 -> 12), F = rad + pbl + mp, water vs all precip
++       d = emc(:, 12, jj) - emc(:, 1, jj)
++       emg(1, 12) = emg(1, 12) + (d(1)+d(2)+d(3)+d(4))*a
++       emg(2:5, 12) = emg(2:5, 12) + d(1:4)*a
++       emg(6, 12) = emg(6, 12) + d(5)*a
++       emg(7, 12) = emg(7, 12) + (frad + fpbl + fmp)*a
++       emg(8, 12) = emg(8, 12) + abs(d(1)+d(2)+d(3)+d(4) - frad - fpbl - fmp)*a
++       emg(9, 12) = emg(9, 12) + (d(5) - wpbl - wmp - wcv)*a
++       emg(10, 12) = emg(10, 12) + d(7)*a
++       e0 = emc(1,1,jj) + emc(2,1,jj) + emc(3,1,jj) + emc(4,1,jj)
++       emx(1) = emx(1) + e0*a
++       emx(2) = emx(2) + emc(5,1,jj)*a
++       emx(3:10) = emx(3:10) + emf(2:9, jj)*a
++       emx(11) = emx(11) + (emf(10, jj) + emf(12, jj))*a
++       emx(12) = emx(12) + a
++    enddo
++
++    errmsg = ''
++    errflg = 0
++  end subroutine em_p12_run
++end module em_p12
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta	2026-10-17 14:14:52.000000000 -0500
+@@ -0,0 +1,227 @@
++[ccpp-table-properties]
++  name = em_p12
++  type = scheme
++  dependencies = ../../hooks/machine.F,energy_meter_common.F90
++
++[ccpp-arg-table]
++  name = em_p12_run
++  type = scheme
++[im]
++  standard_name = horizontal_loop_extent
++  long_name = horizontal loop extent
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[levs]
++  standard_name = vertical_layer_dimension
++  long_name = vertical layer dimension
++  units = count
++  dimensions = ()
++  type = integer
++  intent = in
++[kdt]
++  standard_name = index_of_timestep
++  long_name = current forecast iteration
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[dtp]
++  standard_name = timestep_for_physics
++  long_name = physics time step
++  units = s
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[gt0]
++  standard_name = air_temperature
++  long_name = air temperature
++  units = K
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gq0]
++  standard_name = tracer_concentration
++  long_name = tracer concentration
++  units = kg kg-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[gu0]
++  standard_name = x_wind
++  long_name = x-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[gv0]
++  standard_name = y_wind
++  long_name = y-direction wind
++  units = m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dtdt]
++  standard_name = process_split_cumulative_tendency_of_air_temperature
++  long_name = tendency of the temperature
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dqdt]
++  standard_name = process_split_cumulative_tendency_of_tracers
++  long_name = tendency of the tracers due to model physics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[dudt]
++  standard_name = process_split_cumulative_tendency_of_x_wind
++  long_name = tendency of the x wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[dvdt]
++  standard_name = process_split_cumulative_tendency_of_y_wind
++  long_name = tendency of the y wind
++  units = m s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[prsi]
++  standard_name = air_pressure_at_interface
++  long_name = interface pressure
++  units = Pa
++  dimensions = (horizontal_loop_extent,vertical_interface_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[ntqv]
++  standard_name = index_of_specific_humidity_in_tracer_concentration_array
++  long_name = tracer index for water vapor (specific humidity)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntcw]
++  standard_name = index_of_cloud_liquid_water_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for cloud condensate (or liquid water)
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntiw]
++  standard_name = index_of_cloud_ice_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for  ice water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntrw]
++  standard_name = index_of_rain_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for rain water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntsw]
++  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for snow water
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[ntgl]
++  standard_name = index_of_graupel_mixing_ratio_in_tracer_concentration_array
++  long_name = tracer index for graupel
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[con_g]
++  standard_name = gravitational_acceleration
++  long_name = gravitational acceleration
++  units = m s-2
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_cp]
++  standard_name = specific_heat_of_dry_air_at_constant_pressure
++  long_name = specific heat of dry air at constant pressure
++  units = J kg-1 K-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hvap]
++  standard_name = latent_heat_of_vaporization_of_water_at_0C
++  long_name = latent heat of evaporation/sublimation
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[con_hfus]
++  standard_name = latent_heat_of_fusion_of_water_at_0C
++  long_name = latent heat of fusion
++  units = J kg-1
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
++[garea]
++  standard_name = cell_area
++  long_name = grid cell area
++  units = m2
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = in
++[mpicomm]
++  standard_name = mpi_communicator
++  long_name = MPI communicator
++  units = index
++  dimensions = ()
++  type = MPI_Comm
++  intent = in
++[mpirank]
++  standard_name = mpi_rank
++  long_name = current MPI rank
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[mpiroot]
++  standard_name = mpi_root
++  long_name = master MPI-rank
++  units = index
++  dimensions = ()
++  type = integer
++  intent = in
++[errmsg]
++  standard_name = ccpp_error_message
++  long_name = error message for error handling in CCPP
++  units = none
++  dimensions = ()
++  type = character
++  kind = len=*
++  intent = out
++[errflg]
++  standard_name = ccpp_error_code
++  long_name = error code for error handling in CCPP
++  units = 1
++  dimensions = ()
++  type = integer
++  intent = out
+diff -ruN base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90 meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90
+--- base/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	1969-12-31 18:00:00.000000000 -0600
++++ meter/ufs-weather-model/UFSATM/ccpp/physics/physics/Interstitials/UFS_SCM_NEPTUNE/energy_meter_common.F90	2026-10-17 14:14:50.000000000 -0500
+@@ -0,0 +1,60 @@
++!> \file energy_meter_common.F90
++!! Energy meter storage and probe (diagnostic builds only).
++module energy_meter_common
++  use machine, only: kind_phys
++  implicit none
++  private
++  public :: em_probe, emc, emg, emx, emkdt, emf
++  integer, parameter, public :: emnp = 12, emnc = 8192
++  real(kind=8), save :: emc(7, emnp, emnc) = 0.d0
++  real(kind=8), allocatable, save :: emd(:,:)
++  real(kind=8), save :: emg(10, emnp) = 0.d0, emx(12) = 0.d0, emf(12, emnc) = 0.d0
++  integer, save :: emoff(emnp) = 0, emkdt(emnp) = -1
++contains
++  subroutine em_probe(p, im, levs, kdt, dtp, gt0, gq0, gu0, gv0, dtdt, dqdt, dudt, dvdt, prsi, &
++                      ntqv, ntcw, ntiw, ntrw, ntsw, ntgl, con_g, con_cp, con_hvap, con_hfus, j0)
++    ! energy meter: effective-state column energy in the physics frame, stored per column
++    integer, intent(in) :: p, im, levs, kdt, ntqv, ntcw, ntiw, ntrw, ntsw, ntgl
++    real(kind=kind_phys), intent(in) :: dtp, con_g, con_cp, con_hvap, con_hfus
++    real(kind=kind_phys), intent(in) :: gt0(:,:), gq0(:,:,:), gu0(:,:), gv0(:,:), prsi(:,:)
++    real(kind=kind_phys), intent(in) :: dtdt(:,:), dqdt(:,:,:), dudt(:,:), dvdt(:,:)
++    integer, intent(out) :: j0
++    real(kind=8) :: x(7), m, t, qv, ql, qi, u, v
++    ! dycore-consistent (Kirchhoff) enthalpy, dry mass held at its probe-1 value, FV3 heat capacities
++    real(kind=8), parameter :: cpa = 1004.6d0, cpv = 1846.0d0, cl = 4185.5d0, ci = 1972.0d0, t0 = 273.15d0
++    real(kind=8) :: lv00, li00
++    integer :: i, k
++    if (kdt /= emkdt(p)) then
++       emkdt(p) = kdt
++       emoff(p) = 0
++    endif
++    j0 = emoff(p)
++    lv00 = con_hvap - (cpv - cl)*t0
++    li00 = con_hfus - (cl - ci)*t0
++    if (.not. allocated(emd)) allocate(emd(levs, emnc))
++    do i = 1, im
++       x = 0.d0
++       do k = 1, levs
++          m = (prsi(i,k) - prsi(i,k+1))/con_g
++          t = gt0(i,k) + dtp*dtdt(i,k)
++          u = gu0(i,k) + dtp*dudt(i,k)
++          v = gv0(i,k) + dtp*dvdt(i,k)
++          qv = gq0(i,k,ntqv) + dtp*dqdt(i,k,ntqv)
++          ql = gq0(i,k,ntcw) + dtp*dqdt(i,k,ntcw) + gq0(i,k,ntrw) + dtp*dqdt(i,k,ntrw)
++          qi = gq0(i,k,ntiw) + dtp*dqdt(i,k,ntiw) + gq0(i,k,ntsw) + dtp*dqdt(i,k,ntsw) &
++             + gq0(i,k,ntgl) + dtp*dqdt(i,k,ntgl)
++          x(1) = x(1) + m*con_cp*t
++          x(2) = x(2) + m*con_hvap*qv
++          x(3) = x(3) - m*con_hfus*qi
++          x(4) = x(4) + m*0.5d0*(u*u + v*v)
++          x(5) = x(5) + m*(qv + ql + qi)
++          x(6) = x(6) + m*qi
++          if (p == 1) emd(k, j0+i) = m*(1.d0 - qv)
++          x(7) = x(7) + emd(k, j0+i)*cpa*t + m*((qv*cpv + ql*cl + qi*ci)*t + lv00*qv - li00*qi) &
++               + (emd(k, j0+i) + m*(qv + ql + qi))*0.5d0*(u*u + v*v)
++       enddo
++       emc(:, p, j0+i) = x
++    enddo
++    emoff(p) = j0 + im
++  end subroutine em_probe
++end module energy_meter_common
+--- base/ufs-weather-model/UFSATM/ccpp/suites/suite_FV3_GFS_v17_p8_ugwpv1.xml	2026-10-13 15:39:58.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/ccpp/suites/suite_FV3_GFS_v17_p8_ugwpv1.xml	2026-10-17 13:30:23.000000000 -0500
+@@ -26,9 +26,12 @@
+     <subcycle loop="1">
+       <scheme>get_prs_fv3</scheme>
+       <scheme>GFS_suite_interstitial_1</scheme>
++      <scheme>em_p01</scheme>
+       <scheme>GFS_surface_generic_pre</scheme>
+       <scheme>GFS_surface_composites_pre</scheme>
++      <scheme>em_p02</scheme>
+       <scheme>dcyc2t3</scheme>
++      <scheme>em_p03</scheme>
+       <scheme>GFS_surface_composites_inter</scheme>
+       <scheme>GFS_suite_interstitial_2</scheme>
+     </subcycle>
+@@ -49,28 +52,35 @@
+       <scheme>GFS_surface_composites_post</scheme>
+       <scheme>sfc_diag</scheme>
+       <scheme>sfc_diag_post</scheme>
++      <scheme>em_p04</scheme>
+       <scheme>GFS_surface_generic_post</scheme>
+       <scheme>GFS_PBL_generic_pre</scheme>
+       <scheme>satmedmfvdifq</scheme>
+       <scheme>GFS_PBL_generic_post</scheme>
++      <scheme>em_p05</scheme>
+       <scheme>GFS_GWD_generic_pre</scheme>
+       <scheme>ugwpv1_gsldrag</scheme>
+       <scheme>ugwpv1_gsldrag_post</scheme>
+       <scheme>GFS_GWD_generic_post</scheme>
++      <scheme>em_p06</scheme>
+     </subcycle>
+   </group>
+   <group name="phys_ts">
+     <subcycle loop="1">
+       <scheme>GFS_photochemistry</scheme>
+       <scheme>GFS_photochemistry_post</scheme>
++      <scheme>em_p07</scheme>
+       <scheme>get_phi_fv3</scheme>
+       <scheme>GFS_suite_interstitial_3</scheme>
+       <scheme>samfdeepcnv</scheme>
+       <scheme>GFS_DCNV_generic_post</scheme>
++      <scheme>em_p08</scheme>
+       <scheme>samfshalcnv</scheme>
+       <scheme>GFS_SCNV_generic_post</scheme>
++      <scheme>em_p09</scheme>
+       <scheme>GFS_suite_interstitial_4</scheme>
+       <scheme>cnvc90</scheme>
++      <scheme>em_p10</scheme>
+       </subcycle>
+       <subcycle loop="1">
+         <scheme>mp_thompson</scheme>
+@@ -78,6 +88,7 @@
+         <subcycle loop="1">
+         <scheme>mp_thompson_post</scheme>
+         <scheme>GFS_MP_generic_post</scheme>
++      <scheme>em_p11</scheme>
+         <scheme>maximum_hourly_diagnostics</scheme>
+       </subcycle>
+   </group>
+@@ -85,6 +96,7 @@
+     <subcycle loop="1">
+       <scheme>GFS_stochastics</scheme>
+       <scheme>GFS_physics_post</scheme>
++      <scheme>em_p12</scheme>
+     </subcycle>
+   </group>
+   <!-- <finalize></finalize> -->
+--- base/ufs-weather-model/UFSATM/ccpp/CMakeLists.txt	2026-10-13 15:39:58.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/ccpp/CMakeLists.txt	2026-10-17 13:39:10.000000000 -0500
+@@ -78,6 +78,18 @@
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/GFS_MP_generic_post.meta"
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/maximum_hourly_diagnostics.meta"
+   "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/GFS_physics_post.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p01.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p02.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p03.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p04.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p05.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p06.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p07.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p08.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p09.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p10.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p11.meta"
++  "${SCHEME_FILES_DIR}/Interstitials/UFS_SCM_NEPTUNE/em_p12.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_ccpp.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_post.meta"
+   "${SCHEME_FILES_DIR}/CONV/C3/CCPP/cu_c3_driver_pre.meta"
+--- base/ufs-weather-model/UFSATM/ccpp/config/ccpp_prebuild_config_fv3.py	2026-10-13 15:39:58.000000000 -0500
++++ meter/ufs-weather-model/UFSATM/ccpp/config/ccpp_prebuild_config_fv3.py	2026-10-17 13:30:23.000000000 -0500
+@@ -128,6 +128,18 @@
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/dcyc2t3.f',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/maximum_hourly_diagnostics.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_physics_post.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p01.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p02.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p03.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p04.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p05.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p06.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p07.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p08.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p09.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p10.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p11.F90',
++    'physics/physics/Interstitials/UFS_SCM_NEPTUNE/em_p12.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/sgscloud_radpre.F90',
+     'physics/physics/Interstitials/UFS_SCM_NEPTUNE/sgscloud_radpost.F90',
+     'physics/physics/CONV/Chikira_Sugiyama/cs_conv_pre.F90',

@@ -1,0 +1,65 @@
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/module_bl_mynn.F90
+@@ -4134,7 +4134,8 @@
+ 
+     !Prepare "constants" for diffusion equation.
+     !khdz = rho*Kh/dz = rho*dfh
+-    rhosfc     = psfc/(R_d*(tk(kts)+p608*qv(kts)))
++    ! the surface fluxes were made kinematic with rho(kts) (mynn_bl_driver): use the same density to apply them
++    rhosfc     = rho(kts)
+     dtz(kts)   =delt/dz(kts)
+     rhoz(kts)  =rho(kts)
+     rhoinv(kts)=1./rho(kts)
+@@ -4511,7 +4512,7 @@
+     qvflux = flqv
+     if (qvflux < 0.0) then
+        !do not allow specified surface flux to reduce qv below 1e-8 kg/kg
+-       qvflux = max(qvflux, (min(0.9*sqv(kts) - 1e-8, 0.0)/dtz(kts)))
++       qvflux = max(qvflux, -max(0.9*sqv(kts) - 1e-8, 0.0)/dtz(kts))
+     endif
+ 
+ !rho-weighted:  rhosfc*X*rhoinv(k)
+@@ -5013,7 +5014,7 @@
+     ENDIF
+ 
+     !ensure non-negative moist species
+-    CALL moisture_check(kte, delt, delp, exner,        &
++    CALL moisture_check(kte, delt, rho(kts:kte)*dz(kts:kte), exner, & ! layer mass the solver conserves
+                         sqv2, sqc2, sqi2, sqs2, thl,   &
+                         dqv, dqc, dqi, dqs, dth        )
+ 
+--- a/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
++++ b/UFSATM/ccpp/physics/physics/PBL/MYNN_EDMF/mynnedmf_wrapper.F90
+@@ -337,6 +337,7 @@
+       real(kind_phys), dimension(im) :: dusfci1,dvsfci1,dtsfci1,dqsfci1
+       real(kind_phys), allocatable :: save_qke_adv(:,:)
+       real(kind_phys), dimension(levs) :: kzero
++      real(kind_phys) :: rho_sfc
+ 
+       ! Initialize CCPP error handling variables
+       errmsg = ''
+@@ -607,7 +608,9 @@
+       do k=1,levs
+          do i=1,im
+             th(i,k)=adj_t(i,k)/exner(i,k)
+-            rho(i,k)=prsl(i,k)/(r_d*adj_t(i,k)*(1.+p608*max(sqv(i,k),1e-8)))
++            ! density from the host layer mass, so that rho*dz = delp/g and MYNN's conservative solver
++            ! conserves the host's water (ideal-gas rho with the nonhydrostatic dz differs slightly)
++            rho(i,k)=delp(i,k)/(grav*dz(i,k))
+             w(i,k) = -omega(i,k)/(rho(i,k)*grav)
+          enddo
+       enddo
+@@ -623,8 +626,11 @@
+          voce(i)=0.0
+          !ust(i) = sqrt(stress(i))
+          ch(i)=0.0
+-         hfx(i)=hflx(i)*rho(i,1)*cp
+-         qfx(i)=qflx(i)*rho(i,1)
++         ! hflx/qflx were made kinematic by the surface schemes with the ideal-gas density of the host
++         ! state: convert back with the same density (rho is the solver's layer-mass density)
++         rho_sfc=prsl(i,1)/(r_d*t3d(i,1)*(1.+p608*max(qgrs_water_vapor(i,1),1e-8)))
++         hfx(i)=hflx(i)*rho_sfc*cp
++         qfx(i)=qflx(i)*rho_sfc
+          !filter bad incoming fluxes
+          if (hfx(i) > 1200.)hfx(i) = 1200.
+          if (hfx(i) < -500.)hfx(i) = -500.

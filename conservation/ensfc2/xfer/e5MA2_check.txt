@@ -1,0 +1,5 @@
+BITWISE: 0/2374 variables differ over 49 files; max|diff| 0.000e+00 
+        R_E (energy column, Kirchhoff)             +2.816733e-08
+      R_final4 = R3' - E19 + d65 + d66 - EP - LW2 - AIR1 = +2.558213e-05
+      snow-bottom outflow content (internal to soil / runoff export) -2.553886e-05
+      R_final4' = R_final4 + snow-bottom outflow (only its runoff part is a boundary flux) = +4.327348e-08

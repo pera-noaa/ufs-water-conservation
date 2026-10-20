@@ -1,0 +1,32 @@
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f	2026-10-17 19:50:30.000000000 -0500
+@@ -3364,6 +3364,12 @@
+      &                    + tem2 * dellau(i,k)
+               new_v1(i,k) = real(v1(i,k), kind=conv_wp)
+      &                    + tem2 * dellav(i,k)
++!             CMT dissipative heating: KE lost by momentum transport, -d(KE)/cp
++              new_t1(i,k) = new_t1(i,k) - 0.5_conv_wp
++     &          * (new_u1(i,k)**2 + new_v1(i,k)**2
++     &          - real(u1(i,k), kind=conv_wp)**2
++     &          - real(v1(i,k), kind=conv_wp)**2)
++     &          / real(cp, kind=conv_wp)
+               dp = 1000.0_conv_wp* del(i,k)
+               tem = xmb(i) * dp / real(grav, kind=conv_wp)
+               delhbar(i) = delhbar(i) + tem * dellah(i,k)
+diff -ru a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f
+--- a/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 19:50:30.000000000 -0500
++++ b/UFSATM/ccpp/physics/physics/CONV/SAMF/samfshalcnv.f	2026-10-17 19:50:30.000000000 -0500
+@@ -2298,6 +2298,12 @@
+      &                    * xmb(i) * dt2
+               new_v1(i,k) = real(v1(i,k), kind=conv_wp) + dellav(i,k)
+      &                    * xmb(i) * dt2
++!             CMT dissipative heating: KE lost by momentum transport, -d(KE)/cp
++              new_t1(i,k) = new_t1(i,k) - 0.5_conv_wp
++     &          * (new_u1(i,k)**2 + new_v1(i,k)**2
++     &          - real(u1(i,k), kind=conv_wp)**2
++     &          - real(v1(i,k), kind=conv_wp)**2)
++     &          / real(cp, kind=conv_wp)
+               dp = 1000.0_conv_wp * del(i,k)
+               tem = xmb(i) * dp / real(grav, kind=conv_wp)
+               delhbar(i) = delhbar(i) + tem * dellah(i,k)

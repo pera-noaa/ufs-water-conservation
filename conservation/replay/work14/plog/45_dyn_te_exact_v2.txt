@@ -1,0 +1,6 @@
+patching file UFSATM/fv3/atmos_cubed_sphere/model/dyn_core.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_arrays.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_control.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_dynamics.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/fv_mapz.F90
+patching file UFSATM/fv3/atmos_cubed_sphere/model/sw_core.F90

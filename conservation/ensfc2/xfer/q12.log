@@ -1,0 +1,13 @@
+04:35 submit: /work2/noaa/co2/miniconda3/envs/tm5/bin/python -I tools/instrument_es2_r4e.py mopt10/ufs-weather-model && sbatch -J e2_mopt12 --export=NONE,SRC=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/mopt10/ufs-weather-model build64.sbatch
+instrumented module_sf_noahmplsm.F90
+Submitted batch job 10155702
+04:42 submit: cp -p mopt10/ufs-weather-model/tests/fv3_e2_mopt12.exe exe/ && tools/mkrun3.sh e5MA2 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt12.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true.;lw_sfc_return = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true.  lw_sfc_return = .true. 
+Submitted batch job 10155741
+04:42 submit: tools/mkrun3.sh e5MB2 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt12.exe "noahmp_canopy_heat = 1;precip_phase_host = .true.;noahmp_sw_radshare = .true.;sfc_evap_enthalpy = .true.;noahmp_heat_advect = .true.;noahmp_kirchhoff = .true.;sfc_precip_enthalpy = .true.;noahmp_pore_air = .true.;lw_sfc_consistent = .true."
+ layout = 3,8  noahmp_canopy_heat = 1  precip_phase_host = .true.  noahmp_sw_radshare = .true.  sfc_evap_enthalpy = .true.  noahmp_heat_advect = .true.  noahmp_kirchhoff = .true.  noahmp_pore_air = .true.  lw_sfc_consistent = .true. 
+Submitted batch job 10155742
+04:47 submit: tools/mkrun3.sh e5MO02 /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/ensfc2/exe/fv3_e2_mopt12.exe
+ layout = 3,8 
+Submitted batch job 10155756
+QUEUE DONE

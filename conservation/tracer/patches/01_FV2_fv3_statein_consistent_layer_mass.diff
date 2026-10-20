@@ -1,0 +1,24 @@
+--- a/driver/UFS/atmosphere.F90
++++ b/driver/UFS/atmosphere.F90
+@@ -2259,8 +2259,9 @@
+            IPD_Statein%prsi(im,k)  = IPD_Statein%prsi(im,k+1) + IPD_Statein%prsl(im,k)
+            IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
+ ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
++! (divide by the thickness atmosphere_state_update multiplies back by, so tracer mass round-trips exactly)
+            IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+-                                                   / IPD_Statein%prsl(im,k)
++                                                   / (IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1))
+          enddo
+        enddo
+      else
+@@ -2274,8 +2275,9 @@
+            IPD_Statein%prsi(im,k+1)  = IPD_Statein%prsi(im,k) + IPD_Statein%prsl(im,k)
+            IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
+ ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
++! (divide by the thickness atmosphere_state_update multiplies back by, so tracer mass round-trips exactly)
+            IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+-                                           / IPD_Statein%prsl(im,k)
++                                           / (IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k))
+          enddo
+        enddo
+      endif

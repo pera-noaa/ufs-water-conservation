@@ -1,0 +1,12 @@
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_surface_composites_pre.F90
+@@ -271,7 +271,8 @@
+         endif
+         if (dry(i)) then                   ! Land
+           uustar_lnd(i) = uustar(i)
+-           if(lsm /= lsm_ruc) weasd_lnd(i) = weasd(i)
++           ! with frac_grid, weasd is the cell mean and weasd_lnd the persistent land value (Sfcprop%weasdl)
++           if(lsm /= lsm_ruc .and. .not. frac_grid) weasd_lnd(i) = weasd(i)
+            tsurf_lnd(i) = tsfcl(i)
+         ! DH*
+         else

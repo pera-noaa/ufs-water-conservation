@@ -1,0 +1,43 @@
+--- a/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
++++ b/physics/SFC_Models/Land/Noahmp/module_sf_noahmplsm.F90
+@@ -2242,6 +2242,8 @@
+         latheag = hsub
+         frozen_ground = .true.
+      end if
++     ! the ground flux sublimates from, and frosts onto, the snow ice (qsnsub, qsnfro in water) whatever tg is
++     if (sneqv > 0.) latheag = hsub
+      gammag = cpair*sfcprs/(ep_2*latheag)
+ 
+ !     if (sfctmp .gt. tfrz) then
+@@ -7151,6 +7153,7 @@
+   real (kind=kind_phys)                                           :: qsdew   !soil surface dew rate [mm/s]
+   real (kind=kind_phys)                                           :: qsnfro  !snow surface frost rate[mm/s]
+   real (kind=kind_phys)                                           :: qsnsub  !snow surface sublimation rate [mm/s]
++  real (kind=kind_phys)                                           :: lheat   !latent heat charged minus latent heat used by the ground vapour [j/m2]
+   real (kind=kind_phys), dimension(       1:nsoil)                :: etrani  !transpiration rate (mm/s) [+]
+   real (kind=kind_phys), dimension(       1:nsoil)                :: wcnd   !hydraulic conductivity (m/s)
+   real (kind=kind_phys)                                           :: qdrain  !soil-bottom free drainage [mm/s] 
+@@ -7200,15 +7203,23 @@
+           &          sh2o   ,sice   ,stc    ,zsnso  ,dzsnso , & !inout
+           &          qsnbot ,snoflow,ponding1       ,ponding2)  !out
+ 
++   lheat = (latheag - hsub)*(qsnsub - qsnfro)*dt
+    if(frozen_ground) then
+       sice(1) =  sice(1) + (qsdew-qseva)*dt/(dzsnso(1)*1000.)
++      lheat = lheat + (latheag - hsub)*(qseva - qsdew)*dt
+       qsdew = 0.0
+       qseva = 0.0
+       if(sice(1) < 0.) then
++         lheat = lheat - hfus*sice(1)*dzsnso(1)*1000.   ! the missing ice came from the liquid
+          sh2o(1) = sh2o(1) + sice(1)
+          sice(1) = 0.
+       end if
++   else
++      lheat = lheat + (latheag - hvap)*(qseva - qsdew)*dt
+    end if
++   ! the energy step charged latheag; the top soil layer gets back what the phase actually moved did not use
++   stc(1) = stc(1) + lheat / (dzsnso(1) * (sh2o(1)*cwat + (1.0-parameters%smcmax(1))*parameters%csoil  &
++                    + (parameters%smcmax(1)-sh2o(1)-sice(1))*cpair + sice(1)*cice))
+ 
+ ! convert units (mm/s -> m/s)
+ 
