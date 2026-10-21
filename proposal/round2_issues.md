@@ -2,7 +2,7 @@
 
 *Bugs held out of round 1 because the fix needs an owner's decision, plus three round-1 fixes moved here by the red
 team (R1, TOPT, MYNN; `pr_round1.md`). Each issue asks one question, gives the options with our recommendation, and
-offers a tested patch; the PR follows the owners' answer. Open after round-1 track 1a is in review, so owners see one
+offers a tested patch; the PR follows the owners' answer. Open after round-1 track 0b is in review, so owners see one
 thing at a time. Measurements: C96 `control_p8_ugwpv1`, 24 h, in-model budget meters, unless stated. "Noise" is the 24-h
 difference made by `consv_te` = 0.999 instead of 1 (T rms 0.149 K, ps 8.41 Pa). Patches: `conservation/replay/patches/`
 and `proposal/patches/`.*

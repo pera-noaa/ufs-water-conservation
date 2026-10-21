@@ -12,8 +12,9 @@ Runs: Hercules, Intel, `hafs_global_1nest_atm` 6 h, 6 nodes, about 2.5 min each.
 | `q_r37.sh`, `q_t1a.sh`, `q_ens.sh`, `q_ens3.sh`, `q_runs.sh` | build an instrumented tree from the pristine develop clone plus a set of fix branches, compile, launch members |
 | `mkexp.sh` | one member: copy the RT run directory, install the executable, set `consv_te` (1, 0.999, …) |
 | `q_stats.py` | per member: finished, crashed, events > 4 K, of those with CFL > 1 and > 5, > 10 K, largest dT and CFL, TKE, mean precipitation |
-| `q_t1a_stats.txt`, `q_ens_stats.txt`, `q_ens_np_stats.txt`, `q_ens3_stats.txt` | the outputs (`q_ens3_stats.txt` has every member) |
+| `optA.f` (= `fixb.f`), `optD.f`, `optE.f`, `q_opt.sh` | the issue's options: A the CFL bound below cloud base; D the same bound in every updraft layer (issue option A); E the vapour bound (issue option B); `q_opt.sh` builds develop and `t1a` with each and launches 20 members |
+| `q_t1a_stats.txt`, `q_ens_stats.txt`, `q_ens_np_stats.txt`, `q_ens3_stats.txt`, `q_opt_stats.txt` | the outputs (`q_ens3_stats.txt` has every ensemble member, `q_opt_stats.txt` the options; `opt_sum.py` summarizes it) |
 
 Tree names in the statistics: `dev` develop (f1d68949); `r37` all 37 round-1 fixes; `t1a` SAMF + PBL, Noah-MP, sea
 ice/NSST, GFDL MP v3, SAMF32 build; `t1ans` the same without sea ice/NSST; `t1anp` without PBL05; `t1ar` without the
-NSST rain fix; `t1ai` without the three sea-ice fixes; `t1ac` `t1a` + FV3.
+NSST rain fix; `t1ai` without the three sea-ice fixes; `t1ac` `t1a` + FV3; a suffix `A`, `D`, `E` adds that option. In track terms (`../pr_round1.md`, *Tracks*): `t1a` = 0b + 1d, `t1ans` = 0b.

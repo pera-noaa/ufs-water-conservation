@@ -9,16 +9,16 @@ Hercules root `$U/pr1` (`$U` = `/work2/noaa/co2/ash/ufs-chem-v1/upstream`). Issu
 
 | Item | State |
 |---|---|
-| Scope | **37 fixes** in four tracks (see *Tracks*), posted in this order: 1b microphysics 7, 1a global conservation 20, then after the SAMF issue (descriptions §8) 1d sea ice/NSST 4 and 1c dycore 6. SA1 (W01) held |
+| Scope | **37 fixes** in four tracks (see *Tracks*), posted in this order: 0a the SAMF issue (descriptions §8), 0b global conservation 20, 0c microphysics 7 (none waits on SAMF); after the SAMF issue's answer, 1c dycore 6 and 1d sea ice/NSST 4. SA1 (W01) held |
 | PRs | 6 ccpp-physics, GFDL `dev/emc`, NOAA-EMC/noahmp; per track one ufsatm and one ufs-weather-model PR; 3 issues (SAMF, WM, GFDL) |
 | Branches | local, one commit per fix on current heads (WM `develop` f1d68949), AI-assisted trailer on every commit. Per-track ufsatm and WM branches not yet made |
 | Whole round | the 37 together: answers change only, none fails to run, reproducibility bitwise, all 188 changed tests screened (*Checks*) |
-| 1a | regional quiet; global: only SAMF + PBL exceeds noise (+0.002 to +0.006 K), the ice-fusion heat it restores. HAFS: without sea ice/NSST 0 of 20 members crash, as develop (*HAFS crash*) |
-| 1b | attributed: the regional precipitation changes are the fixes' own signal (settled cloud water now counted; created water removed) |
+| 0b | regional quiet; global: only SAMF + PBL exceeds noise (+0.002 to +0.006 K), the ice-fusion heat it restores. HAFS: without sea ice/NSST 0 of 20 members crash, as develop (*HAFS crash*) |
+| 0c | attributed: the regional precipitation changes are the fixes' own signal (settled cloud water now counted; created water removed) |
 | 1c | WoFS 0.7–2.4× noise; waits on `dev/emc` and the SAMF issue |
-| 1d | held: 1a with sea ice/NSST crashed `hafs_global_1nest_atm` in 3 of 20 members, the RT member included; no single fix identified (*HAFS crash*). Waits on the SAMF issue |
-| HAFS crash | a pre-existing SAMF instability (*HAFS crash*): any change to HAFS answers moves its tail. Posted first, as an issue (descriptions §8). SA1 is held with it (it raised the event rate 1.7×), with our cap |
-| Waiting upstream | TEMPO PR (1b) after ccpp-physics#389, SAMF PR (1a) after #390; resolved rebases prepared |
+| 1d | held: 0b with sea ice/NSST crashed `hafs_global_1nest_atm` in 3 of 20 members, the RT member included; no single fix identified (*HAFS crash*). Waits on the SAMF issue |
+| HAFS crash | a pre-existing SAMF instability (*HAFS crash*): any change to HAFS answers moves its tail. Posted first, as an issue (0a; descriptions §8). SA1 is held with it (it raised the event rate 1.7×), with our cap |
+| Waiting upstream | TEMPO PR (0c) after ccpp-physics#389, SAMF PR (0b) after #390; resolved rebases prepared |
 | Hold-outs | R1, TOPT, MYNN and the owner-judgement bugs: `round2_issues.md` |
 | Posted | nothing upstream. Working notes public: github.com/pera-noaa/ufs-water-conservation (`../publish/` has the recipe) |
 
@@ -42,15 +42,15 @@ when its own reviews are done.
 
 | Order | Track | PRs | Fixes | Answer change | HAFS | Reviewers who decide | Before posting |
 |---|---|---|---|---|---|---|---|
-| 0 | SAMF issue | ccpp-physics issue (descriptions §8) | — | — | the cause | @JongilHan66 | nothing |
-| 1 | **1b** microphysics | Thompson, TEMPO driver; ufsatm bump; WM | 7 | regional precipitation −4 to +11 %, WoFS −2 %: the fixes' own signal (*Checks, 1b*) | not touched (1a + FV3 = the 37, bitwise in 10 members) | Thompson/TEMPO owners, RRFS/HRRR | track RT |
-| 2 | **1a** global conservation | SAMF + PBL, Noah-MP (+ NOAA-EMC/noahmp), GFDL MP v3; ufsatm (SAMF32 + bump); WM | 20 | global: 3-D T +0.002 to +0.005 K, all from SAMF + PBL's ice-fusion heat (the bug's own signal); regional: SAMF + PBL bitwise, Noah-MP ≤ 0.02 % | 0 of 20 crash, as develop | EMC global physics (GFS, HAFS) | track RT |
-| 3 | **1d** sea ice, NSST | sea ice/NSST; ufsatm bump; WM | 4 | global ≤ 0.0008 K, ≤ 0.13 %; regional ≤ 0.7 % | with 1a: 3 of 20 crash, RT member included | @wd20xw @XuLi-NOAA, EMC | the SAMF issue's answer; HAFS ensemble on 1a + 1d |
-| 3 | **1c** dycore | FV3 (GFDL `dev/emc`); ufsatm bump; WM | 6 | WoFS 0.2–0.8 % per commit (0.7–2.4× noise), `cpld_regional_atm_fbh` −1.4 % | FV3 alone 0 of 3; with 1a = the 37 (1 of 10) | GFDL maintainers, then EMC | `dev/emc` merge; the SAMF issue's answer; track RT |
+| 0 | **0a** SAMF issue | ccpp-physics issue (descriptions §8) | — | — | the cause | @JongilHan66 | nothing |
+| 0 | **0b** global conservation | SAMF + PBL, Noah-MP (+ NOAA-EMC/noahmp), GFDL MP v3; ufsatm (SAMF32 + bump); WM | 20 | global: 3-D T +0.002 to +0.005 K, all from SAMF + PBL's ice-fusion heat (the bug's own signal); regional: SAMF + PBL bitwise, Noah-MP ≤ 0.02 % | 0 of 20 crash, as develop | EMC global physics (GFS, HAFS) | track RT |
+| 0 | **0c** microphysics | Thompson, TEMPO driver; ufsatm bump; WM | 7 | regional precipitation −4 to +11 %, WoFS −2 %: the fixes' own signal (*Checks, 0c*) | not touched (0b + 1d + FV3 = the 37, bitwise in 10 members) | Thompson/TEMPO owners, RRFS/HRRR | track RT |
+| 1 | **1c** dycore | FV3 (GFDL `dev/emc`); ufsatm bump; WM | 6 | WoFS 0.2–0.8 % per commit (0.7–2.4× noise), `cpld_regional_atm_fbh` −1.4 % | FV3 alone 0 of 3; with 0b + 1d = the 37 (1 of 10) | GFDL maintainers, then EMC | `dev/emc` merge; the SAMF issue's answer; track RT |
+| 1 | **1d** sea ice, NSST | sea ice/NSST; ufsatm bump; WM | 4 | global ≤ 0.0008 K, ≤ 0.13 %; regional ≤ 0.7 % | with 0b: 3 of 20 crash, RT member included | @wd20xw @XuLi-NOAA, EMC | the SAMF issue's answer; HAFS ensemble on 0b + 1d |
 
 Every PR compiles alone on `develop`, so the tracks are independent; whichever WM PR merges later takes the earlier
 ones' ufsatm and ccpp-physics pointers. The 37's regression (`rt2`, `rt_logs_37/`) is evidence for all four, not a WM
-PR log. 1d's removal from 1a rests on 20 members and the RT member passing, not on an identified cause (*HAFS crash*).
+PR log. 1d's separation from 0b rests on 20 members and the RT member passing, not on an identified cause (*HAFS crash*).
 
 ## The PRs
 
@@ -59,16 +59,16 @@ PR log. 1d's removal from 1a rests on 20 members and the RT member passing, not 
 
 | PR | Track | Repository | Fixes | Owners | Notes |
 |---|---|---|---|---|---|
-| SAMF + PBL | 1a | ccpp-physics `ufs/dev` | D3A (07), F3 01a (23), PBL05 (52), SAMF08 (55) | @JongilHan66 @lisa-bengtsson | D3A adds `hfus`. After #390 |
-| Noah-MP | 1a | ccpp-physics + NOAA-EMC/noahmp `develop` | NM1–NM6, NM8 (W08–W13, W15); NM12 (12); NP1 (33); SL2, CS1, CB1 (38–40); 09b | @barlage @cenlinhe | NM2's `iter` needs 09b (the land component crashes without it); NM12 = NCAR/noahmp#47 |
+| SAMF + PBL | 0b | ccpp-physics `ufs/dev` | D3A (07), F3 01a (23), PBL05 (52), SAMF08 (55) | @JongilHan66 @lisa-bengtsson | D3A adds `hfus`. After #390 |
+| Noah-MP | 0b | ccpp-physics + NOAA-EMC/noahmp `develop` | NM1–NM6, NM8 (W08–W13, W15); NM12 (12); NP1 (33); SL2, CS1, CB1 (38–40); 09b | @barlage @cenlinhe | NM2's `iter` needs 09b (the land component crashes without it); NM12 = NCAR/noahmp#47 |
 | Sea ice, NSST | 1d | ccpp-physics | SI1, SI2, FL1 (31, 32, 36); QR1 (34) | @wd20xw @XuLi-NOAA | |
-| GFDL MP v3 | 1a | ccpp-physics | GFDL02, GFDL07 (49, 54) | @RuiyuSun | |
-| Build | 1a | NOAA-EMC/ufsatm `develop` | SAMF32 (25) + 1a submodule bump | @rhaesung (author of ufsatm#1133, also a ccpp-physics code manager) | answers change in the `_conv32` tests |
-| Thompson | 1b | ccpp-physics | TH1–TH7 (W02–W07) | @gthompsnWRF @RuiyuSun @AndersJensen-NOAA | TH5 adds `prsi` (in the hosts) |
-| TEMPO driver | 1b | ccpp-physics | TH1's twin in `mp_tempo` (`ports/TEMPO-driver/0001`) | default owners | exposes TEMPO's own +0.33 % residual (fixes at NCAR/TEMPO, unmerged). After #389 |
+| GFDL MP v3 | 0b | ccpp-physics | GFDL02, GFDL07 (49, 54) | @RuiyuSun | |
+| Build | 0b | NOAA-EMC/ufsatm `develop` | SAMF32 (25) + 0b submodule bump | @rhaesung (author of ufsatm#1133, also a ccpp-physics code manager) | answers change in the `_conv32` tests |
+| Thompson | 0c | ccpp-physics | TH1–TH7 (W02–W07) | @gthompsnWRF @RuiyuSun @AndersJensen-NOAA | TH5 adds `prsi` (in the hosts) |
+| TEMPO driver | 0c | ccpp-physics | TH1's twin in `mp_tempo` (`ports/TEMPO-driver/0001`) | default owners | exposes TEMPO's own +0.33 % residual (fixes at NCAR/TEMPO, unmerged). After #389 |
 | FV3 | 1c | GFDL_atmos_cubed_sphere `dev/emc` | FX1, SG1, CP1, FV2, INLQ (01, 02, 03, 05, 29); FV1 (W19) | maintainers (no CODEOWNERS) | `dev/emc` merges rarely (last 5 August) |
-| ufsatm bump | 1b, 1c, 1d | NOAA-EMC/ufsatm `develop` | submodule bump | ufsatm code managers | no code |
-| WM | 1a, 1b, 1c, 1d | ufs-weather-model `develop` | submodule bumps, RT log, `test_changes.list` | gatekeepers | one per track |
+| ufsatm bump | 0c, 1c, 1d | NOAA-EMC/ufsatm `develop` | submodule bump | ufsatm code managers | no code |
+| WM | 0b, 0c, 1c, 1d | ufs-weather-model `develop` | submodule bumps, RT log, `test_changes.list` | gatekeepers | one per track |
 
 Every ccpp-physics PR also gets the default owners (@grantfirl @rhaesung @Qingfu-Liu @dustinswales).
 
@@ -94,20 +94,20 @@ branch head):
 
 | Repository | Branch | Track | Commits | Base |
 |---|---|---|---|---|
-| ccpp-physics | `pr1-samf`, `-noahmp`, `-gfdlmp` | 1a | 4, 12, 2 | `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-samf`, `-noahmp`, `-gfdlmp` | 0b | 4, 12, 2 | `ufs/dev` d9b70feb |
 | ccpp-physics | `pr1-seaice_nsst` | 1d | 4 | `ufs/dev` d9b70feb |
-| ccpp-physics | `pr1-thompson`, `-tempo` | 1b | 6, 1 | `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-thompson`, `-tempo` | 0c | 6, 1 | `ufs/dev` d9b70feb |
 | ccpp-physics | `pr1-round1` (all six, a4bee81f) | all | 29 | `ufs/dev` d9b70feb |
 | ccpp-physics (held) | `pr1-sa1` (ae8399bd), `pr1-samfcfl` (766d0735) | — | 1, 1 | `ufs/dev` d9b70feb |
-| ccpp-physics | `prep-samf-on390`, `prep-tempo-on389` | 1a, 1b | 4, 1 | `ufs/dev` + #390 / #389, conflict resolved |
+| ccpp-physics | `prep-samf-on390`, `prep-tempo-on389` | 0b, 0c | 4, 1 | `ufs/dev` + #390 / #389, conflict resolved |
 | GFDL_atmos_cubed_sphere | `pr1-round1` | 1c | 6 | `dev/emc` 71ff473b |
 | ufsatm | `pr1-round1` (SAMF32 + bump of all; 447ff08) | all | 2 | `develop` aa0ba811 |
-| NOAA-EMC/noahmp | `pr1-round1` | 1a | 1 (09b) | `develop` 2c7b3bc2 |
+| NOAA-EMC/noahmp | `pr1-round1` | 0b | 1 (09b) | `develop` 2c7b3bc2 |
 | ufs-weather-model | `pr1-round1` (bump of all; `.gitmodules` still upstream; 52c8f8c2) | all | 1 | `develop` f1d68949 |
 
-- **To make per track**: ufsatm and WM branches whose bumps carry only that track's PRs (1b: Thompson and TEMPO
-  merged; 1a: SAMF32 + SAMF, Noah-MP and GFDL MP merged + noahmp; 1d: sea ice/NSST; 1c: FV3), each on the heads
-  of the tracks merged before it. `q/t1ans` holds the current 1a (13 files = 5 + 7 + 1); `attr/g_t1a` 1a + 1d.
+- **To make per track**: ufsatm and WM branches whose bumps carry only that track's PRs (0c: Thompson and TEMPO
+  merged; 0b: SAMF32 + SAMF, Noah-MP and GFDL MP merged + noahmp; 1d: sea ice/NSST; 1c: FV3), each on the heads
+  of the tracks merged before it. `q/t1ans` holds 0b (13 files = 5 + 7 + 1); `attr/g_t1a` 0b + 1d.
 - **Commits**: author and committer `Ash Pera <ashley.pera@noaa.gov>`; message = defect, fix, measured effect (water
   messages from `git/ufs-dev/all` and the FV3 series, the rest in `$U/pr1/msgs/`); then the paragraph
   `Part of a water-conservation project for UFS physics (NOAA GML / CIRES).`; last line
@@ -148,14 +148,14 @@ Screen: `rt_screen.py` (window-mean precipitation, T2m, PW, q2m, 3-D T and q aga
 | Screen coverage | `rap_sfcdiff_decomp`, `rap_progcld_thompson_debug` lost their output on `rt.sh`'s retry; rerun from a copy of `rt2` (`attr/re37`, `rt_logs_37/screen_re37.txt`): −0.05 %, −1.03 %, `rap_sfcdiff_decomp` = its parent. `regional_noquilt` read from `fv3_history` (unweighted), `cpld_debug_sfs` from RESTART | — |
 | Per PR, 8 regional outliers (11 runs) | Thompson alone reproduces the 37 (`regional_control` +9.2 % vs +8.7 %, `regional_spp_sppt_shum_skeb` −5.3 % vs −5.1 %, `conus13km_gl_inline` −2.42 % vs −2.41 %, HRRR/RAP debug −0.9 to −1.4 %); FV3 ≤ 0.25 % except `cpld_regional_atm_fbh` −1.4 %; sea ice/NSST `regional_control` +0.7 %; SAMF + PBL 11 of 11 bitwise; Noah-MP ≤ 0.02 %. Sum of singles within 0.4 % of the 37 except `regional_control` (+9.9 vs +8.7). GFDL MP, TEMPO and the `_conv32` build do not reach these suites (`attr/attr_table.txt`) | sum ≠ the 37 |
 
-### Track 1a (and 1d)
+### Track 0b (and 1d)
 
 | Check | Result | Can fail |
 |---|---|---|
-| Global P8, per PR and 1a + 1d together (`attr/g_*`, `attr_global_table.txt`): `control_p8`, `control_c48`, `control_c48.v2.sfc`, `control_p8_lndp`, `control_p8_rrtmgp`, `cpld_control_gfsv17`, `control_p8_samf_conv32`, `hafs_regional_atm_gfdlmpv3`; Thompson and FV3 alone for comparison | 3-D T: **SAMF + PBL** +0.0024 to +0.0062 K (8–20× noise) = the 37's warming; the ice-fusion heat it restores (0.42 W/m²) gives 0.0036 K/day, so the bug's own signal. Noah-MP −0.0003 to −0.0009 K; sea ice/NSST ≤ 0.0008 K; GFDL MP v3 only `hafs_regional_atm_gfdlmpv3` (precipitation −0.30 %, T −0.0008 K; its bug created 1.03 % of microphysics precipitation); build only `control_p8_samf_conv32` (−0.50 %, −0.0027 K: SAMF now single precision). Precipitation: SAMF + PBL +0.16 to +0.37 %, others ≤ 0.13 %. 1a together: 3-D T +0.0020 to +0.0050 K, precipitation −0.31 to +0.33 %; singles add to it within 0.0011 K. Thompson, FV3 alone: ≤ 0.18 %, ≤ 0.0012 K | a 1a PR outside noise and not its bug's signal; singles ≠ 1a together |
-| HAFS instability rate, 1a + 1d (`hafs_global_1nest_atm`; `q/t1a`, `hafs_exp/q_t1a_*`, `q_ens3_stats.txt`) | **fails**: 3 of 20 members crash (`compute_qs` overflow; 66–73 K), the `consv_te` = 1 member (the RT configuration) included; develop 0 of 20 (p 0.12); 1a − sea ice/NSST (the current 1a) 0 of 20; no single fix identified (*HAFS crash*, ensembles); event rate as develop. Hence 1d held | rate above develop's |
+| Global P8, per PR and 0b + 1d together (`attr/g_*`, `attr_global_table.txt`): `control_p8`, `control_c48`, `control_c48.v2.sfc`, `control_p8_lndp`, `control_p8_rrtmgp`, `cpld_control_gfsv17`, `control_p8_samf_conv32`, `hafs_regional_atm_gfdlmpv3`; Thompson and FV3 alone for comparison | 3-D T: **SAMF + PBL** +0.0024 to +0.0062 K (8–20× noise) = the 37's warming; the ice-fusion heat it restores (0.42 W/m²) gives 0.0036 K/day, so the bug's own signal. Noah-MP −0.0003 to −0.0009 K; sea ice/NSST ≤ 0.0008 K; GFDL MP v3 only `hafs_regional_atm_gfdlmpv3` (precipitation −0.30 %, T −0.0008 K; its bug created 1.03 % of microphysics precipitation); build only `control_p8_samf_conv32` (−0.50 %, −0.0027 K: SAMF now single precision). Precipitation: SAMF + PBL +0.16 to +0.37 %, others ≤ 0.13 %. 0b together: 3-D T +0.0020 to +0.0050 K, precipitation −0.31 to +0.33 %; singles add to it within 0.0011 K. Thompson, FV3 alone: ≤ 0.18 %, ≤ 0.0012 K | a 0b PR outside noise and not its bug's signal; singles ≠ 0b together |
+| HAFS instability rate, 0b + 1d (`hafs_global_1nest_atm`; `q/t1a`, `hafs_exp/q_t1a_*`, `q_ens3_stats.txt`) | **fails**: 3 of 20 members crash (`compute_qs` overflow; 66–73 K), the `consv_te` = 1 member (the RT configuration) included; develop 0 of 20 (p 0.12); 0b (0b + 1d − sea ice/NSST) 0 of 20; no single fix identified (*HAFS crash*, ensembles); event rate as develop. Hence 1d held | rate above develop's |
 
-### Track 1b
+### Track 0c
 
 | Check | Result | Can fail |
 |---|---|---|
@@ -197,7 +197,7 @@ official baseline); trees in `$U/pr1/q/`, runs in `$U/pr1/hafs_exp/q_*`.
 | the 38 | 466 (crash), 464, 473 | 4500–5000 | 70.8 K, CFL 54 | 2.407 |
 | the 38 + T1 sub-stepping | 470, 439, 424 | 4200–4500 | 29 K | 2.406 |
 | **the 37** | 326, 319, 289 (no crash) | 3000–3200 | 35 K | 2.436 |
-| **track 1a alone** (no FV3, no SA1; `q/t1a`) | 109 (crash < 3 h), 293, 210 (crash > 3 h) | 760–3070 | 72.8 K | 2.436 (the member that finished) |
+| **0b + 1d** (no FV3, no SA1; `q/t1a`) | 109 (crash < 3 h), 293, 210 (crash > 3 h) | 760–3070 | 72.8 K | 2.436 (the member that finished) |
 | develop + SAMFCFL, control | 0 | — | — | 2.432 |
 | the 38 + SAMFCFL, control | 1 | — | 4.0 K, CFL 0.85 | 2.406 |
 
@@ -207,20 +207,37 @@ official baseline); trees in `$U/pr1/q/`, runs in `$U/pr1/hafs_exp/q_*`.
 |---|---|---|---|---|---|
 | develop | 20 | 0 | 0 | 31 K, 52 K | — |
 | the 37 | 10 | 1 (0.991) | 1 | 33 K, 74 K | 0.33; 0.33 |
-| track 1a | 20 | **3** (1, 0.998, 0.994) | 4 | 40 K, 73 K | 0.12; 0.05 |
-| 1a − sea ice/NSST | 20 | 0 | 0 | 32 K, 48 K | 1; 1 |
-| 1a − PBL05 | 10 | 0 | 1 | 29 K, 63 K | 1; 0.33 |
-| 1a − NSST rain | 10 | 0 | 1 | 29 K, 75.5 K (no crash) | 1; 0.33 |
-| 1a − the three sea-ice fixes | 10 | 0 | 0 | 30 K, 51 K | 1; 1 |
-| 1a + FV3 | 10 | = the 37, bitwise in all 10 (Thompson and TEMPO do not act in HAFS) | | | |
+| 0b + 1d | 20 | **3** (1, 0.998, 0.994) | 4 | 40 K, 73 K | 0.12; 0.05 |
+| 0b (0b + 1d − sea ice/NSST) | 20 | 0 | 0 | 32 K, 48 K | 1; 1 |
+| 0b + 1d − PBL05 | 10 | 0 | 1 | 29 K, 63 K | 1; 0.33 |
+| 0b + 1d − NSST rain | 10 | 0 | 1 | 29 K, 75.5 K (no crash) | 1; 0.33 |
+| 0b + 1d − the three sea-ice fixes | 10 | 0 | 0 | 30 K, 51 K | 1; 1 |
+| 0b + 1d + FV3 | 10 | = the 37, bitwise in all 10 (Thompson and TEMPO do not act in HAFS) | | | |
 
 p: chance that this many of the pooled events fall in the tree (hypergeometric). Event counts and precipitation of
-finished members overlap develop's in every tree (all 96 finished: 241–369 events, 2.4351–2.4391 mm/day). 1a's three crashes are all in
-its first 10 members. No single fix is identified: every removal gives 0 crashes, but at 1a's 3 in 20, 0 in 10 has
-probability 0.2. 1a − sea ice/NSST is indistinguishable from develop in 20 members.
+finished members overlap develop's in every tree (all 96 finished: 241–369 events, 2.4351–2.4391 mm/day). 0b + 1d's three crashes are all in
+its first 10 members. No single fix is identified: every removal gives 0 crashes, but at 0b + 1d's 3 in 20, 0 in 10 has
+probability 0.2. 0b is indistinguishable from develop in 20 members.
 
 No shallow event above 4 K in any run. Gates: the develop control reproduces the earlier count (257); the 38's control
-reproduces the crash (466, same step). "All physics, no FV3" included SA1, so it is not track 1a alone.
+reproduces the crash (466, same step). "All physics, no FV3" included SA1, so it is not 0b + 1d.
+
+**Fix options** (issue options A and B; 20 members each; `q/devA`, `devD`, `devE`, `t1aA`, `t1aD`, `t1aE`;
+`hafs_samf/q_opt_stats.txt`, `opt_sum.py`):
+
+| Tree | Crashes | Events > 4 K per member | CFL > 1, all members | Largest step | Precip, mm/day |
+|---|---|---|---|---|---|
+| develop | 0 | 257–351 | 5769 | 52.0 K | 2.4370 |
+| + A, CFL bound `kb ≤ k < kbcon` (`fixb.f`, SAMFCFL) | 0 | 0–1 | 0 | 4.8 K | 2.4327 |
+| + CFL bound `kb ≤ k < ktcon` (`optD.f`) | = A in all 20 | | | | |
+| + B, vapour bound (`optE.f`) | 0 | 246–384 | 5839 | 42.2 K | 2.4372 |
+| 0b + 1d | 3 | 241–369 | 5009 | 64.2 K | 2.4365 |
+| 0b + 1d + A | 0 | 0–1 | 0 | 4.5 K | 2.4324 |
+| 0b + 1d + CFL bound to `ktcon` | = A in all 20 | | | | |
+| 0b + 1d + B | 1 | 252–344 | 5541 | 44.0 K | 2.4364 |
+
+The bound above cloud base never binds (the executables differ; all 40 statistics lines are identical), so the issue
+offers the bound in every updraft layer as A. B does not bind the overshoots.
 
 **Findings.**
 - The instability is upstream: develop reaches 39 K in one step.
@@ -259,6 +276,7 @@ Subcomponents*, *Expectations for Developers* and *Testing Expectations & Commit
 repository's PR template; the CCPP Technical Documentation, *Code Management*.
 
 **Order.**
+Posting bundle for 0a, 0b, 0c (bodies in template order, `gh` commands, prerequisites): `post/POSTING.md`.
 1. The SAMF issue (descriptions §8); a ufs-weather-model issue (every PR must link one; all four tracks link the same
    issue); a GFDL issue (their guide asks for one). Then the tracks in the order of *Tracks*.
 2. Per track, PRs from forks, lowest repository first: ccpp-physics `ufs/dev`, GFDL `dev/emc`, NOAA-EMC/noahmp
@@ -292,6 +310,6 @@ single precision (ccpp-physics#384 → ufsatm#1133 → WM#3341), 5 weeks.
 
 **Not verified.** Branch-protection review counts on ccpp-physics and ufsatm; whether contributors can set `*-RT`
 labels. The wiki's label section is stale. Whether gatekeepers prefer one baseline change or one per track.
-Global P8 of the current 1a (without 1d) as one unit: the singles add within 0.0011 K, and 1d alone is ≤ 0.0008 K.
+Global P8 of 0b as one unit: the singles add within 0.0011 K, and 1d alone is ≤ 0.0008 K.
 
 Earlier versions, with the single-bundle plan, the red-team findings and their evidence: `pr_round1.history.md`.
