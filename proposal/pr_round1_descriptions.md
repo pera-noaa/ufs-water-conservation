@@ -110,7 +110,19 @@ precipitation.
 | Density | density recomputed after latent heating, before sedimentation | removes 0.11 % |
 | Layer depth | `dz` from heights computed before convection | removes 0.014 % (new argument `prsi`, already in the hosts) |
 
-[P0C-TABLE]
+In the regional and convection-allowing tests (3 km, 1–6 h cold starts), the four fixes on develop (with the TEMPO
+driver fix, which acts only in TEMPO suites):
+
+| Test | Precipitation |
+|---|---|
+| `regional_spp_sppt_shum_skeb` | −5.3 % |
+| `cpld_regional_atm_fbh` | −3.0 % |
+| `conus13km_gl_inline` | −2.5 % |
+| `regional_control`, `gnv1_nested` | −1.4 % |
+| HRRR/RAP debug (1 h) | −0.9 to −1.3 % |
+
+Each fix alone: the graupel re-closure −1.0 to −4.1 %, the mass basis up to −2.0 %, the others ≤ 1.1 %: water these
+terms created.
 
 Noise (one-ulp perturbation): ≤ 0.24 %. The graupel fix removes water created during spin-up, largest in these
 short cold starts (0.76 % in the first 6 h at C96).
@@ -397,7 +409,7 @@ Common to 7a–7e:
 Noah-MP, GFDL MP v3 and the SAMF single-precision build. Each fix is one commit in its subcomponent, with the
 defect, fix and measured effect in the commit message. Largest effects: SAMF drops the heat of fusion of the ice it
 detrains (0.42 W/m²); GFDL MP v3 creates 1.03 % of its precipitation; `control_p8_mynn` depends on the
-decomposition. In the global tests the mean 3-D temperature rises 0.002–0.005 K and precipitation changes by −0.3 to
+decomposition. In the global tests the mean 3-D temperature rises 0.001–0.006 K and precipitation changes by −0.3 to
 +0.3 %: the heat of fusion SAMF was dropping (0.42 W/m²), restored. `hafs_global_1nest_atm` has a pre-existing SAMF instability (ufs-community/ccpp-physics#401); with
 these fixes it crashes in 0 of 20 perturbed members, as develop. One of five WM PRs from the same issue.
 
@@ -425,7 +437,9 @@ these fixes it crashes in 0 of 20 perturbed members, as develop. One of five WM 
 ## Description:
 Five independent, answer-changing bug fixes that close water-budget errors in Thompson microphysics and fix the
 same mass-basis error in the TEMPO driver. Each fix is one commit, with the defect, fix and measured effect in the
-commit message. [P0C-WM] The ccpp-physics PRs give the attribution by fix. One of five WM PRs from the same issue.
+commit message. In the regional and convection-allowing tests precipitation falls by 0.9–5.3 %
+(`regional_wofs_tempo` 2.0 %): water that the graupel limiters and the mass-basis round trips created is no
+longer created. The ccpp-physics PRs give the attribution by fix. One of five WM PRs from the same issue.
 
 ### Commit Message:
 ```

@@ -8,7 +8,17 @@ Four fixes in `mp_thompson`/`module_mp_thompson`, one commit each. Sizes are fra
 | Density | density recomputed after latent heating, before sedimentation | removes 0.11 % |
 | Layer depth | `dz` from heights computed before convection | removes 0.014 % (new argument `prsi`, already in the hosts) |
 
-[P0C-TABLE]
+In the regional and convection-allowing tests (3 km, 1–6 h cold starts), the four fixes on develop (with the TEMPO driver fix, which acts only in TEMPO suites):
+
+| Test | Precipitation |
+|---|---|
+| `regional_spp_sppt_shum_skeb` | −5.3 % |
+| `cpld_regional_atm_fbh` | −3.0 % |
+| `conus13km_gl_inline` | −2.5 % |
+| `regional_control`, `gnv1_nested` | −1.4 % |
+| HRRR/RAP debug (1 h) | −0.9 to −1.3 % |
+
+Each fix alone: the graupel re-closure −1.0 to −4.1 %, the mass basis up to −2.0 %, the others ≤ 1.1 %: water these terms created.
 
 Noise (one-ulp perturbation): ≤ 0.24 %. The graupel fix removes water created during spin-up, largest in these short cold starts (0.76 % in the first 6 h at C96).
 
