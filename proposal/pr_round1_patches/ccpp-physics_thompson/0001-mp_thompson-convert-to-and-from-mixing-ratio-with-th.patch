@@ -1,7 +1,7 @@
-From 2909f96029fdb158d3ca3e9633bfcd891bc07870 Mon Sep 17 00:00:00 2001
+From a0ec7e580021bb2b7ca0a81d7f1c3025bdc982cb Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:47 -0500
-Subject: [PATCH 1/6] mp_thompson: convert to and from mixing ratio with the
+Subject: [PATCH 1/4] mp_thompson: convert to and from mixing ratio with the
  same humidity
 
 FV3 hands physics tracers per (dry air + vapour) and rebuilds each species'

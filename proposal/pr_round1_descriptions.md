@@ -1,15 +1,16 @@
 # PR round 1: issue and PR descriptions (drafts)
 
-*Drafts, not posted. Fill `#TBD` once opened; `[RT 0b]`, `[RT 0c]`, `[RT 1c]`, `[RT 1d]` once each track's run is in.
-Round 1 posts in four tracks (`pr_round1.md`, *Tracks*), each with its own ufsatm and WM PR, in this order:
+*Drafts, not posted, except §8 (ufs-community/ccpp-physics#401, 20 Oct). Fill `#TBD` once opened; `[RT 0b]`, `[RT 0c]`, `[RT 1c]`, `[RT 1d]`, `[RT 1e]` once each track's run is in.
+Round 1 posts in five tracks (`pr_round1.md`, *Tracks*), each with its own ufsatm and WM PR, in this order:
 
 | Order | Track | PRs (sections) | Waits for |
 |---|---|---|---|
 | 0 | 0a issues | SAMF issue (§8), WM issue (§1), GFDL issue (§2) | — |
-| 0 | 0b global conservation | ccpp-physics SAMF + PBL, Noah-MP, GFDL MP v3 (§3.1, §3.4, §3.6); NOAA-EMC/noahmp (§5); ufsatm (§6a); WM (§7a) | SAMF: #390 |
+| 0 | 0b global conservation | ccpp-physics SAMF + PBL, Noah-MP, GFDL MP v3 (§3.1, §3.4, §3.6); ufsatm (§6a); WM (§7a) | SAMF: #390 |
 | 0 | 0c microphysics | ccpp-physics Thompson, TEMPO driver (§3.2, §3.3); ufsatm (§6b); WM (§7b) | TEMPO: ccpp-physics#389 |
 | 1 | 1c dycore | GFDL PR (§4); ufsatm (§6c); WM (§7c) | GFDL `dev/emc` merge; the SAMF issue's answer |
-| 1 | 1d sea ice, NSST | ccpp-physics sea ice/NSST (§3.5); ufsatm (§6d); WM (§7d) | the SAMF issue's answer |
+| 1 | 1d surface iteration, sea ice, NSST | ccpp-physics (§3.5); NOAA-EMC/noahmp (§5, `iter` form only); ufsatm (§6d); WM (§7d) | the SAMF issue's answer; the form |
+| 1 | 1e Thompson, second forms | ccpp-physics (§3.7); ufsatm (§6e); WM (§7e) | 0c merged; the form |
 
 Measurements: C96 `control_p8_ugwpv1`, 24 h, in-model budget meters, unless stated. Notes and data:
 https://github.com/pera-noaa/ufs-water-conservation.*
@@ -26,7 +27,7 @@ per day; +0.45 % at C384) and losing 2 % per day of a convectively transported t
 atmosphere's energy budget still leaves +2.1 W/m² unexplained. We traced these to small, independent bugs in SAMF,
 the PBL, Thompson (and the TEMPO driver), Noah-MP and its coupling, sea ice, NSST, GFDL MP v3, the SAMF
 single-precision build, and the FV3 driver and dycore. This round fixes 37; the SAMF cloud-base fix waits on
-ufs-community/ccpp-physics#TBD.
+ufs-community/ccpp-physics#401.
 
 ### To Reproduce:
 Any P8 forecast; the budget residuals need meters. Two defects are visible without them:
@@ -35,10 +36,11 @@ Any P8 forecast; the budget residuals need meters. Two defects are visible witho
 - With `frac_grid`, Noah-MP steps 24–27 % of land twice per time step (land gains 3–5 % of global precipitation).
 
 ## Additional context
-Fixes, one commit each, in four WM PRs, all answer-changing. Now: ufs-community/ufs-weather-model#TBD (SAMF, PBL,
+Fixes, one commit each, in five WM PRs, all answer-changing. Now: ufs-community/ufs-weather-model#TBD (SAMF, PBL,
 Noah-MP, GFDL MP v3, SAMF single precision) and #TBD (Thompson, TEMPO driver), with their ccpp-physics, NOAA-EMC/noahmp
-and NOAA-EMC/ufsatm PRs. After the SAMF overshoot (ufs-community/ccpp-physics#TBD), which `hafs_global_1nest_atm` is
-sensitive to: sea ice and NSST (ccpp-physics), and FV3 (NOAA-GFDL/GFDL_atmos_cubed_sphere).
+and NOAA-EMC/ufsatm PRs. After the SAMF overshoot (ufs-community/ccpp-physics#401), which `hafs_global_1nest_atm` is
+sensitive to: land and sea ice stepped once per time step, sea ice and NSST (ccpp-physics), and FV3
+(NOAA-GFDL/GFDL_atmos_cubed_sphere). Then three Thompson fixes that have a second reasonable form.
 Notes and data: https://github.com/pera-noaa/ufs-water-conservation.
 
 ---
@@ -95,35 +97,26 @@ Overlaps ufs-community/ccpp-physics#390 in one block; whichever merges second ne
 
 ### 3.2 Thompson
 
-**Title:** Thompson: close the water budget (mass basis, settling, graupel, density, layer depth, clipping, threshold)
+**Title:** Thompson: water-budget fixes (mass basis, graupel re-closure, density, layer depth)
 
 ## Description of Changes:
-Seven fixes in `mp_thompson`/`module_mp_thompson`, one commit each. Sizes are fractions of grid-scale
+Four fixes in `mp_thompson`/`module_mp_thompson`, one commit each. Sizes are fractions of grid-scale
 precipitation.
 
 | Fix | Bug | Effect |
 |---|---|---|
 | Mass basis | humidity converted in with `1/(1-q_v)`, back with `1/(1+r_v,new)` | removes 0.4 % |
-| Settling | cloud water leaving the lowest layer not counted as precipitation; cloud sedimentation not substepped | removes 0.15 % |
 | Graupel | graupel gains not recomputed after the rate limiters | creates 0.76 % (first 6 h) |
 | Density | density recomputed after latent heating, before sedimentation | removes 0.11 % |
 | Layer depth | `dz` from heights computed before convection | removes 0.014 % (new argument `prsi`, already in the hosts) |
-| Clipping | clipped condensate deleted; vapour floor filled from nothing | creates 0.002 % |
-| R1 threshold | hydrometeors at or below R1 deleted | removes 2 × 10⁻⁸ |
 
-In the regional and convection-allowing tests (3 km, 1–6 h cold starts), each fix alone on `develop`:
-
-| Test | Precipitation, whole PR | Attribution |
-|---|---|---|
-| `regional_control` | +9.2 % | counting settled cloud water +10.9 % (3-D T +0.0008 K: reported, not state) |
-| `regional_spp_sppt_shum_skeb` | −5.3 % | graupel −4.1 %, mass basis −1.6 % |
-| `conus13km_gl_inline`, `gnv1_nested` | −2.4 %, −2.6 % | graupel −2.1 %, −1.1 % |
-| `cpld_regional_atm_fbh` | −2.6 % | mass basis −2.0 %, graupel −1.1 % |
-| HRRR/RAP debug (1 h) | −0.9 to −1.4 % | graupel −1.0 to −1.4 % |
+[P0C-TABLE]
 
 Noise (one-ulp perturbation): ≤ 0.24 %. The graupel fix removes water created during spin-up, largest in these
-short cold starts (0.76 % in the first 6 h at C96). The cloud sedimentation substepping changes precipitation by
-≤ 0.23 % except `gnv1_nested` (−1.2 %).
+short cold starts (0.76 % in the first 6 h at C96).
+
+Three more Thompson water fixes follow in a separate PR, because each has a second reasonable form: cloud water
+settling out of the lowest layer, clipped condensate, and water at or below R1.
 
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
@@ -150,14 +143,13 @@ Overlaps ufs-community/ccpp-physics#389 in one block; whichever merges second ne
 
 ### 3.4 Noah-MP
 
-**Title:** Noah-MP: water and energy bugs in the driver, frac_grid stepping, snow initialisation, truncations, snow layers
+**Title:** Noah-MP: water and energy bugs in the driver, coastal snow, snow initialisation, truncations, snow layers
 
 ## Description of Changes:
-Twelve fixes in Noah-MP and its interstitials, one commit each.
+Eleven fixes in Noah-MP and its interstitials, one commit each.
 
 | Fix | Bug | Effect |
 |---|---|---|
-| Once per time step | with `frac_grid`, coastal land is re-flagged and stepped again on the second surface iteration (24–27 % of land, every step) | land gains 3–5 % of global precipitation |
 | Evaporation hand-off | latent heat ÷ a different constant | atmosphere gains 0.07–0.10 % of global precipitation |
 | Coastal snow (`frac_grid`) | land snow overwritten with the cell mean every step | thin coastal snow lost |
 | Snow initialisation | cold-start snow layers built from the cell-mean snow | 0.29 kg/m² land snow lost at step 1 |
@@ -168,31 +160,43 @@ Twelve fixes in Noah-MP and its interstitials, one commit each.
 | Melt-out heat | leftover heat deleted when the layer below is frozen | did not fire in the test case |
 | Snow layer heat (3 commits) | merge keeps receiver's T; capped volume fractions; m⁻³ capacities used per kg | Noah-MP soil energy residual 3.9 × 10⁻⁴ → 4.3 × 10⁻⁸ W/m² |
 
-The once-per-step fix adds an optional last argument `iter` (`ccpp_loop_counter`) to `noahmpdrv_run`.
+Noah-MP's coastal land is also stepped twice per time step with `frac_grid`; that fix follows with its sea-ice twin
+(the same cause, two tested forms).
 
 ## Dependencies:
-- NOAA-EMC/noahmp#TBD (its copy of the driver must declare `iter`, or `control_p8_atmlnd` crashes)
-- ufs-community/ufs-weather-model#TBD (7a; bumps NOAHMP-interface too)
+ufs-community/ufs-weather-model#TBD
 
-### 3.5 Sea ice and NSST
+### 3.5 Surface iteration, sea ice and NSST
 
-**Title:** sfc_sice and sfc_nst: ice stepped twice, heat divided by Δt twice, flooded-snow heat, rain units
+**Title:** Land and sea ice stepped once per time step; sea-ice heat divided by Δt twice, flooded-snow heat, NSST rain units
 
 ## Description of Changes:
-Four fixes, one commit each.
+Five fixes, one commit each.
 
 | Fix | Bug | Effect |
 |---|---|---|
-| Once per step | NSST re-flags icy cells for the second iteration; ice stepped again (1.9 % of ice column-steps) | calls per column-step 1.0186 → 1.0000 |
+| Land once per step | with `frac_grid`, coastal land is re-flagged and stepped again on the second surface iteration (24–27 % of land, every step) | land gains 3–5 % of global precipitation |
+| Ice once per step | NSST re-flags icy cells for the second iteration; ice stepped again (1.9 % of ice column-steps) | calls per column-step 1.0186 → 1.0000 |
 | Excess heat | `ice3lay` divides J/m² by `li*delt` | deletes (1 − 1/Δt) of it; thin ice near melting |
 | Flooded snow | becomes ice at the layers' T, not with its −li heat content | −7.9 × 10⁻³ → 10⁻¹³ W/m² |
 | NSST rain | `rain` (m per step) used as kg m⁻² s⁻¹ in `qrain` and `sep` | rain heat flux × 1000/720 at Δt 720 s |
 
-Together: ice thickness rms 1.7 × 10⁻³ m (noise 8 × 10⁻⁵); other fields at noise.
+Together (sea ice, NSST): ice thickness rms 1.7 × 10⁻³ m (noise 8 × 10⁻⁵); other fields at noise.
+
+The two once-per-step fixes have one cause: `GFS_surface_loop_control_part2` re-flags a cell for the water's second
+pass when the cell is also Noah-MP land or icy, and Noah-MP and `sfc_sice` step it again. Two forms, equivalent within
+noise in the global P8 tests (land and ice state, precipitation, 3-D T):
+- (a) do not re-flag those cells in that clause (for ice, the clause's commented-out original, `.not. icy`): one
+  line, no interface change. The water part of those cells loses its low-wind second NSST pass.
+- (b) an optional `iter` (`ccpp_loop_counter`) argument in `noahmpdrv` and `sfc_sice`; NOAA-EMC/noahmp's copy of the
+  driver must declare it too, or `control_p8_atmlnd` crashes.
+
+We prefer (a). Which do you want?
 
 ## Dependencies:
-ufs-community/ufs-weather-model#TBD (7d). Waits for ufs-community/ccpp-physics#TBD (SAMF overshoot): with the
-track-0b fixes these four raised the `hafs_global_1nest_atm` crash rate (3 of 20 members against 0 of 20).
+ufs-community/ufs-weather-model#TBD (7d); in form (b), NOAA-EMC/noahmp#TBD. Waits for ufs-community/ccpp-physics#401
+(SAMF overshoot): with the track-0b fixes the four sea-ice/NSST fixes raised the `hafs_global_1nest_atm` crash rate
+(3 of 20 members against 0 of 20).
 
 ### 3.6 GFDL MP v3
 
@@ -208,6 +212,26 @@ track-0b fixes these four raised the `hafs_global_1nest_atm` crash rate (3 of 20
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
 
+
+### 3.7 Thompson: fixes with a second form (track 1e)
+
+**Title:** Thompson: settled cloud water, clipped condensate and sub-R1 water
+
+## Description of Changes:
+Three water fixes on top of ufs-community/ccpp-physics#TBD (the four Thompson fixes), one commit each. Each conserves
+water and has a second reasonable form; which do you prefer?
+
+| Fix | Bug | This PR | Other form | Effect |
+|---|---|---|---|---|
+| Settled cloud water | cloud water sedimenting out of the lowest layer is added to no precipitation total; cloud sedimentation takes one full step where `vtck*DT > dz` | count it as rain; substep cloud sedimentation like the other species | keep it in the lowest layer | removes 0.15 %; `regional_control` reported precipitation +10.9 % (other form +4.8 %), the atmosphere unchanged |
+| Clipped condensate | hydrometeors ending the step negative or below R1 are set to zero; vapour is floored at 10⁻¹⁰ | to vapour with its latent heat; the floor refilled from the layer's condensate, then the column's vapour | return the clipped condensate only, leave the floor | creates 0.002 % |
+| Sub-R1 water | water at or below R1 deleted on entry, in `semi_lagrange_sedim` and for leftover rain | to vapour with its latent heat; `semi_lagrange_sedim` returns what it does not move | the entry and leftover rain only | removes 2 × 10⁻⁸ |
+
+Sizes are fractions of grid-scale precipitation. Cloud water reaching the ground is water reaching the ground, so we
+count it; keeping it in the air also conserves water.
+
+## Dependencies:
+ufs-community/ccpp-physics#TBD (Thompson); ufs-community/ufs-weather-model#TBD (7e)
 ---
 
 ## 4. GFDL_atmos_cubed_sphere PR (base `dev/emc`)
@@ -236,7 +260,7 @@ all round-1 fixes, reproducibility 123 of 123 bitwise. Effects from in-model bud
 
 ---
 
-## 5. NOAA-EMC/noahmp PR (base `develop`)
+## 5. NOAA-EMC/noahmp PR (base `develop`; track 1d, form (b) only)
 
 **Title:** CCPP driver copy: accept the optional `iter` argument
 
@@ -300,11 +324,11 @@ Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7c).
 ## Dependencies
 NOAA-GFDL/GFDL_atmos_cubed_sphere#TBD
 
-### 6d. Track 1d: sea ice and NSST
+### 6d. Track 1d: surface iteration, sea ice and NSST
 
 ## Description
-Updates `ccpp/physics` for the sea-ice and NSST fixes. No code change in ufsatm. Answers change in the suites
-with fractional sea ice or NSST.
+Updates `ccpp/physics` for the surface-iteration, sea-ice and NSST fixes. No code change in ufsatm. Answers change
+in the suites with `frac_grid` Noah-MP land, fractional sea ice or NSST.
 
 ### Issue(s) addressed
 - ufs-community/ufs-weather-model#TBD
@@ -313,13 +337,28 @@ with fractional sea ice or NSST.
 Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7d). Baselines change.
 
 ## Dependencies
-ufs-community/ccpp-physics#TBD (sea ice, NSST); after ufs-community/ccpp-physics#TBD (SAMF overshoot)
+ufs-community/ccpp-physics#TBD (sea ice, NSST); after ufs-community/ccpp-physics#401 (SAMF overshoot)
 
+
+### 6e. Track 1e: Thompson, second forms
+
+## Description
+Updates `ccpp/physics` for the three Thompson fixes with a second form (settled cloud water, clipped condensate,
+sub-R1 water). No code change in ufsatm. Answers change in the Thompson suites.
+
+### Issue(s) addressed
+- ufs-community/ufs-weather-model#TBD
+
+## Testing
+Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7e). Baselines change.
+
+## Dependencies
+ufs-community/ccpp-physics#TBD (Thompson, second forms)
 ---
 
 ## 7. ufs-weather-model PRs (base `develop`), one per track
 
-Common to 7a–7d:
+Common to 7a–7e:
 
 ## Commit Queue Requirements:
 - [x] This PR addresses a relevant WM issue: #TBD
@@ -354,20 +393,19 @@ Common to 7a–7d:
 ### 7a. Track 0b: global conservation fixes
 
 ## Description:
-20 independent, answer-changing bug fixes that remove water, energy and tracer-mass errors in SAMF, the PBL,
-Noah-MP and its coupling, GFDL MP v3 and the SAMF single-precision build. Each fix is one commit in its
-subcomponent, with the defect, fix and measured effect in the commit message. Largest effects: Noah-MP steps coastal
-land twice with `frac_grid` (land gains 3–5 % of global precipitation); `control_p8_mynn` depends on the
+18 independent, answer-changing bug fixes that remove water, energy and tracer-mass errors in SAMF, the PBL,
+Noah-MP, GFDL MP v3 and the SAMF single-precision build. Each fix is one commit in its subcomponent, with the
+defect, fix and measured effect in the commit message. Largest effects: SAMF drops the heat of fusion of the ice it
+detrains (0.42 W/m²); GFDL MP v3 creates 1.03 % of its precipitation; `control_p8_mynn` depends on the
 decomposition. In the global tests the mean 3-D temperature rises 0.002–0.005 K and precipitation changes by −0.3 to
-+0.3 %: the heat of fusion SAMF was dropping (0.42 W/m²), restored. `hafs_global_1nest_atm` has a pre-existing SAMF instability (ufs-community/ccpp-physics#TBD); with
-these fixes it crashes in 0 of 20 perturbed members, as develop. One of four WM PRs from the same issue.
++0.3 %: the heat of fusion SAMF was dropping (0.42 W/m²), restored. `hafs_global_1nest_atm` has a pre-existing SAMF instability (ufs-community/ccpp-physics#401); with
+these fixes it crashes in 0 of 20 perturbed members, as develop. One of five WM PRs from the same issue.
 
 ### Commit Message:
 ```
-* UFSWM - Round-1 conservation bug fixes, track 0b (SAMF, PBL, Noah-MP, GFDL MP v3); update UFSATM and NOAHMP
+* UFSWM - Round-1 conservation bug fixes, track 0b (SAMF, PBL, Noah-MP, GFDL MP v3); update UFSATM
   * UFSATM - SAMFCNV_32BIT compiles all SAMF files single precision
     * ccpp-physics - Bug fixes in SAMF, satmedmfvdifq, Noah-MP, GFDL MP v3
-  * NOAHMP - CCPP driver copy accepts the optional iter argument
 ```
 
 ## Git Tracking
@@ -377,7 +415,6 @@ these fixes it crashes in 0 of 20 perturbed members, as develop. One of four WM 
 ### Sub component Pull Requests:
 * UFSATM: NOAA-EMC/ufsatm#TBD
   * ccpp-physics: ufs-community/ccpp-physics#TBD (SAMF + PBL), #TBD (Noah-MP), #TBD (GFDL MP v3)
-* NOAHMP: NOAA-EMC/noahmp#TBD
 
 ## Changes
 ### Regression Test Changes (Please commit test_changes.list):
@@ -386,12 +423,9 @@ these fixes it crashes in 0 of 20 perturbed members, as develop. One of four WM 
 ### 7b. Track 0c: Thompson and TEMPO water fixes
 
 ## Description:
-Seven independent, answer-changing bug fixes that close the water budget of Thompson microphysics and fix the same
-mass-basis error in the TEMPO driver. Each fix is one commit, with the defect, fix and measured effect in the commit
-message. In the regional and convection-allowing tests precipitation changes by −4 to +11 %; that is the fixes' own
-signal: cloud water settling to the ground is now counted as precipitation (`regional_control` +11 %, the
-atmosphere unchanged), and water that the graupel limiters and the mass-basis round trip created is no longer created
-(−1 to −4 %). The ccpp-physics PRs give the attribution by fix. One of four WM PRs from the same issue.
+Five independent, answer-changing bug fixes that close water-budget errors in Thompson microphysics and fix the
+same mass-basis error in the TEMPO driver. Each fix is one commit, with the defect, fix and measured effect in the
+commit message. [P0C-WM] The ccpp-physics PRs give the attribution by fix. One of five WM PRs from the same issue.
 
 ### Commit Message:
 ```
@@ -417,7 +451,7 @@ atmosphere unchanged), and water that the graupel limiters and the mass-basis ro
 ## Description:
 Six independent, answer-changing bug fixes in the FV3 dycore and its UFS driver: the `consv_te` fixer weight,
 `fv_sg` energy, the mass physics heating is applied to, tracer thickness in `statein`, `prsl` gas constants, and
-`inline_q` damping. Each is one commit in NOAA-GFDL/GFDL_atmos_cubed_sphere. One of four WM PRs from the same issue.
+`inline_q` damping. Each is one commit in NOAA-GFDL/GFDL_atmos_cubed_sphere. One of five WM PRs from the same issue.
 
 ### Commit Message:
 ```
@@ -440,20 +474,20 @@ Six independent, answer-changing bug fixes in the FV3 dycore and its UFS driver:
 
 ---
 
-### 7d. Track 1d: sea-ice and NSST fixes
+### 7d. Track 1d: surface-iteration, sea-ice and NSST fixes
 
 ## Description:
-Four independent, answer-changing bug fixes in `sfc_sice` and `sfc_nst`: sea ice stepped twice per time step, its
-excess heat divided by Δt twice, flooded snow joining the ice without its heat content, and NSST rain used in the
+Five independent, answer-changing bug fixes: `frac_grid` Noah-MP land and sea ice stepped twice per time step (one
+cause, in the surface loop control), sea-ice excess heat divided by Δt twice, flooded snow joining the ice without its heat content, and NSST rain used in the
 wrong units. Each is one commit, with the defect, fix and measured effect in the commit message. Posted after the
-SAMF overshoot is bounded (ufs-community/ccpp-physics#TBD): with the track-0b fixes, these raised the
-`hafs_global_1nest_atm` crash rate. One of four WM PRs from the same issue.
+SAMF overshoot is bounded (ufs-community/ccpp-physics#401): with the track-0b fixes, these raised the
+`hafs_global_1nest_atm` crash rate. One of five WM PRs from the same issue.
 
 ### Commit Message:
 ```
-* UFSWM - Round-1 conservation bug fixes, track 1d (sea ice, NSST); update UFSATM
+* UFSWM - Round-1 conservation bug fixes, track 1d (surface iteration, sea ice, NSST); update UFSATM
   * UFSATM - update ccpp-physics
-    * ccpp-physics - sfc_sice and sfc_nst bug fixes
+    * ccpp-physics - land and ice stepped once per time step; sfc_sice and sfc_nst bug fixes
 ```
 
 ## Git Tracking
@@ -468,14 +502,42 @@ SAMF overshoot is bounded (ufs-community/ccpp-physics#TBD): with the track-0b fi
 ### Regression Test Changes (Please commit test_changes.list):
 - [x] PR Updates/Changes Baselines. [RT 1d]
 
+
+### 7e. Track 1e: Thompson fixes with a second form
+
+## Description:
+Three answer-changing Thompson water fixes, each conserving and each with a second reasonable form, on top of
+track 0c: settled cloud water counted as precipitation (and cloud sedimentation substepped), clipped condensate and
+water at or below R1 returned to vapour with their latent heat. `regional_control` reported precipitation rises
+10.9 %: cloud water reaching the ground, now counted; the atmosphere is unchanged. One of five WM PRs from the same
+issue.
+
+### Commit Message:
+```
+* UFSWM - Round-1 conservation bug fixes, track 1e (Thompson settled cloud water, clipping, R1); update UFSATM
+  * UFSATM - update ccpp-physics
+    * ccpp-physics - Thompson: settled cloud water, clipped condensate and sub-R1 water conserved
+```
+
+## Git Tracking
+### UFSWM:
+* Addresses #TBD (with the other round-1 WM PRs; the last to merge closes it)
+
+### Sub component Pull Requests:
+* UFSATM: NOAA-EMC/ufsatm#TBD
+  * ccpp-physics: ufs-community/ccpp-physics#TBD (Thompson, second forms)
+
+## Changes
+### Regression Test Changes (Please commit test_changes.list):
+- [x] PR Updates/Changes Baselines. [RT 1e]
 ---
 
-## 8. ccpp-physics issue: SAMF sub-cloud overshoot (track 0a)
+## 8. ccpp-physics issue: SAMF sub-cloud overshoot (track 0a; posted as ufs-community/ccpp-physics#401)
 
 **To:** ufs-community/ccpp-physics, bug-report template. @JongilHan66 (SAMF and `satmedmfvdifq`), @lisa-bengtsson
 (SAMF; #390 edits the same file); cc @BinLiu-NOAA (the HAFS suite and its TKE). Posted first; linked from the WM issue.
 
-**Title:** SAMF: sub-cloud mass flux exceeds the CFL limit; `hafs_global_1nest_atm` crashes under small answer changes
+**Title:** SAMF: sub-cloud mass flux exceeds the CFL limit
 
 # Description
 
@@ -486,7 +548,7 @@ above 4 K per 6 h, up to 52 K (20 perturbed members).
 
 Develop survives, but only just: small, unrelated answer changes push the tail past the limit, and the test stops
 with `compute_qs: saturation vapor pressure table overflow` after one cell gains about 70 K in a step. 24 of our
-water/energy bug fixes, none in this code, crashed it in 3 of 20 members, the unperturbed RT member included;
+water/energy bug fixes, none touching `xmbmax`, crashed it in 3 of 20 members, the unperturbed RT member included;
 develop crashed in none.
 
 Expected: CFL ≤ 1 in every layer, as at `kbcon`. `samfshalcnv.f` has the same code but no event

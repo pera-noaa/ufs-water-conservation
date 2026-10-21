@@ -37,8 +37,10 @@ o3 global mean −1.2 × 10⁻⁶.
 **Question.** Is sub-stepping the fix you want (tested, 426 lines in `samfdeepcnv.f`/`samfshalcnv.f`, no interface
 change), or would you prefer an implicit or flux-limited update? Should o3 and TKE be sub-stepped too (we did)?
 
-**Related.** The SAMF sub-cloud overshoot issue (`pr_round1_descriptions.md` §8): a CFL problem in T and q below
-cloud base. Sub-stepping the tracer transport does not change it.
+**Related.** The SAMF sub-cloud overshoot issue, ufs-community/ccpp-physics#401: a CFL problem in T and q below
+cloud base. Sub-stepping the tracer transport does not change it. Its option A bounds the mass flux so the updraft
+layer CFL is ≤ 1, which also caps this transport's updraft Courant number: if #401 adopts it, re-measure this issue
+on top of it before opening.
 
 ---
 

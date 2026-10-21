@@ -1,7 +1,7 @@
-From e075e1893ab372538a14fed4bb1f5df16ed7e14e Mon Sep 17 00:00:00 2001
+From 4776701a0b0b84ba36e5f037b5ca07f4cdbf923c Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:53 -0500
-Subject: [PATCH 09/12] Noah-MP phasechange: keep the heat of a melted-out snow
+Subject: [PATCH 08/11] Noah-MP phasechange: keep the heat of a melted-out snow
  layer
 
 When a snow layer melts out, its leftover heat (heatr) goes to the layer

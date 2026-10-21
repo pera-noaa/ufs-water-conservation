@@ -12,14 +12,15 @@
 - **Open:**
   - Hercules cleanup: canopy `runs/` (288 GB) deleted 18 Oct; the regression baselines (564 GB) and canopy build trees
     (4.8 GB) are approved for deletion, pending a run by Ash.
-  - Upstream submission: round 1 = 37 fixes in five tracks, each its own WM PR (`../proposal/pr_round1.md`, *Tracks*).
-    Independent of SAMF, posted first: 0a the SAMF instability issue to @JongilHan66 (`pr_round1_descriptions.md` §8),
-    0b global conservation (20: SAMF + PBL, Noah-MP, GFDL MP v3, SAMF32 build), 0c microphysics (7: Thompson, TEMPO).
-    After the SAMF issue's answer: 1c dycore (6: FV3), 1d sea ice/NSST (4: 0b + 1d crashes `hafs_global_1nest_atm` in
-    3 of 20 members, 0b alone 0 of 20, as develop). The 37 together: answers change only, reproducibility 123/123
-    bitwise, 188 of 188 changed tests screened. SA1 held with the SAMF issue. Round-2 issues drafted
-    (`../proposal/round2_issues.md`). Working notes public at github.com/pera-noaa/ufs-water-conservation
-    (`../publish/`); no issue or PR posted.
+  - Upstream submission: round 1 = 38 commits (the 37 fixes) in five tracks, each its own WM PR
+    (`../proposal/pr_round1.md`, *Tracks*). Phase 0, fixes with one definite answer: 0a the SAMF instability issue,
+    posted as ufs-community/ccpp-physics#401; 0b global conservation (18: SAMF + PBL, Noah-MP without NM2, GFDL MP v3,
+    SAMF32 build); 0c microphysics (5: Thompson TH1, TH3, TH4, TH5, TEMPO driver). Phase 1: 1c dycore (6: FV3) and 1d
+    surface iteration, sea ice, NSST (6: NM2 + noahmp, 4 sea-ice/NSST; 0b + 1d crashes `hafs_global_1nest_atm` in 3 of
+    20 members) after the SAMF issue's answer; 1e Thompson TH2, TH6, TH7 (a second reasonable form each). The 37
+    together: answers change only, reproducibility 123/123 bitwise, 188 of 188 changed tests screened. SA1 held with
+    #401. Round-2 issues drafted (`../proposal/round2_issues.md`). Working notes public at
+    github.com/pera-noaa/ufs-water-conservation (`../publish/`); bundle for the phase-0 posts in `../proposal/post/`.
 - Proposal: `../proposal/conservation_proposal.md`; manifest: `../proposal/conservation_patches.md`.
 - History of this file (every row as it evolved): `TRACKER.history.md`.
 

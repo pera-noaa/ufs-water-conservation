@@ -1,7 +1,7 @@
-From fd59900cb7384a49ab5cf9830e36c1059fd035f0 Mon Sep 17 00:00:00 2001
+From 1e43e94dc8cd3b09a3f021b7bed83a3bc8b0d19d Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:54 -0500
-Subject: [PATCH 10/12] Noah-MP combine: keep snow sensible heat when layers
+Subject: [PATCH 09/11] Noah-MP combine: keep snow sensible heat when layers
  merge or vanish
 
 Three energy leaks in combine (both modules):

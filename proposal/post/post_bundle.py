@@ -57,7 +57,7 @@ def title_of(sec):
 # ---- shared blocks
 cc = unquote(between(SRC, "> **Tests Conducted:**", "### 3.1"))
 CC = dict(re.findall(r"\*\*(Tests Conducted|Documentation|Issue|Contributors):\*\* (.*?)(?=\n\n\*\*|\Z)", cc.strip(), re.S))
-WM_COMMON = between(SRC, "Common to 7a–7d:", "### 7a.")
+WM_COMMON = between(SRC, "Common to 7a–7e:", "### 7a.")
 WM_CQ = between(WM_COMMON, "## Commit Queue Requirements:", "> ### Priority:").split("\n", 1)[1]
 WM_Q = by_heading(unquote(between(WM_COMMON, "> ### Priority:")))
 
@@ -104,7 +104,6 @@ def wm_pr(sec_start, sec_end):
 
 S8 = between(SRC, "## 8. ccpp-physics issue")
 S1 = between(SRC, "## 1. ufs-weather-model issue", "## 2. GFDL")
-S5 = between(SRC, "## 5. NOAA-EMC/noahmp PR", "## 6. NOAA-EMC/ufsatm")
 
 # key, repo, kind, title, head branch, base, body, the keys of its "#TBD"s in order, its [RT x] key
 ITEMS = []
@@ -113,18 +112,16 @@ ITEMS.append(dict(key="SAMF_ISSUE", repo="ufs-community/ccpp-physics", kind="iss
                   tbd=[]))
 ITEMS.append(dict(key="WM_ISSUE", repo="ufs-community/ufs-weather-model", kind="issue", title=title_of(S1),
                   body=S1[S1.index("## Description"):].rsplit("---", 1)[0],
-                  tbd=["SAMF_ISSUE", "WM_0b", "WM_0c", "SAMF_ISSUE"]))
+                  tbd=["WM_0b", "WM_0c"]))
 for key, start, end, track, head, tbd in [
-        ("PR_SAMF", "### 3.1 SAMF", "### 3.2", "0b", "pr1-samf", ["WM_0b", "WM_ISSUE", "WM_0b"]),
-        ("PR_NM", "### 3.4 Noah-MP", "### 3.5", "0b", "pr1-noahmp", ["WM_0b", "WM_ISSUE", "NMP", "WM_0b"]),
-        ("PR_GMP", "### 3.6 GFDL MP v3", "\n---\n", "0b", "pr1-gfdlmp", ["WM_0b", "WM_ISSUE", "WM_0b"]),
-        ("PR_TH", "### 3.2 Thompson", "### 3.3", "0c", "pr1-thompson", ["WM_0c", "WM_ISSUE", "WM_0c"]),
-        ("PR_TP", "### 3.3 TEMPO", "### 3.4", "0c", "pr1-tempo", ["PR_TH", "WM_0c", "WM_ISSUE", "WM_0c"])]:
+        ("PR_SAMF", "### 3.1 SAMF", "### 3.2", "0b", "pr1-samf", ["WM_0b", "WM_0b", "WM_ISSUE"]),
+        ("PR_NM", "### 3.4 Noah-MP", "### 3.5", "0b", "pr1-noahmp", ["WM_0b", "WM_0b", "WM_ISSUE"]),
+        ("PR_GMP", "### 3.6 GFDL MP v3", "### 3.7", "0b", "pr1-gfdlmp", ["WM_0b", "WM_0b", "WM_ISSUE"]),
+        ("PR_TH", "### 3.2 Thompson", "### 3.3", "0c", "pr1-thompson", ["WM_0c", "WM_0c", "WM_ISSUE"]),
+        ("PR_TP", "### 3.3 TEMPO", "### 3.4", "0c", "pr1-tempo", ["PR_TH", "WM_0c", "WM_0c", "WM_ISSUE"])]:
     t, b = ccpp_pr(start, end, track)
     ITEMS.append(dict(key=key, repo="ufs-community/ccpp-physics", kind="pr", title=t, head=head, base="ufs/dev",
                       body=b, tbd=tbd, rt=f"RT_{track}"))
-ITEMS.append(dict(key="NMP", repo="NOAA-EMC/noahmp", kind="pr", title=title_of(S5), head="pr1-0b", base="develop",
-                  body=S5.split("\n", 3)[3].rsplit("---", 1)[0], tbd=["PR_NM", "WM_0b"]))
 ITEMS.append(dict(key="ATM_0b", repo="NOAA-EMC/ufsatm", kind="pr", head="pr1-0b", base="develop",
                   title="Round-1 conservation bug fixes, track 0b: SAMF single-precision build fix; update ccpp-physics",
                   body=ufsatm_pr("### 6a.", "### 6b."), tbd=["WM_ISSUE", "WM_0b", "PR_SAMF", "PR_NM", "PR_GMP"]))
@@ -132,15 +129,17 @@ ITEMS.append(dict(key="ATM_0c", repo="NOAA-EMC/ufsatm", kind="pr", head="pr1-0c"
                   title="Round-1 conservation bug fixes, track 0c: update ccpp-physics (Thompson, TEMPO driver)",
                   body=ufsatm_pr("### 6b.", "### 6c."), tbd=["WM_ISSUE", "WM_0c", "PR_TH", "PR_TP"]))
 ITEMS.append(dict(key="WM_0b", repo="ufs-community/ufs-weather-model", kind="pr", head="pr1-0b", base="develop",
-                  title="Round-1 conservation bug fixes, track 0b (SAMF, PBL, Noah-MP, GFDL MP v3); update UFSATM and NOAHMP",
+                  title="Round-1 conservation bug fixes, track 0b (SAMF, PBL, Noah-MP, GFDL MP v3); update UFSATM",
                   body=wm_pr("### 7a.", "### 7b."),
-                  tbd=["WM_ISSUE", "SAMF_ISSUE", "WM_ISSUE", "ATM_0b", "PR_SAMF", "PR_NM", "PR_GMP", "NMP"], rt="RT_0b"))
+                  tbd=["WM_ISSUE", "WM_ISSUE", "ATM_0b", "PR_SAMF", "PR_NM", "PR_GMP"], rt="RT_0b"))
 ITEMS.append(dict(key="WM_0c", repo="ufs-community/ufs-weather-model", kind="pr", head="pr1-0c", base="develop",
                   title="Round-1 conservation bug fixes, track 0c (Thompson, TEMPO driver); update UFSATM",
                   body=wm_pr("### 7b.", "### 7c."),
                   tbd=["WM_ISSUE", "WM_ISSUE", "ATM_0c", "PR_TH", "PR_TP"], rt="RT_0c"))
 
 out = HERE / "bodies"; out.mkdir(exist_ok=True)
+for old in out.glob("*.md"):
+    old.unlink()
 unfilled = {}
 for it in ITEMS:
     b = it["body"]

@@ -1,7 +1,8 @@
 # PR round 1: the obvious bug fixes
 
 *Plan for the first round of upstream PRs, from the water proposal (`water_closure_proposal.md`) and the conservation
-follow-on (`conservation_proposal.md`, series rows in `conservation/replay/SERIES.md`). Nothing has been posted.
+follow-on (`conservation_proposal.md`, series rows in `conservation/replay/SERIES.md`). Posted: the SAMF issue
+(ufs-community/ccpp-physics#401); nothing else.
 Hercules root `$U/pr1` (`$U` = `/work2/noaa/co2/ash/ufs-chem-v1/upstream`). Issue and PR texts:
 `pr_round1_descriptions.md`; round-2 issues: `round2_issues.md`; patches: `pr_round1_patches/`.*
 
@@ -9,18 +10,20 @@ Hercules root `$U/pr1` (`$U` = `/work2/noaa/co2/ash/ufs-chem-v1/upstream`). Issu
 
 | Item | State |
 |---|---|
-| Scope | **37 fixes** in four tracks (see *Tracks*), posted in this order: 0a the SAMF issue (descriptions §8), 0b global conservation 20, 0c microphysics 7 (none waits on SAMF); after the SAMF issue's answer, 1c dycore 6 and 1d sea ice/NSST 4. SA1 (W01) held |
-| PRs | 6 ccpp-physics, GFDL `dev/emc`, NOAA-EMC/noahmp; per track one ufsatm and one ufs-weather-model PR; 3 issues (SAMF, WM, GFDL) |
-| Branches | local, one commit per fix on current heads (WM `develop` f1d68949), AI-assisted trailer on every commit. Per-track ufsatm and WM branches not yet made |
+| Scope | **38 commits** (the 37 fixes; Thompson's TH2 and TH3 now separate) in five tracks (see *Tracks*). Phase 0, fixes with one definite answer: 0a the SAMF issue (posted, #401), 0b global conservation 18, 0c microphysics 5. Phase 1: 1c dycore 6 and 1d surface iteration, sea ice, NSST 6, after the SAMF issue's answer; 1e Thompson 3, fixes with more than one reasonable form. SA1 (W01) held |
+| PRs | 7 ccpp-physics (phase 0: 5), GFDL `dev/emc`, NOAA-EMC/noahmp (1d, only with the `iter` form); per track one ufsatm and one ufs-weather-model PR; 3 issues (SAMF, posted; WM; GFDL) |
+| Branches | local, one commit per fix on current heads (WM `develop` f1d68949), AI-assisted trailer on every commit. Per-track branches and each track's full RT scripted (`post/track_setup.sh`), not yet run |
 | Whole round | the 37 together: answers change only, none fails to run, reproducibility bitwise, all 188 changed tests screened (*Checks*) |
-| 0b | regional quiet; global: only SAMF + PBL exceeds noise (+0.002 to +0.006 K), the ice-fusion heat it restores. HAFS: without sea ice/NSST 0 of 20 members crash, as develop (*HAFS crash*) |
-| 0c | attributed: the regional precipitation changes are the fixes' own signal (settled cloud water now counted; created water removed) |
+| 0b | regional quiet; global: only SAMF + PBL exceeds noise (+0.002 to +0.006 K, measured with NM2), the ice-fusion heat it restores; without NM2 re-measure running (`g_p0b`). HAFS: without sea ice/NSST 0 of 20 members crash, as develop (HAFS runs Noah, so NM2 never acted there; *HAFS crash*) |
+| 0c | TH1, TH3 (graupel), TH4, TH5, TEMPO driver: created water removed (regional precipitation −1 to −4 % per fix alone); the whole re-measure running (`p0c`) |
 | 1c | WoFS 0.7–2.4× noise; waits on `dev/emc` and the SAMF issue |
-| 1d | held: 0b with sea ice/NSST crashed `hafs_global_1nest_atm` in 3 of 20 members, the RT member included; no single fix identified (*HAFS crash*). Waits on the SAMF issue |
-| HAFS crash | a pre-existing SAMF instability (*HAFS crash*): any change to HAFS answers moves its tail. Posted first, as an issue (0a; descriptions §8). SA1 is held with it (it raised the event rate 1.7×), with our cap |
+| 1e | TH2 (settled cloud water counted, cloud sedimentation substepped), TH6 (clipped condensate to vapour), TH7 (sub-R1 water to vapour): conserving, but each has a second reasonable form; posted with the forms stated |
+| 1d | NM2 (Noah-MP stepped once per time step; with its noahmp change in the `iter` form) and the four sea-ice/NSST fixes. Held: 0b with sea ice/NSST crashed `hafs_global_1nest_atm` in 3 of 20 members, the RT member included; no single fix identified (*HAFS crash*). Waits on the SAMF issue; NM2 and SI1 each have two tested forms (*Alternatives*) |
+| HAFS crash | a pre-existing SAMF instability (*HAFS crash*): any change to HAFS answers moves its tail. Posted as ufs-community/ccpp-physics#401 (0a; descriptions §8). SA1 is held with it (it raised the event rate 1.7×), with our cap |
 | Waiting upstream | TEMPO PR (0c) after ccpp-physics#389, SAMF PR (0b) after #390; resolved rebases prepared |
 | Hold-outs | R1, TOPT, MYNN and the owner-judgement bugs: `round2_issues.md` |
-| Posted | nothing upstream. Working notes public: github.com/pera-noaa/ufs-water-conservation (`../publish/` has the recipe) |
+| Alternatives | under test: stepping once per time step fixed in the surface loop control (no `iter` arguments, no noahmp PR); Thompson's settled cloud water kept in the air (*Alternatives*) |
+| Posted | SAMF issue ufs-community/ccpp-physics#401 (20 Oct; §8, 0a). Nothing else upstream. Working notes public: github.com/pera-noaa/ufs-water-conservation (`../publish/` has the recipe) |
 
 ## Rule for round 1
 
@@ -30,6 +33,9 @@ A change is in round 1 only if all four hold:
 2. the fix only restores that intent: no new design choice, no new switch;
 3. it is unconditional;
 4. its forecast impact is at noise (the `consv_te` = 0.999 control), or the change is the bug's own signal.
+
+Phase 0 also needs one definite answer: where a second reasonable form of the fix exists (tested or argued,
+*Alternatives*), the fix goes to phase 1 and its PR states both forms.
 
 And, for the least work for code owners: it needs no new host metadata and does not overlap an open upstream
 restructuring.
@@ -43,10 +49,11 @@ when its own reviews are done.
 | Order | Track | PRs | Fixes | Answer change | HAFS | Reviewers who decide | Before posting |
 |---|---|---|---|---|---|---|---|
 | 0 | **0a** SAMF issue | ccpp-physics issue (descriptions §8) | — | — | the cause | @JongilHan66 | nothing |
-| 0 | **0b** global conservation | SAMF + PBL, Noah-MP (+ NOAA-EMC/noahmp), GFDL MP v3; ufsatm (SAMF32 + bump); WM | 20 | global: 3-D T +0.002 to +0.005 K, all from SAMF + PBL's ice-fusion heat (the bug's own signal); regional: SAMF + PBL bitwise, Noah-MP ≤ 0.02 % | 0 of 20 crash, as develop | EMC global physics (GFS, HAFS) | track RT |
-| 0 | **0c** microphysics | Thompson, TEMPO driver; ufsatm bump; WM | 7 | regional precipitation −4 to +11 %, WoFS −2 %: the fixes' own signal (*Checks, 0c*) | not touched (0b + 1d + FV3 = the 37, bitwise in 10 members) | Thompson/TEMPO owners, RRFS/HRRR | track RT |
+| 0 | **0b** global conservation | SAMF + PBL, Noah-MP (without NM2), GFDL MP v3; ufsatm (SAMF32 + bump); WM | 18 | global: 3-D T +0.002 to +0.005 K, all from SAMF + PBL's ice-fusion heat (the bug's own signal; measured with NM2, re-measure running); regional: SAMF + PBL bitwise, Noah-MP ≤ 0.02 % | 0 of 20 crash, as develop | EMC global physics (GFS, HAFS) | track RT |
+| 0 | **0c** microphysics | Thompson (TH1, TH3, TH4, TH5), TEMPO driver; ufsatm bump; WM | 5 | created water removed: regional precipitation −1 to −4 % per fix alone, WoFS −2 % (TEMPO); whole track re-measure running | not touched (0b + 1d + FV3 = the 37, bitwise in 10 members) | Thompson/TEMPO owners, RRFS/HRRR | track RT |
 | 1 | **1c** dycore | FV3 (GFDL `dev/emc`); ufsatm bump; WM | 6 | WoFS 0.2–0.8 % per commit (0.7–2.4× noise), `cpld_regional_atm_fbh` −1.4 % | FV3 alone 0 of 3; with 0b + 1d = the 37 (1 of 10) | GFDL maintainers, then EMC | `dev/emc` merge; the SAMF issue's answer; track RT |
-| 1 | **1d** sea ice, NSST | sea ice/NSST; ufsatm bump; WM | 4 | global ≤ 0.0008 K, ≤ 0.13 %; regional ≤ 0.7 % | with 0b: 3 of 20 crash, RT member included | @wd20xw @XuLi-NOAA, EMC | the SAMF issue's answer; HAFS ensemble on 0b + 1d |
+| 1 | **1d** surface iteration, sea ice, NSST | NM2 (+ NOAA-EMC/noahmp in the `iter` form), sea ice/NSST; ufsatm bump; WM | 6 | global ≤ 0.0008 K, ≤ 0.13 %; regional ≤ 0.7 % (sea ice/NSST); NM2: land no longer gains 3–5 % of global precipitation (the bug's own signal) | with 0b: 3 of 20 crash, RT member included | @wd20xw @XuLi-NOAA, @barlage @cenlinhe, EMC | the SAMF issue's answer; HAFS ensemble on 0b + 1d; the form of NM2 and SI1 |
+| 1 | **1e** Thompson, second forms | TH2, TH6, TH7 (`pr1-thompson_p1`); ufsatm bump; WM | 3 | TH2: `regional_control` +10.9 % reported precipitation (settled cloud counted; keeping it in the air instead: +4.8 %); TH6, TH7 ≤ 0.002 % | not touched | Thompson owners | 0c merged; the owners' choice of form |
 
 Every PR compiles alone on `develop`, so the tracks are independent; whichever WM PR merges later takes the earlier
 ones' ufsatm and ccpp-physics pointers. The 37's regression (`rt2`, `rt_logs_37/`) is evidence for all four, not a WM
@@ -60,15 +67,16 @@ PR log. 1d's separation from 0b rests on 20 members and the RT member passing, n
 | PR | Track | Repository | Fixes | Owners | Notes |
 |---|---|---|---|---|---|
 | SAMF + PBL | 0b | ccpp-physics `ufs/dev` | D3A (07), F3 01a (23), PBL05 (52), SAMF08 (55) | @JongilHan66 @lisa-bengtsson | D3A adds `hfus`. After #390 |
-| Noah-MP | 0b | ccpp-physics + NOAA-EMC/noahmp `develop` | NM1–NM6, NM8 (W08–W13, W15); NM12 (12); NP1 (33); SL2, CS1, CB1 (38–40); 09b | @barlage @cenlinhe | NM2's `iter` needs 09b (the land component crashes without it); NM12 = NCAR/noahmp#47 |
-| Sea ice, NSST | 1d | ccpp-physics | SI1, SI2, FL1 (31, 32, 36); QR1 (34) | @wd20xw @XuLi-NOAA | |
+| Noah-MP | 0b | ccpp-physics | NM1, NM3–NM6, NM8 (W08, W10–W13, W15); NM12 (12); NP1 (33); SL2, CS1, CB1 (38–40) | @barlage @cenlinhe | NM12 = NCAR/noahmp#47 |
+| Surface iteration, sea ice, NSST | 1d | ccpp-physics (+ NOAA-EMC/noahmp `develop` in the `iter` form) | NM2 (W09) + 09b; SI1, SI2, FL1 (31, 32, 36); QR1 (34) | @wd20xw @XuLi-NOAA @barlage @cenlinhe | NM2 and SI1: `iter` argument, or one clause of `GFS_surface_loop_control_part2` (*Alternatives*); the `iter` form of NM2 needs 09b (the land component crashes without it) |
 | GFDL MP v3 | 0b | ccpp-physics | GFDL02, GFDL07 (49, 54) | @RuiyuSun | |
 | Build | 0b | NOAA-EMC/ufsatm `develop` | SAMF32 (25) + 0b submodule bump | @rhaesung (author of ufsatm#1133, also a ccpp-physics code manager) | answers change in the `_conv32` tests |
-| Thompson | 0c | ccpp-physics | TH1–TH7 (W02–W07) | @gthompsnWRF @RuiyuSun @AndersJensen-NOAA | TH5 adds `prsi` (in the hosts) |
+| Thompson | 0c | ccpp-physics | TH1, TH3, TH4, TH5 | @gthompsnWRF @RuiyuSun @AndersJensen-NOAA | TH5 adds `prsi` (in the hosts) |
+| Thompson, second forms | 1e | ccpp-physics | TH2, TH6, TH7 | @gthompsnWRF @RuiyuSun @AndersJensen-NOAA | on top of 0c's Thompson PR |
 | TEMPO driver | 0c | ccpp-physics | TH1's twin in `mp_tempo` (`ports/TEMPO-driver/0001`) | default owners | exposes TEMPO's own +0.33 % residual (fixes at NCAR/TEMPO, unmerged). After #389 |
 | FV3 | 1c | GFDL_atmos_cubed_sphere `dev/emc` | FX1, SG1, CP1, FV2, INLQ (01, 02, 03, 05, 29); FV1 (W19) | maintainers (no CODEOWNERS) | `dev/emc` merges rarely (last 5 August) |
-| ufsatm bump | 0c, 1c, 1d | NOAA-EMC/ufsatm `develop` | submodule bump | ufsatm code managers | no code |
-| WM | 0b, 0c, 1c, 1d | ufs-weather-model `develop` | submodule bumps, RT log, `test_changes.list` | gatekeepers | one per track |
+| ufsatm bump | 0c, 1c, 1d, 1e | NOAA-EMC/ufsatm `develop` | submodule bump | ufsatm code managers | no code |
+| WM | 0b, 0c, 1c, 1d, 1e | ufs-weather-model `develop` | submodule bumps, RT log, `test_changes.list` | gatekeepers | one per track |
 
 Every ccpp-physics PR also gets the default owners (@grantfirl @rhaesung @Qingfu-Liu @dustinswales).
 
@@ -80,7 +88,7 @@ Every ccpp-physics PR also gets the default owners (@grantfirl @rhaesung @Qingfu
 | TOPT (26) | overlaps #397's `tend_opt` restructuring; option 4 → error is a design choice |
 | MYNN01, MYNN01b (47, 48) | #392 replaces `module_bl_mynn.F90` with the NCAR/MYNN-EDMF submodule |
 
-**Held for the SAMF instability issue** (descriptions §8, to @JongilHan66):
+**Held for the SAMF instability issue** (ufs-community/ccpp-physics#401, to @JongilHan66):
 
 | Change | Why held |
 |---|---|
@@ -94,20 +102,23 @@ branch head):
 
 | Repository | Branch | Track | Commits | Base |
 |---|---|---|---|---|
-| ccpp-physics | `pr1-samf`, `-noahmp`, `-gfdlmp` | 0b | 4, 12, 2 | `ufs/dev` d9b70feb |
-| ccpp-physics | `pr1-seaice_nsst` | 1d | 4 | `ufs/dev` d9b70feb |
-| ccpp-physics | `pr1-thompson`, `-tempo` | 0c | 6, 1 | `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-samf`, `-noahmp`, `-gfdlmp` | 0b | 4, 11, 2 | `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-noahmp_p1` (NM2 on `pr1-noahmp`), `pr1-seaice_nsst` | 1d | +1, 4 | `pr1-noahmp`; `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-thompson`, `-tempo` | 0c | 4, 1 | `ufs/dev` d9b70feb |
+| ccpp-physics | `pr1-thompson_p1` (TH2, TH6, TH7 on `pr1-thompson`) | 1e | +3 | `pr1-thompson` |
+| ccpp-physics (backups) | `tr-pr1-thompson-pre-phase0` (8486c044), `tr-pr1-noahmp-pre-phase0` (ee943d88) | — | 6, 12 | each phase-1 head has exactly its tree |
 | ccpp-physics | `pr1-round1` (all six, a4bee81f) | all | 29 | `ufs/dev` d9b70feb |
 | ccpp-physics (held) | `pr1-sa1` (ae8399bd), `pr1-samfcfl` (766d0735) | — | 1, 1 | `ufs/dev` d9b70feb |
 | ccpp-physics | `prep-samf-on390`, `prep-tempo-on389` | 0b, 0c | 4, 1 | `ufs/dev` + #390 / #389, conflict resolved |
 | GFDL_atmos_cubed_sphere | `pr1-round1` | 1c | 6 | `dev/emc` 71ff473b |
 | ufsatm | `pr1-round1` (SAMF32 + bump of all; 447ff08) | all | 2 | `develop` aa0ba811 |
-| NOAA-EMC/noahmp | `pr1-round1` | 0b | 1 (09b) | `develop` 2c7b3bc2 |
+| NOAA-EMC/noahmp | `pr1-round1` | 1d (`iter` form) | 1 (09b) | `develop` 2c7b3bc2 |
 | ufs-weather-model | `pr1-round1` (bump of all; `.gitmodules` still upstream; 52c8f8c2) | all | 1 | `develop` f1d68949 |
 
 - **To make per track**: ufsatm and WM branches whose bumps carry only that track's PRs (0c: Thompson and TEMPO
-  merged; 0b: SAMF32 + SAMF, Noah-MP and GFDL MP merged + noahmp; 1d: sea ice/NSST; 1c: FV3), each on the heads
-  of the tracks merged before it. `q/t1ans` holds 0b (13 files = 5 + 7 + 1); `attr/g_t1a` 0b + 1d.
+  merged; 0b: SAMF32 + SAMF, Noah-MP and GFDL MP merged; 1d: NM2 and sea ice/NSST (+ noahmp in the `iter`
+  form); 1e: `pr1-thompson_p1`; 1c: FV3), each on the heads
+  of the tracks merged before it. `q/t1ans` holds 0b with NM2 (13 files = 5 + 7 + 1); `attr/g_t1a` 0b + 1d.
 - **Commits**: author and committer `Ash Pera <ashley.pera@noaa.gov>`; message = defect, fix, measured effect (water
   messages from `git/ufs-dev/all` and the FV3 series, the rest in `$U/pr1/msgs/`); then the paragraph
   `Part of a water-conservation project for UFS physics (NOAA GML / CIRES).`; last line
@@ -115,7 +126,7 @@ branch head):
 - **How built**: `apply_r1.sh` + `recipe_r1.txt` apply the 41 pre-red-team diffs to the clone (all at -F0 except
   SAMF08 hunk 1, fuzz 1 for a context line from the held T1); `mkseries_r1.sh` commits them one per fix;
   `rebuild_r1b.sh` regroups (commits matched by patch-id); `resolve_prep.py` resolves the #390/#389 conflicts.
-- **Patches**: `pr_round1_patches/` = `$U/pr1/cut/` (`git format-patch` per branch, 75 files; held: `ccpp-physics_sa1_hold`, `ccpp-physics_samfcfl`).
+- **Patches**: `pr_round1_patches/` = `$U/pr1/cut/` (`git format-patch` per branch, 76 files; phase 1: `ccpp-physics_thompson_p1`, `ccpp-physics_noahmp_p1`, each on its phase-0 branch; held: `ccpp-physics_sa1_hold`, `ccpp-physics_samfcfl`; the pre-split sets in `cut/*.pre_phase0`).
 - **Kept on Hercules**: `r1` (pre-red-team patched tree), `rt1`/`rtc` (its RT trees), `mergetest/`, `grp/`
   (develop-pinned template); `attr/<unit>` (attribution clones, as `attr/<pr>` for the single PRs: single PRs, single commits, the parts of `a55b6faa`,
   the WoFS and global units, the noise reference); branches `v1-*` (pre-regrouping) and the pre-rewrite backups
@@ -152,13 +163,15 @@ Screen: `rt_screen.py` (window-mean precipitation, T2m, PW, q2m, 3-D T and q aga
 
 | Check | Result | Can fail |
 |---|---|---|
+| 0b without NM2, global P8 tests + `control_p8_atmlnd` (`attr/g_p0b`) | [P0B] | above noise outside SAMF + PBL; `atmlnd` fails |
 | Global P8, per PR and 0b + 1d together (`attr/g_*`, `attr_global_table.txt`): `control_p8`, `control_c48`, `control_c48.v2.sfc`, `control_p8_lndp`, `control_p8_rrtmgp`, `cpld_control_gfsv17`, `control_p8_samf_conv32`, `hafs_regional_atm_gfdlmpv3`; Thompson and FV3 alone for comparison | 3-D T: **SAMF + PBL** +0.0024 to +0.0062 K (8–20× noise) = the 37's warming; the ice-fusion heat it restores (0.42 W/m²) gives 0.0036 K/day, so the bug's own signal. Noah-MP −0.0003 to −0.0009 K; sea ice/NSST ≤ 0.0008 K; GFDL MP v3 only `hafs_regional_atm_gfdlmpv3` (precipitation −0.30 %, T −0.0008 K; its bug created 1.03 % of microphysics precipitation); build only `control_p8_samf_conv32` (−0.50 %, −0.0027 K: SAMF now single precision). Precipitation: SAMF + PBL +0.16 to +0.37 %, others ≤ 0.13 %. 0b together: 3-D T +0.0020 to +0.0050 K, precipitation −0.31 to +0.33 %; singles add to it within 0.0011 K. Thompson, FV3 alone: ≤ 0.18 %, ≤ 0.0012 K | a 0b PR outside noise and not its bug's signal; singles ≠ 0b together |
 | HAFS instability rate, 0b + 1d (`hafs_global_1nest_atm`; `q/t1a`, `hafs_exp/q_t1a_*`, `q_ens3_stats.txt`) | **fails**: 3 of 20 members crash (`compute_qs` overflow; 66–73 K), the `consv_te` = 1 member (the RT configuration) included; develop 0 of 20 (p 0.12); 0b (0b + 1d − sea ice/NSST) 0 of 20; no single fix identified (*HAFS crash*, ensembles); event rate as develop. Hence 1d held | rate above develop's |
 
-### Track 0c
+### Track 0c (and 1e)
 
 | Check | Result | Can fail |
 |---|---|---|
+| Phase-0 Thompson (TH1, TH3, TH4, TH5) + TEMPO together, 8 regional outliers + WoFS (`attr/p0c`) | [P0C] | above 5× noise |
 | Thompson by commit (`attr/attr_split_table.txt`; commit 5 needs 3, run as 3+5) | `a55b6faa` carries it: `regional_control` +11.0 %, `regional_spp_sppt_shum_skeb` −4.1 %, `gnv1_nested` −2.6 %, `conus13km_gl_inline` −2.1 %, HRRR/RAP debug −0.9 to −1.3 %. `2909f960` (mass basis): `regional_spp` −1.6 %, `cpld_regional_atm_fbh` −2.0 %. Others ±1.1 % | sum ≠ the PR |
 | Parts of `a55b6faa` (`attr_c2_table.txt`) | **settled cloud water counted**: `regional_control` +10.9 %, ≤ 0.8 % elsewhere; 3-D T +0.0008 K, q −0.0006 %, so reported, not state. **Graupel re-closure + snow cap**: every decrease (`regional_spp` −4.1 %, `conus13km_gl_inline` −2.1 %, `cpld_regional_atm_fbh` −1.1 %, HRRR/RAP debug −1.0 to −1.4 %). **Cloud substepping**: ≤ 0.23 % except `gnv1_nested` −1.2 %. Parts sum to the commit within 0.35 % except `gnv1_nested` | sum ≠ the commit |
 | WoFS (`attr/attr_wofs_table.txt`) | `regional_wofs_tempo` (37: −1.8 %, 8× the C96-based noise): TEMPO −1.96 % (6× WoFS noise; the mass-basis bug created water under net condensation); FV3 commits 0.7–2.4× noise (1c); sea ice/NSST −0.06 %; Noah-MP bitwise; sum −3.3 %. `regional_wofs` (NSSL MP; 37: −1.1 %): FV3 only, sum −0.3 %. Sums miss the 37 by 0.8–1.5 points: not additive | sum ≠ the 37 |
@@ -255,6 +268,23 @@ offers the bound in every updraft layer as A. B does not bind the overshoots.
 
   With σ at its 0.03 floor, +383 means `w_u` ≈ 160 m/s. Deep against shallow is not split.
 
+## Alternatives
+
+Fixes with a simpler or less visible alternative. Tested ones run as `attr/` units (develop pins plus the PR with the
+alternative) against the PR as proposed.
+
+| Fix (track) | Proposed | Alternative | Test | Result |
+|---|---|---|---|---|
+| Once per time step: NM2, SI1 (both 1d) | optional `iter` (`ccpp_loop_counter`) in `noahmpdrv` and `sfc_sice`; NM2 needs NOAA-EMC/noahmp's driver copy to declare it (else `control_p8_atmlnd` crashes) | the cause, one clause of `GFS_surface_loop_control_part2`: the water's second pass re-flags cells that are also Noah-MP land or icy. Do not re-flag them (for ice the commented-out original clause, `.not. icy`). One line, no interface change, no noahmp PR; the water part of those cells loses its low-wind second NSST pass | `g_nmalt`, `g_sealt` (6 global tests incl. `control_p8_atmlnd`); land and sea-ice state vs develop and vs the proposed fix (`cmp_land.py`, `attr/cmp_nmalt.txt`, `cmp_sealt.txt`) | **equivalent within noise**: Noah-MP's land signal is reproduced (land means of soilm −0.51, weasd +0.21 kg/m², snod +0.005 m, the same to 4–5 digits; rms alt − proposed 0.41–0.59 kg/m² against the 2.6–3.2 signal); sea ice at C48 rms alt − proposed 5.7 × 10⁻⁴ m against 2.8–3.0 × 10⁻³; precipitation and 3-D T within noise; `control_p8_atmlnd` runs without the noahmp change. Two forms, so both are in phase 1 (1d); the PR offers the loop-control form first (no noahmp PR) |
+| Settled cloud water: TH2 (1e) | counted as rain (`regional_control` precipitation +10.9 %, the atmosphere unchanged) | no cloud settling out of the lowest layer: the water stays in the air (TEMPO v3 tracks the flux as `cloud_precip`, used only in its freezing-rain diagnostic) | `thB` (8 regional outliers) vs the Thompson PR (`attr/attr_thB_table.txt`) | both conserve, so phase 1 (1e), both forms stated, counting recommended: `regional_control` +4.8 % instead of +9.2 % (the kept cloud rains out later), the other 10 runs within 0.25 % of the PR (`cpld_regional_atm_fbh` the same, −2.6 %); it suppresses cloud deposition at the ground, which TEMPO tracks. Stated in the PR text (descriptions §3.2) |
+| Clipping, R1: TH6, TH7 (1e) | condensate and sub-R1 water to vapour with latent heat; R1 also reworks `semi_lagrange_sedim` and the no-microphysics return (116 lines) | hold one or both for round 2 | not needed: effects measured (+0.002 %; 2 × 10⁻⁸ of precipitation) | phase 1 (1e): where the water goes is a choice |
+| TEMPO driver (0c) | alone | with the NCAR/TEMPO fixes: the driver fix exposes TEMPO's own +0.33 % residual | — | timing |
+| Mass basis: Thompson, TEMPO, GFDL MP v3 | three local fixes | one shared conversion | — | kept local: three owners |
+| SAMF overshoot (0a) | — | options A, B and the CFL bound to `ktcon` (*HAFS crash*, fix options) | done | A; the bound to `ktcon` = A; B does not help |
+
+No better alternative found for SAMF fusion heat (detraining liquid is a larger change), the PBL flux basis, wet
+deposition, the CA trigger, the SAMF32 build, GFDL MP v3 and the other Noah-MP fixes.
+
 ## Known constraints
 
 - **ecflow**: `rt.sh` starts its server on the job's node at port uid + 1500. Two runs on one node collide (the
@@ -277,8 +307,9 @@ repository's PR template; the CCPP Technical Documentation, *Code Management*.
 
 **Order.**
 Posting bundle for 0a, 0b, 0c (bodies in template order, `gh` commands, prerequisites): `post/POSTING.md`.
-1. The SAMF issue (descriptions §8); a ufs-weather-model issue (every PR must link one; all four tracks link the same
-   issue); a GFDL issue (their guide asks for one). Then the tracks in the order of *Tracks*.
+1. The SAMF issue (posted, #401). The ufs-weather-model issue (every PR must link one; all four tracks link the same
+   issue) right before the first PRs, once the WM PRs it names can follow; the GFDL issue (their guide asks for one)
+   with 1c. Then the tracks in the order of *Tracks*.
 2. Per track, PRs from forks, lowest repository first: ccpp-physics `ufs/dev`, GFDL `dev/emc`, NOAA-EMC/noahmp
    `develop`; then NOAA-EMC/ufsatm `develop`; then ufs-weather-model `develop`. The ufsatm and WM PRs point
    `.gitmodules` at our fork branches while open; the last commit before merge restores `.gitmodules` and sets the

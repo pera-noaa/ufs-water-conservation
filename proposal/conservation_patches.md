@@ -1,12 +1,12 @@
 # Conservation follow-on: patch manifest
 
-*Companion to `conservation_proposal.md`. Draft, 18 October 2026. Nothing has been posted. Lists every diff of the
+*Companion to `conservation_proposal.md`. Draft, 18 October 2026. Posted upstream so far: ufs-community/ccpp-physics#401 (the SAMF overshoot issue). Lists every diff of the
 final tree `full14` in apply order, then the diffs that are not in it, the instrumentation, and the re-anchoring a
 replay or a PR split meets. Local paths are relative to `/Users/pera/Documents/ash-code/ufs-chem-v1/conservation/`.*
 
 ## Status
 
-- **Submission.** Round 1 re-cuts the unconditional bug fixes (minus R1, TOPT, MYNN) on current upstream heads,
+- **Submission.** Round 1 re-cuts the unconditional bug fixes (minus R1, TOPT, MYNN; SA1 held with #401) on current upstream heads,
   regrouped by owner: `pr_round1.md`. This manifest describes the full `full14` series.
 - **Authority.** `replay/SERIES.md` and `replay/apply_series.sh` define the series: 55 proposed diffs (rows 01–57; row 16
   is retired into 43, and 56 is `56_NOFMA`, the `-no-fma` build setting, not proposed). Where this manifest and `SERIES.md` differ,

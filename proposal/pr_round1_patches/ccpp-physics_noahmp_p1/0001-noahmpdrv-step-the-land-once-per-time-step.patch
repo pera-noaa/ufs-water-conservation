@@ -1,7 +1,7 @@
-From bc85782a4666de6d688496eff355a327ec886417 Mon Sep 17 00:00:00 2001
+From 9d23eff41244ffd0f13b2789cb30bd2e5a01cfc8 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:48 -0500
-Subject: [PATCH 02/12] noahmpdrv: step the land once per time step
+Subject: [PATCH] noahmpdrv: step the land once per time step
 
 GFS_surface_loop_control_part2 excludes Noah-MP land from the second surface
 iteration ((dry .and. lsm /= lsm_noahmp) .or. (wet .and. nstf_name1 > 0)),
@@ -32,7 +32,7 @@ AI-assisted: written with Claude Opus 5.5; reviewed by author
  2 files changed, 18 insertions(+), 2 deletions(-)
 
 diff --git a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90 b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
-index bd9468e3..c203b860 100644
+index c34dcf7f..01c246b5 100644
 --- a/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
 +++ b/physics/SFC_Models/Land/Noahmp/noahmpdrv.F90
 @@ -450,7 +450,8 @@ end subroutine noahmpdrv_timestep_init
@@ -45,7 +45,7 @@ index bd9468e3..c203b860 100644
        )
  
    use machine ,   only : kind_phys
-@@ -526,6 +527,9 @@ end subroutine noahmpdrv_timestep_init
+@@ -528,6 +529,9 @@ end subroutine noahmpdrv_timestep_init
    real(kind=kind_phys), dimension(:)     , intent(in)    :: snoalb     ! upper bound on max albedo over deep snow
    real(kind=kind_phys), dimension(:)     , intent(inout) :: sfalb      ! mean surface albedo [fraction]
    logical             , dimension(:)     , intent(in)    :: flag_iter  !
@@ -55,8 +55,8 @@ index bd9468e3..c203b860 100644
    integer                                , intent(in)    :: idveg      ! option for dynamic vegetation
    integer                                , intent(in)    :: iopt_crs   ! option for canopy stomatal resistance
    integer                                , intent(in)    :: iopt_btr   ! option for soil moisture factor for stomatal resistance
-@@ -948,9 +952,13 @@ end subroutine noahmpdrv_timestep_init
- !
+@@ -958,9 +962,13 @@ end subroutine noahmpdrv_timestep_init
+ 
    if (cpllnd .and. cpllnd2atm) return
  
 +  first_iter = .true.

@@ -3,7 +3,7 @@
 *Draft for the FV3 `dev/emc` maintainers, the CCPP physics maintainers and the owners of SAMF, satmedmfvdifq, UGWP-v1
 and GSL drag, Thompson, Noah-MP, NSST, the CICE sea-ice scheme, MYNN-EDMF, GFDL microphysics v3 and Grell–Freitas,
 and the MPAS-A developers. Follow-on to `water_closure_proposal.md`. Ash Pera (NOAA GML / CIRES) with Lori Bruhwiler, 18 October 2026.
-Not yet posted. Submission is by owner, in rounds: the unconditional bug fixes in `pr_round1.md`, the bugs that need
+Not posted as a whole; the first upstream post is ufs-community/ccpp-physics#401. Submission is by owner, in rounds: the unconditional bug fixes in `pr_round1.md`, the bugs that need
 an owner's decision in `round2_issues.md`; the physics changes and options come later. The diffs, their apply order and target
 repositories are in `conservation_patches.md`. Every number is from a report under `conservation/`, named under each
 table.*

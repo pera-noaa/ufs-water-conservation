@@ -1,7 +1,7 @@
-From 2b42b6cdd4010a4c57e7304a880b80091c8d0d8d Mon Sep 17 00:00:00 2001
+From 1cb11a53f63e747fe4e579034e47fc3583a6e369 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:47 -0500
-Subject: [PATCH 3/6] Thompson: keep the entry density for mass conversions
+Subject: [PATCH 3/4] Thompson: keep the entry density for mass conversions
  before sedimentation
 
 Thompson converts hydrometeors to mass densities with rho evaluated at entry,
@@ -25,7 +25,7 @@ AI-assisted: written with Claude Opus 5.5; reviewed by author
  1 file changed, 5 insertions(+), 6 deletions(-)
 
 diff --git a/physics/MP/Thompson/module_mp_thompson.F90 b/physics/MP/Thompson/module_mp_thompson.F90
-index 8bd3c128..637f354c 100644
+index fdd5ac04..cb5b3318 100644
 --- a/physics/MP/Thompson/module_mp_thompson.F90
 +++ b/physics/MP/Thompson/module_mp_thompson.F90
 @@ -2025,7 +2025,7 @@ module module_mp_thompson
@@ -37,7 +37,7 @@ index 8bd3c128..637f354c 100644
        real(wp) :: xslw1, ygra1, zans1, eva_factor
        integer :: i, k, k2, n, nn, nstep, k_0, kbot, IT, iexfrq
        integer, dimension(5) :: ksed1
-@@ -3390,8 +3390,9 @@ module module_mp_thompson
+@@ -3388,8 +3388,9 @@ module module_mp_thompson
           otemp = 1./temp(k)
           tempc = temp(k) - 273.15
           qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
@@ -49,7 +49,7 @@ index 8bd3c128..637f354c 100644
           rhof2(k) = SQRT(rhof(k))
           qvs(k) = rslf(pres(k), temp(k))
           ssatw(k) = qv(k)/qvs(k) - 1.
-@@ -3402,7 +3403,7 @@ module module_mp_thompson
+@@ -3400,7 +3401,7 @@ module module_mp_thompson
           else
              visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
           endif
@@ -58,7 +58,7 @@ index 8bd3c128..637f354c 100644
           lvap(k) = lvap0 + (2106.0 - 4218.0)*tempc
           tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
           ocp(k) = 1./(Cp*(1.+0.887*qv(k)))
-@@ -3664,7 +3665,6 @@ module module_mp_thompson
+@@ -3662,7 +3663,6 @@ module module_mp_thompson
              endif
              qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
              temp(k) = t1d(k) + DT*tten(k)
@@ -66,7 +66,7 @@ index 8bd3c128..637f354c 100644
              qvs(k) = rslf(pres(k), temp(k))
              ssatw(k) = qv(k)/qvs(k) - 1.
           endif
-@@ -3747,7 +3747,6 @@ module module_mp_thompson
+@@ -3745,7 +3745,6 @@ module module_mp_thompson
              qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
              nr(k) = max(R2, (nr1d(k) + DT*nrten(k))*rho(k))
              temp(k) = t1d(k) + DT*tten(k)

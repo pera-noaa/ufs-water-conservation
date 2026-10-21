@@ -1,7 +1,7 @@
-From ab1a4e850278de6649d2b8abda390bcae27e6dde Mon Sep 17 00:00:00 2001
+From 97373e893f6a4f78b7b6e67fddca27184bd8c5a4 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:48 -0500
-Subject: [PATCH 01/12] noahmpdrv: hand the atmosphere the water Noah-MP
+Subject: [PATCH 01/11] noahmpdrv: hand the atmosphere the water Noah-MP
  removed, not latent heat / con_hvap
 
 evap was latent_heat_total/density/con_hvap (2.5e6 J/kg), while Noah-MP

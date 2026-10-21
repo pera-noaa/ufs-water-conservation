@@ -1,7 +1,7 @@
-From 008dd2a2de785ef03518431e58a053ece3c13079 Mon Sep 17 00:00:00 2001
+From 1e5c6cd739c22b3bca6936880bee424acebf1281 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:49 -0500
-Subject: [PATCH 04/12] GFS_phys_time_vary: build Noah-MP snow layers from the
+Subject: [PATCH 03/11] GFS_phys_time_vary: build Noah-MP snow layers from the
  land snow with frac_grid
 
 At a cold start fv3atm derives the land snow weasdl = weasd/(landfrac +

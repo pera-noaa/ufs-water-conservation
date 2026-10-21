@@ -4,7 +4,7 @@
 
 In `samfdeepcnv.f`, `xmbmax` (Han and Pan 2011, eq. 7) keeps the layer CFL ≤ 1 only at `kbcon`, where `eta` = 1. Below cloud base `eta` can exceed 1 (101 at `kb` for elevated convection), so layers from `kb` to `kbcon` reach CFL 24 and heat by tens of kelvin in one step: on develop (f1d68949), `hafs_global_1nest_atm` has 257–351 layer-steps above 4 K per 6 h, up to 52 K (20 perturbed members).
 
-Develop survives, but only just: small, unrelated answer changes push the tail past the limit, and the test stops with `compute_qs: saturation vapor pressure table overflow` after one cell gains about 70 K in a step. 24 of our water/energy bug fixes, none in this code, crashed it in 3 of 20 members, the unperturbed RT member included; develop crashed in none.
+Develop survives, but only just: small, unrelated answer changes push the tail past the limit, and the test stops with `compute_qs: saturation vapor pressure table overflow` after one cell gains about 70 K in a step. 24 of our water/energy bug fixes, none touching `xmbmax`, crashed it in 3 of 20 members, the unperturbed RT member included; develop crashed in none.
 
 Expected: CFL ≤ 1 in every layer, as at `kbcon`. `samfshalcnv.f` has the same code but no event above 4 K here.
 

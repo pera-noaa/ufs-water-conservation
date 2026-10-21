@@ -1,7 +1,7 @@
-From 6d1dc859cce75ab52584c01d1099856a7c27864f Mon Sep 17 00:00:00 2001
+From 4149f01a731108b6a402d274f80993096f520b54 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:49 -0500
-Subject: [PATCH 03/12] GFS_surface_composites_pre: keep the land snow with
+Subject: [PATCH 02/11] GFS_surface_composites_pre: keep the land snow with
  frac_grid
 
 composites_post sets weasd = txl*weasd_lnd + txi*weasd_ice; composites_pre then

@@ -1,7 +1,7 @@
-From 988751b0560ecd39e6e526aba63e4c46e63138b9 Mon Sep 17 00:00:00 2001
+From 0103ba23af30e5beaaaa9bbc6eafe4422fde5f82 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:49 -0500
-Subject: [PATCH 05/12] Noah-MP: move truncated thin snow to the soil instead
+Subject: [PATCH 04/11] Noah-MP: move truncated thin snow to the soil instead
  of deleting it
 
 Noah-MP sets snow without layers to zero when snowh <= 1e-6 m or

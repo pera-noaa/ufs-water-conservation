@@ -1,7 +1,7 @@
-From 118c29bf02853724bac7ed0cf5a638e4418b5f63 Mon Sep 17 00:00:00 2001
+From 46ef55b5057838bfdab64eb5b96af21787107fc2 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:51 -0500
-Subject: [PATCH 08/12] Noah-MP combine: test the current snow layer count
+Subject: [PATCH 07/11] Noah-MP combine: test the current snow layer count
 
 When a pack of two or more layers melts out in one step, combine merges the
 bottom layer into an inactive slot: the test uses the entry count

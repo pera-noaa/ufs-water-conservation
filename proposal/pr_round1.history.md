@@ -341,3 +341,70 @@ fixes leave its rate at develop's.
 
 #### Library Changes/Upgrades:
 - [x] No Updates
+
+## SAMF issue texts replaced before posting (moved from `pr_round1_descriptions.md` §8 and §1, 20 October 2026)
+
+Title before shortening: "SAMF: sub-cloud mass flux exceeds the CFL limit; `hafs_global_1nest_atm` crashes under
+small answer changes". Posted as ufs-community/ccpp-physics#401 with "SAMF: sub-cloud mass flux exceeds the CFL limit".
+
+*Output* before the 20-member options table (3 members, option A = `fixb.f`):
+
+| 6 h, 3 members | develop | develop + option A |
+|---|---|---|
+| layer-steps heated > 4 K | 257, 274, 294 | 0 |
+| of which layer CFL > 1 | 253, 269, 291 | 0 |
+| largest | 24.5, 24.1, 39.0 K | — |
+| mean precipitation, mm/day | 2.4368 (members ±0.0005) | 2.4321 (−0.19 %) |
+| max TKE at 6 h, m²/s² | 3.4 × 10⁴ | 450 |
+
+The WM issue (§1), *Additional context*, before the track split:
+
+> Fixes, one commit each, in four WM PRs: ufs-community/ufs-weather-model#TBD (Thompson, TEMPO driver), #TBD (SAMF,
+> PBL, Noah-MP, GFDL MP v3, SAMF single precision), #TBD (sea ice, NSST) and #TBD (FV3), with their ccpp-physics (6),
+> NOAA-GFDL/GFDL_atmos_cubed_sphere, NOAA-EMC/noahmp and NOAA-EMC/ufsatm PRs. All change answers. The sea-ice/NSST and
+> FV3 PRs wait for the SAMF overshoot (ufs-community/ccpp-physics#TBD), which `hafs_global_1nest_atm` is sensitive to.
+
+## Thompson PR draft with all seven fixes (moved from `pr_round1_descriptions.md` §3.2, 20 October 2026)
+
+Replaced when TH2, TH6 and TH7 moved to track 1e (a second reasonable form each). The regional table is the
+whole six-commit PR alone on develop.
+
+#### 3.2 Thompson (all seven)
+
+**Title:** Thompson: close the water budget (mass basis, settling, graupel, density, layer depth, clipping, threshold)
+
+## Description of Changes:
+Seven fixes in `mp_thompson`/`module_mp_thompson`, one commit each. Sizes are fractions of grid-scale
+precipitation.
+
+| Fix | Bug | Effect |
+|---|---|---|
+| Mass basis | humidity converted in with `1/(1-q_v)`, back with `1/(1+r_v,new)` | removes 0.4 % |
+| Settling | cloud water leaving the lowest layer not counted as precipitation; cloud sedimentation not substepped | removes 0.15 % |
+| Graupel | graupel gains not recomputed after the rate limiters | creates 0.76 % (first 6 h) |
+| Density | density recomputed after latent heating, before sedimentation | removes 0.11 % |
+| Layer depth | `dz` from heights computed before convection | removes 0.014 % (new argument `prsi`, already in the hosts) |
+| Clipping | clipped condensate deleted; vapour floor filled from nothing | creates 0.002 % |
+| R1 threshold | hydrometeors at or below R1 deleted | removes 2 × 10⁻⁸ |
+
+In the regional and convection-allowing tests (3 km, 1–6 h cold starts), each fix alone on `develop`:
+
+| Test | Precipitation, whole PR | Attribution |
+|---|---|---|
+| `regional_control` | +9.2 % | counting settled cloud water +10.9 % (3-D T +0.0008 K: reported, not state) |
+| `regional_spp_sppt_shum_skeb` | −5.3 % | graupel −4.1 %, mass basis −1.6 % |
+| `conus13km_gl_inline`, `gnv1_nested` | −2.4 %, −2.6 % | graupel −2.1 %, −1.1 % |
+| `cpld_regional_atm_fbh` | −2.6 % | mass basis −2.0 %, graupel −1.1 % |
+| HRRR/RAP debug (1 h) | −0.9 to −1.4 % | graupel −1.0 to −1.4 % |
+
+Noise (one-ulp perturbation): ≤ 0.24 %. The graupel fix removes water created during spin-up, largest in these
+short cold starts (0.76 % in the first 6 h at C96). The cloud sedimentation substepping changes precipitation by
+≤ 0.23 % except `gnv1_nested` (−1.2 %).
+
+The alternative, no cloud settling out of the lowest layer, conserves water too but keeps the cloud in the air:
+`regional_control` then changes by +4.8 % (the kept cloud rains out later), the other tests as above. Cloud water
+reaching the ground is water reaching the ground, so we count it.
+
+## Dependencies:
+ufs-community/ufs-weather-model#TBD
+

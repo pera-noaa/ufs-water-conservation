@@ -1,7 +1,7 @@
-From 7872ecb1a12e7a8a86ec937d1929644a0ab4cbfa Mon Sep 17 00:00:00 2001
+From 55ba961a80b64890ef71e264f0578c3649826037 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:49 -0500
-Subject: [PATCH 06/12] Noah-MP: send truncated canopy water to the ground
+Subject: [PATCH 05/11] Noah-MP: send truncated canopy water to the ground
  instead of deleting it
 
 canwater sets canopy liquid and canopy ice to zero when either is at or below

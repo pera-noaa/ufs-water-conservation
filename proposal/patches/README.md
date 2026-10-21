@@ -1,6 +1,6 @@
 # Water-closure patches and where they go
 
-Checked 15 October 2026. Nothing has been posted.
+Checked 15 October 2026. Round 1 is re-cut from these in `../pr_round1_patches/` (`../pr_round1.md`); posted upstream so far: ufs-community/ccpp-physics#401.
 
 ## What is here
 

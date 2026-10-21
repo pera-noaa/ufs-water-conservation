@@ -1,7 +1,7 @@
-From 8486c044e604e7ddfecf3fb4ec0d93e3e017a208 Mon Sep 17 00:00:00 2001
+From 5a046aabaaa40acf108ea354f58cfb0de3a5be2f Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:48 -0500
-Subject: [PATCH 6/6] Thompson: send water at or below R1 to vapour instead of
+Subject: [PATCH 3/3] Thompson: send water at or below R1 to vapour instead of
  deleting it
 
 Three places delete hydrometeor mass at the R1 (1e-12) threshold:

@@ -1,7 +1,7 @@
-From 85578f4fe40fc7ed5ac3d4f193c8d9670b96263f Mon Sep 17 00:00:00 2001
+From 3ec3683f28cacd1e273d4ee862893bca49ec6de0 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:54 -0500
-Subject: [PATCH 11/12] Noah-MP csnow: snow heat capacity per mass
+Subject: [PATCH 10/11] Noah-MP csnow: snow heat capacity per mass
 
 csnow builds the snow heat capacity from the volume fractions it caps for
 porosity and conductivity, so mass that crosses the caps changes a layer's

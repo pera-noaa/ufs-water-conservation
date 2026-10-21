@@ -1,7 +1,7 @@
-From ee943d88991ae4fefe14279344d55b35accdd1f8 Mon Sep 17 00:00:00 2001
+From aca494d873a2f19a33348edab9a1c0cd91c04914 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:54 -0500
-Subject: [PATCH 12/12] Noah-MP combo: heat capacities per kg
+Subject: [PATCH 11/11] Noah-MP combo: heat capacities per kg
 
 combo multiplies cice and cwat (J m-3 K-1) by layer masses (kg m-2), and its
 branches set T = tfrz or drop hfus*wliq without a phase change.

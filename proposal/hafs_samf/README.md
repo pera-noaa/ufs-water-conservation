@@ -1,6 +1,6 @@
 # SAMF sub-cloud overshoot in `hafs_global_1nest_atm`: instrumentation and ensembles
 
-Evidence for the SAMF issue (`../pr_round1_descriptions.md` §8) and for the *HAFS crash* section of `../pr_round1.md`.
+Evidence for the SAMF issue (ufs-community/ccpp-physics#401; draft `../pr_round1_descriptions.md` §8) and for the *HAFS crash* section of `../pr_round1.md`.
 Runs: Hercules, Intel, `hafs_global_1nest_atm` 6 h, 6 nodes, about 2.5 min each. Copied from
 `/work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1/` (`hafs_exp/` and the tree scripts).
 

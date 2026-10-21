@@ -1,5 +1,5 @@
 #!/bin/bash
-# track_setup.sh <0b|0c>: per-track ccpp-physics, ufsatm, (noahmp) and WM branches in a fresh RT tree rt_t<T>,
+# track_setup.sh <0b|0c>: per-track ccpp-physics, ufsatm and WM branches (noahmp stays at develop) in a fresh RT tree rt_t<T>,
 # gated, copied back to series; then submit that track's full rt.sh vs develop baselines
 set -eu
 T=$1
@@ -37,11 +37,10 @@ git config -f .gitmodules submodule.ccpp/physics.branch pr1-$T
 git add .gitmodules ccpp/physics
 "${G[@]}" commit -q -m "Update ccpp-physics for the round-1 conservation bug fixes, track $T ($WHAT)$TR"
 
-# noahmp (0b only): the 09b fix branch under the track name
+# noahmp: develop's pin (phase 0 has no noahmp change)
 cd $R/NOAHMP-interface/noahmp
-git fetch -q --update-head-ok $S/NOAHMP-interface/noahmp '+refs/heads/pr1-round1:refs/heads/pr1-round1'
 NMPIN=$(git -C $R ls-tree $WM_BASE NOAHMP-interface/noahmp | awk '{print $3}')
-if [ $T = 0b ]; then git checkout -q -B pr1-0b pr1-round1; else git checkout -q $NMPIN; fi
+git checkout -q $NMPIN
 
 # WM: submodule bumps; .gitmodules at the fork branches
 cd $R
@@ -50,11 +49,7 @@ git checkout -q -B pr1-$T $WM_BASE
 git config -f .gitmodules submodule.UFSATM.url https://github.com/pera-noaa/ufsatm
 git config -f .gitmodules submodule.UFSATM.branch pr1-$T
 git add UFSATM
-if [ $T = 0b ]; then
-  git config -f .gitmodules submodule.NOAHMP-interface/noahmp.url https://github.com/pera-noaa/noahmp
-  git config -f .gitmodules submodule.NOAHMP-interface/noahmp.branch pr1-0b
-  git add NOAHMP-interface/noahmp; SUBJ="Update UFSATM and NOAHMP-interface/noahmp"
-else SUBJ="Update UFSATM"; fi
+SUBJ="Update UFSATM"
 git add .gitmodules
 "${G[@]}" commit -q -m "$SUBJ for the round-1 conservation bug fixes, track $T ($WHAT)$TR"
 
@@ -66,7 +61,7 @@ for r in UFSATM/ccpp/physics UFSATM/fv3/atmos_cubed_sphere UFSATM NOAHMP-interfa
   [ "$link" = "$have" ] || { echo "GATE: $r gitlink $link != HEAD $have"; bad=1; }
 done
 [ "$(git -C $R/UFSATM ls-tree HEAD fv3/atmos_cubed_sphere | awk '{print $3}')" = "$FV3PIN" ] || { echo "GATE: fv3 not develop"; bad=1; }
-[ $T = 0c ] && { [ "$(git -C $R ls-tree HEAD NOAHMP-interface/noahmp | awk '{print $3}')" = "$NMPIN" ] || { echo "GATE: noahmp not develop"; bad=1; }; }
+[ "$(git -C $R ls-tree HEAD NOAHMP-interface/noahmp | awk '{print $3}')" = "$NMPIN" ] || { echo "GATE: noahmp not develop"; bad=1; }
 echo "WM changed: $(git -C $R diff --name-only $WM_BASE HEAD | tr '\n' ' ')"
 echo "ufsatm changed: $(git -C $R/UFSATM diff --name-only $ATM_BASE HEAD | tr '\n' ' ')"
 echo "dirty: $(git -C $R status --porcelain --ignore-submodules=none | grep -v '^??' | wc -l)"
@@ -76,7 +71,6 @@ echo "dirty: $(git -C $R status --porcelain --ignore-submodules=none | grep -v '
 git -C $S/UFSATM/ccpp/physics fetch -q $R/UFSATM/ccpp/physics +pr1-$T:pr1-$T
 git -C $S/UFSATM fetch -q $R/UFSATM +pr1-$T:pr1-$T
 git -C $S fetch -q $R +pr1-$T:pr1-$T
-[ $T = 0b ] && git -C $S/NOAHMP-interface/noahmp fetch -q $R/NOAHMP-interface/noahmp +pr1-0b:pr1-0b
 echo "series has pr1-$T: physics $(git -C $S/UFSATM/ccpp/physics rev-parse --short pr1-$T) ufsatm $(git -C $S/UFSATM rev-parse --short pr1-$T) wm $(git -C $S rev-parse --short pr1-$T)"
 
 # ecflow port offset (run tree only, not committed) so the two tracks' rt.sh do not share a server

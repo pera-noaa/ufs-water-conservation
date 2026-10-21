@@ -1,7 +1,7 @@
-From e10e1f7f4b82368269c682fadca32422f8ecf28e Mon Sep 17 00:00:00 2001
+From 8a730bf4d3ec94842c553a04289da7b0ceb9b507 Mon Sep 17 00:00:00 2001
 From: Ash Pera <ashley.pera@noaa.gov>
 Date: Mon, 19 Oct 2026 12:24:48 -0500
-Subject: [PATCH 5/6] Thompson: return clipped condensate to vapour instead of
+Subject: [PATCH 2/3] Thompson: return clipped condensate to vapour instead of
  deleting it
 
 Hydrometeors ending the step negative or below R1 were set to zero, a small
