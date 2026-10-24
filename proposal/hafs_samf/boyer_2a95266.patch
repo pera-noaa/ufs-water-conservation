@@ -1,0 +1,54 @@
+From 2a95266bea0a2448970b3381af2e815f5a54db1c Mon Sep 17 00:00:00 2001
+From: Christian Boyer <Christian.Boyer@noaa.gov>
+Date: Thu, 22 Oct 2026 10:51:28 -0400
+Subject: [PATCH] Update in entrainment rate (xlamue) flooring to fix
+ ufs-community/ccpp-physics#401
+
+---
+ physics/CONV/SAMF/samfdeepcnv.f | 10 ++++++----
+ physics/CONV/SAMF/samfshalcnv.f |  4 +++-
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 809815d14..87d9ce815 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -1437,7 +1437,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,     &
+           if(cnvflg(i)) then
+             dz =zo(i,k+1) - zo(i,k)
+             xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+-            xlamue(i,k) = max(xlamue(i,k), crtlame)
++!           xlamue(i,k) = max(xlamue(i,k), crtlame)
++            tem = 0.001_conv_wp * clamt(i)
++            xlamue(i,k) = max(xlamue(i,k), tem)
+           endif
+         enddo
+       enddo
+@@ -1498,9 +1500,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,     &
+         do i=1,im
+           if(cnvflg(i).and.
+      &      (k > kbcon(i) .and. k < kmax(i))) then
+-              tem = qeso(i,k)/qeso(i,kbcon(i))
+-              fent1(i,k) = min(tem**2, 3.0_conv_wp)
+-              fent2(i,k) = min(tem**3, 5.2_conv_wp)
++              tem = min(qeso(i,k)/qeso(i,kbcon(i)), 1.0_conv_wp)
++              fent1(i,k) = tem**2
++              fent2(i,k) = tem**3
+           endif
+         enddo
+       enddo
+diff --git a/physics/CONV/SAMF/samfshalcnv.f b/physics/CONV/SAMF/samfshalcnv.f
+index 62e230ee3..4183838f5 100644
+--- a/physics/CONV/SAMF/samfshalcnv.f
++++ b/physics/CONV/SAMF/samfshalcnv.f
+@@ -1025,7 +1025,9 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+           if(cnvflg(i)) then
+             dz = zo(i,k+1) - zo(i,k)
+             xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+-            xlamue(i,k) = max(xlamue(i,k), crtlame)
++!           xlamue(i,k) = max(xlamue(i,k), crtlame)
++            tem = 0.001_conv_wp * clamt(i)
++            xlamue(i,k) = max(xlamue(i,k), tem)
+           endif
+         enddo
+       enddo

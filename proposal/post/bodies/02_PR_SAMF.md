@@ -11,18 +11,18 @@ Four bug fixes, one commit each. All change answers.
 New argument: `hfus` (`latent_heat_of_fusion_of_water_at_0C`, already provided by the hosts).
 
 ## Tests Conducted:
-Intel on Hercules: compiled alone on `develop` and with the other round-1 fixes. Full Intel + GNU `rt.sh` on Hercules: see ufs-community/ufs-weather-model#TBD ([RT 0b]). With all round-1 fixes together: none fails to run; reproducibility (restart, decomposition, threading; `rt.sh -c` then `-m`) 123 of 123 bitwise. Effects are from in-model budget meters, C96, 24 h.
+Intel on Hercules: compiled alone on `develop` and with the other round-1 fixes. Full Intel + GNU `rt.sh` on Hercules: see ufs-community/ufs-weather-model#TBD (Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 116 tests identical, 101 change answers, 15 restart/IAU children not started (their parents change answers); none fails to run). With all round-1 fixes together: none fails to run; reproducibility (restart, decomposition, threading; `rt.sh -c` then `-m`) 123 of 123 bitwise. Effects are from in-model budget meters, C96, 24 h.
 
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
 
-Overlaps ufs-community/ccpp-physics#390 in one block; whichever merges second needs a rebase. Ours onto #390 is ready.
+Rebased onto `ufs/dev` after ufs-community/ccpp-physics#390 (one block in `samfdeepcnv.f` re-resolved around its `progomega` guards). #403 adds arguments to `samfdeepcnv_run` beside ours (`hfus`); whichever merges second needs a one-block rebase.
 
 ## Documentation:
 None needed.
 
 ## Issue (optional):
-ufs-community/ufs-weather-model#TBD
+ufs-community/ufs-weather-model#3404
 
 ## Contributors (optional):
 Lori Bruhwiler (NOAA GML). AI-assisted: Claude Opus 5.5; reviewed by author (trailer on every commit).

@@ -1,0 +1,15 @@
+run	job	exe	switches	note
+m403_off	10204062	m403 (t403m, meters em+uc tm,hd, -no-fma)	-	#403 OFF
+m403_3d	10204063	m403	sa3dtke, sa3dtke_dyco	#403 ON (3-D TTE horizontal diffusion)
+m403_c999	10204094	m403	consv_te=0.999	noise control
+dev_3d	10204095	energy mfx (develop 0921 + FX1 SG1 CP1 + meter v1)	sa3dtke, sa3dtke_dyco	develop sa3dtke baseline
+m403_all	10204186	m403	+leonard(_dyco), coldpool(_dyco), field_table+buoyexcs	#403 all-on
+p403_off	10204155	p403 (plain, -no-fma)	-	gate: bitwise vs m403_off
+p403_3d	10204181	p403	sa3dtke	gate: bitwise vs m403_3d
+m390_off/m390_mlm	10204136/7	m390 (first meter, ucb block-indexed: MLM UCM superseded)	-/mlm	EMS valid
+m390b_mlm	10204180	m390b (+whole-PBL hooks; ucb block-indexed: superseded)	mlm	-
+m390c_off	10204237	m390c (ucb column-offset fix)	-	#390 OFF
+m390c_mlm	10204236	m390c	mlm	#390 ON
+p390_off	10204296	p390 (plain)	-	gate: bitwise vs m390c_off
+p390_mlm	10204297	p390	mlm	gate: NOT bitwise vs m390c_mlm (round-off seed; rms 1.15x c999 noise)
+p390_mlm_r	10204318	p390	mlm	reproducibility: bitwise vs p390_mlm

@@ -1,0 +1,302 @@
+diff --git a/.gitmodules b/.gitmodules
+index 21e176b8a..15175d0db 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -8,8 +8,10 @@
+   branch = feature/capgen-v1
+ [submodule "ccpp/physics"]
+   path = ccpp/physics
+-  url = https://github.com/ufs-community/ccpp-physics
+-  branch = ufs/dev
++  #url = https://github.com/ufs-community/ccpp-physics
++  #branch = ufs/dev
++  url = https://github.com/lisa-bengtsson/ccpp-physics
++  branch = MLM
+ [submodule "upp"]
+   path = upp
+   url = https://github.com/NOAA-EMC/UPP
+diff --git a/ccpp/data/GFS_typedefs.F90 b/ccpp/data/GFS_typedefs.F90
+index 5318d5b3b..f71f7f4c0 100644
+--- a/ccpp/data/GFS_typedefs.F90
++++ b/ccpp/data/GFS_typedefs.F90
+@@ -1231,8 +1231,10 @@ module GFS_typedefs
+     logical              :: hybedmf         !< flag for hybrid edmf pbl scheme
+     logical              :: satmedmf        !< flag for scale-aware TKE-based moist edmf
+                                             !< vertical turbulent mixing scheme
+-    logical              :: tte_edmf        !< flag for scale-aware TTE-based moist edmf
+-                                            !< vertical turbulent mixing scheme
++    logical              :: tte_edmf        !< flag for scale-aware TTE-based moist edmf                                                                                           !< vertical turbulent mixing scheme
++!+mlm
++    logical              :: mlm             !< flag to use the Mixed-Layer Model downdraft mixing                                                                                  !< in satmedmfvdifq
++!-mlm
+     logical              :: shinhong        !< flag for scale-aware Shinhong vertical turbulent mixing scheme
+     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
+     logical              :: dspheat         !< flag for tke dissipative heating
+@@ -2100,6 +2102,13 @@ module GFS_typedefs
+     real (kind=kind_phys), pointer :: qdiss      (:,:)   => null()  !< dissipation of tke
+ 
+ ! Output - only in physics
++!+mlm
++    !--- mfscuq_mlm Diagnostic variables
++    real (kind=kind_phys), pointer :: eflux  (:,:)     => null()  !< total energy fluxfrom mlm closure
++    real (kind=kind_phys), pointer :: rflux  (:,:)     => null()  !< radiation flux from mlm closure
++    real (kind=kind_phys), pointer :: wflux  (:,:)     => null()  !< total water flux from mlm closure
++    real (kind=kind_phys), pointer :: pflux  (:,:)     => null()  !< preciptation flux from mlm closure
++!-mlm
+     real (kind=kind_phys), pointer :: u10m   (:)     => null()   !< 10 meter u/v wind speed
+     real (kind=kind_phys), pointer :: v10m   (:)     => null()   !< 10 meter u/v wind speed
+     real (kind=kind_phys), pointer :: dpt2m  (:)     => null()   !< 2 meter dew point temperature
+@@ -3297,16 +3306,21 @@ subroutine coupling_create (Coupling, Model)
+       Coupling%ca_micro  = clear_val
+     endif
+ 
++    !+mlm
++    if (Model%mlm .or. Model%cplchm) then
++      allocate (Coupling%pfi_lsan  (IM,Model%levs))
++      allocate (Coupling%pfl_lsan  (IM,Model%levs))
++      Coupling%pfi_lsan  = clear_val
++      Coupling%pfl_lsan  = clear_val
++    endif
++    !-mlm
++    
+     ! -- Aerosols coupling options
+     if (Model%cplchm) then
+       !--- outgoing instantaneous quantities
+       allocate (Coupling%ushfsfci  (IM))
+       ! -- instantaneous 3d fluxes of nonconvective ice and liquid precipitations
+-      allocate (Coupling%pfi_lsan  (IM,Model%levs))
+-      allocate (Coupling%pfl_lsan  (IM,Model%levs))
+       Coupling%ushfsfci  = clear_val
+-      Coupling%pfi_lsan  = clear_val
+-      Coupling%pfl_lsan  = clear_val
+     endif
+ 
+     if (Model%cplchm .or. Model%cplflx .or. Model%cpllnd .or. Model%cpl_fire) then
+@@ -3911,6 +3925,9 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     integer              :: isatmedmf      =  0                       !< flag for scale-aware TKE-based moist edmf scheme
+                                                                       !<     0: initial version of satmedmf (Nov. 2018)
+                                                                       !<     1: updated version of satmedmf (as of May 2019)
++!+mlm
++    logical              :: mlm              = .false.                !< flag for Mixed-Layer Model downdraft in PBL
++!-mlm
+     logical              :: do_deep        = .true.                   !< whether to do deep convection
+ 
+     logical              :: hwrf_samfdeep     = .false.               !< flag for HWRF SAMF deepcnv scheme
+@@ -4062,7 +4079,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+                                                              !<.false. means use reference pressure of 1000 hPa to define potential temperature
+                                                              !<       this is the alternative method proposed by GSL
+ 
+-!--- vertical diffusion
++!--- vertical diffusion    
+     real(kind=kind_phys) :: xkzm_m         = 1.0d0           !< [in] bkgd_vdif_m  background vertical diffusion for momentum
+     real(kind=kind_phys) :: xkzm_h         = 1.0d0           !< [in] bkgd_vdif_h  background vertical diffusion for heat q
+     real(kind=kind_phys) :: xkzm_s         = 1.0d0           !< [in] bkgd_vdif_s  sigma threshold for background mom. diffusion
+@@ -4336,7 +4353,9 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+                                pert_mp,pert_clds,pert_radtend,                              &
+                           !--- Scale-aware 3D TKE scheme
+                                sa3dtke,                                                     &
+-                          !--- Rayleigh friction
++!+mlm                     !--- Mixed-layer closure in TKE-EDMF PBL
++                               mlm,                                                         &
++!-mlm                     !--- Rayleigh friction
+                                prslrd0, ral_ts,  ldiag_ugwp, do_ugwp, do_tofd,              &
+                           ! --- Ferrier-Aligo
+                                spec_adv, rhgrd, icloud,                                     &
+@@ -5266,6 +5285,15 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     Model%lbb3 = lbb3
+     Model%dt_decay = dt_decay
+     
++    !--MLM closure check in PBL
++    if(mlm .and. imp_physics/=8) then
++       write(*,*) 'Logical error: Flag mlm in PBL scheme requires Thompson MP'
++       stop
++    end if
++    !+mlm
++    Model%mlm = mlm
++    !-mlm
++    
+     if (oz_phys .and. oz_phys_2015) then
+        write(*,*) 'Logic error: can only use one ozone physics option (oz_phys or oz_phys_2015), not both. Exiting.'
+        stop
+@@ -7280,6 +7308,12 @@ subroutine control_print(Model)
+       print *, ' satmedmf          : ', Model%satmedmf
+       print *, ' tte_edmf          : ', Model%tte_edmf
+       print *, ' isatmedmf         : ', Model%isatmedmf
++!+mlm
++      print *, ' mlm               : ', Model%mlm
++      print *, ' xkzm_m            : ', Model%xkzm_m
++      print *, ' xkzm_h            : ', Model%xkzm_h
++      print *, ' xkzm_s            : ', Model%xkzm_s
++!-mlm
+       print *, ' shinhong          : ', Model%shinhong
+       print *, ' do_ysu            : ', Model%do_ysu
+       print *, ' dspheat           : ', Model%dspheat
+@@ -8282,6 +8316,16 @@ subroutine diag_create (Diag, Model)
+       allocate (Diag%pahi    (IM))
+     endif
+ 
++    !MLM scheme in PBL:
++!+mlm
++    if (Model%mlm) then
++      allocate (Diag%eflux   (IM,Model%levs))
++      allocate (Diag%rflux   (IM,Model%levs))
++      allocate (Diag%wflux   (IM,Model%levs))
++      allocate (Diag%pflux   (IM,Model%levs))
++    endif
++!-mlm
++    
+     ! F-A MP scheme
+     if (Model%imp_physics == Model%imp_physics_fer_hires) then
+      allocate (Diag%train     (IM,Model%levs))
+@@ -8592,6 +8636,14 @@ subroutine diag_phys_zero (Diag, Model, linit, iauwindow_center)
+     Diag%graupel    = zero
+ 
+     !--- Out
++    !+mlm
++    if (Model%mlm) then
++      Diag%eflux      = zero
++      Diag%rflux      = zero
++      Diag%wflux      = zero
++      Diag%pflux      = zero
++    end if
++    !-mlm
+     Diag%u10m       = zero
+     Diag%v10m       = zero
+     Diag%dpt2m      = zero
+diff --git a/ccpp/data/GFS_typedefs.meta b/ccpp/data/GFS_typedefs.meta
+index 28ca1324b..374278058 100644
+--- a/ccpp/data/GFS_typedefs.meta
++++ b/ccpp/data/GFS_typedefs.meta
+@@ -3420,7 +3420,7 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  active = (flag_for_chemistry_coupling)
++  active = (flag_for_chemistry_coupling .or. flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+ [pfl_lsan]
+   standard_name = liquid_flux_due_to_large_scale_precipitation
+   long_name = instantaneous 3D flux of liquid water from nonconvective precipitation
+@@ -3428,7 +3428,7 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  active = (flag_for_chemistry_coupling)
++  active = (flag_for_chemistry_coupling .or. flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+ [htrlw]
+   standard_name = updated_tendency_of_air_temperature_due_to_longwave_heating_on_physics_timestep
+   long_name = total sky longwave heating rate on physics time step
+@@ -6110,6 +6110,12 @@
+   units = none
+   dimensions = ()
+   type = integer
++[mlm]
++  standard_name = flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL
++  long_name = flag for mixed-layer model in TKE-EDMF PBL scheme
++  units = none
++  dimensions = ()
++  type = logical
+ [conv_cf_opt]
+   standard_name = option_for_convection_scheme_cloud_fraction_computation
+   long_name = option for convection scheme cloud fraction computation
+@@ -10729,4 +10735,36 @@
+   type = real
+   kind = kind_phys
+   active = (do_lightning_threat_index_calculations)
++[eflux]
++  standard_name = total_energy_flux
++  long_name = total energy flux from mlm scheme
++  units = K m s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
++[rflux]
++  standard_name = radiative_flux
++  long_name = radiative flux from mlm scheme
++  units = K m s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
++[wflux]
++  standard_name = total_water_flux
++  long_name = total water flux from mlm scheme
++  units = kg kg-1 m s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
++[pflux]
++  standard_name = precipitation_flux
++  long_name = precipitation flux from mlm scheme
++  units = kg kg-1 m s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+ 
+diff --git a/ccpp/driver/GFS_diagnostics.F90 b/ccpp/driver/GFS_diagnostics.F90
+index 5d0c5ce79..4ce9bc1d1 100644
+--- a/ccpp/driver/GFS_diagnostics.F90
++++ b/ccpp/driver/GFS_diagnostics.F90
+@@ -2081,7 +2081,7 @@ subroutine GFS_externaldiag_populate (ExtDiag, Model, Statein, Stateout, Sfcprop
+       ExtDiag(idx)%mod_name = 'gfs_phys'
+       ExtDiag(idx)%data%var3 => Coupling%sfc_wts(:,:)
+     endif
+-
++    
+     if (Model%do_ca) then
+       idx = idx + 1
+       ExtDiag(idx)%axes = 2
+@@ -2130,8 +2130,43 @@ subroutine GFS_externaldiag_populate (ExtDiag, Model, Statein, Stateout, Sfcprop
+       ExtDiag(idx)%unit = '%'
+       ExtDiag(idx)%mod_name = 'gfs_phys'      
+       ExtDiag(idx)%data%var2 => Coupling%ca_micro(:)
+-    endif
++   endif
+ 
++   if(Model%mlm)then
++      idx = idx + 1
++      ExtDiag(idx)%axes = 3
++      ExtDiag(idx)%name = 'eflux'
++      ExtDiag(idx)%desc = 'total_energy_flux'
++      ExtDiag(idx)%unit = 'K m s-1'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var3 => IntDiag%eflux(:,:)
++
++      idx = idx + 1
++      ExtDiag(idx)%axes = 3
++      ExtDiag(idx)%name = 'rflux'
++      ExtDiag(idx)%desc = 'radiative flux'
++      ExtDiag(idx)%unit = 'K m s-1'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var3 => IntDiag%rflux(:,:)
++
++      idx = idx + 1
++      ExtDiag(idx)%axes = 3
++      ExtDiag(idx)%name = 'wflux'
++      ExtDiag(idx)%desc = 'total water flux'
++      ExtDiag(idx)%unit = 'kg kg-1 m s-1'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var3 => IntDiag%wflux(:,:)
++      
++      idx = idx + 1
++      ExtDiag(idx)%axes = 3
++      ExtDiag(idx)%name = 'pflux'
++      ExtDiag(idx)%desc = 'precipitation flux'
++      ExtDiag(idx)%unit = 'kg kg-1 m s-1'
++      ExtDiag(idx)%mod_name = 'gfs_phys'
++      ExtDiag(idx)%data%var3 => IntDiag%pflux(:,:)
++      
++   endif
++   
+   if (Model%lkm/=0) then
+ 
+       idx = idx + 1
+diff --git a/ccpp/physics b/ccpp/physics
+index d9b70feba..3d2331e3f 160000
+--- a/ccpp/physics
++++ b/ccpp/physics
+@@ -1 +1 @@
+-Subproject commit d9b70feba915022424b35aa0ab33535b9b8c6571
++Subproject commit 3d2331e3ff49f965d564482d402f9e83587b3c07

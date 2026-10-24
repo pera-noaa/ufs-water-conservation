@@ -21,6 +21,9 @@
     together: answers change only, reproducibility 123/123 bitwise, 188 of 188 changed tests screened. SA1 held with
     #401. Round-2 issues drafted (`../proposal/round2_issues.md`). Working notes public at
     github.com/pera-noaa/ufs-water-conservation (`../publish/`); bundle for the phase-0 posts in `../proposal/post/`.
+  - Hercules Lustre instability, to track down: `rt.sh` input staging fails with `cp: ... Input/output error` reading
+    EPIC's RT input data (`/work2/noaa/epic/hercules/UFS-WM_RT/NEMSfv3gfs/input-data-20260617/`). Details and evidence:
+    `../proposal/pr_round1.md`, *Known constraints*, "Lustre I/O errors".
 - Proposal: `../proposal/conservation_proposal.md`; manifest: `../proposal/conservation_patches.md`.
 - History of this file (every row as it evolved): `TRACKER.history.md`.
 

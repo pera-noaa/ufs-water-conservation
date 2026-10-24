@@ -1,13 +1,18 @@
 # q_stats.py <run dir>... : SAMF event statistics from the dbg4 prints, crash status, mean precipitation
-import sys, re
+# (from sfcf<QFH>.nc; without QFH the latest sfcfNNN.nc of the run, the parent grid; fill values masked)
+import sys, re, os, glob
 import numpy as np
 from netCDF4 import Dataset
 def prate(d):
+    h = os.environ.get("QFH")
+    fs = [d + "/sfcf" + h + ".nc"] if h else sorted(glob.glob(d + "/sfcf[0-9][0-9][0-9].nc"))[-1:]
     try:
-        with Dataset(d + "/sfcf006.nc") as nc:
-            lat = np.asarray(nc.variables["lat"][:], dtype=float); a = np.asarray(nc.variables["prate_ave"][0], dtype=float) * 86400
+        with Dataset(fs[0]) as nc:
+            lat = np.ma.asarray(nc.variables["lat" if "lat" in nc.variables else "grid_yt"][:]).astype(float)  # grid_yt: degrees_N
+            a = np.ma.masked_invalid(np.ma.asarray(nc.variables["prate_ave"][0]).astype(float)) * 86400
             w = np.cos(np.deg2rad(lat)); w = np.broadcast_to(w[:, None], a.shape) if w.ndim == 1 else w
-            return np.sum(a * w) / np.sum(w)
+            w = np.ma.masked_array(w, mask=np.ma.getmaskarray(a))
+            return float(np.ma.sum(a * w) / np.ma.sum(w))
     except Exception:
         return float("nan")
 print(f"{'run':>18} {'end':>3} {'crash':>5} | {'deep':>5} {'cfl>1':>5} {'cfl>5':>5} {'>10K':>4} {'maxdT':>6} {'maxcfl':>6} {'medTKE':>6} | {'tkeCap':>6} {'maxTKE':>7} | {'shal':>4} {'s>1':>4} {'smaxdT':>6} {'tksCap':>6} | {'prate':>7}")

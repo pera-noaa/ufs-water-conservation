@@ -13,6 +13,7 @@ Runs: Hercules, Intel, `hafs_global_1nest_atm` 6 h, 6 nodes, about 2.5 min each.
 | `mkexp.sh` | one member: copy the RT run directory, install the executable, set `consv_te` (1, 0.999, …) |
 | `q_stats.py` | per member: finished, crashed, events > 4 K, of those with CFL > 1 and > 5, > 10 K, largest dT and CFL, TKE, mean precipitation |
 | `optA.f` (= `fixb.f`), `optD.f`, `optE.f`, `q_opt.sh` | the issue's options: A the CFL bound below cloud base; D the same bound in every updraft layer (issue option A); E the vapour bound (issue option B); `q_opt.sh` builds develop and `t1a` with each and launches 20 members |
+| `q_han.sh`, `dbgeta_deep.f`, `q_eta.py`, `q_evloc.py`, `q_han_stats.txt` | the #401 reply tests (21 Oct): C Han's `eta`, `etad` ≤ 1; T no convective TKE source; P develop with the print-only sub-cloud `eta` count (`DBGETA` per column with `eta` > 1.2, `DBGETN` per call); `q_evloc.py` places the events relative to `kb`/`kbcon`; all outputs in `q_han_stats.txt` |
 | `q_t1a_stats.txt`, `q_ens_stats.txt`, `q_ens_np_stats.txt`, `q_ens3_stats.txt`, `q_opt_stats.txt` | the outputs (`q_ens3_stats.txt` has every ensemble member, `q_opt_stats.txt` the options; `opt_sum.py` summarizes it) |
 
 Tree names in the statistics: `dev` develop (f1d68949); `r37` all 37 round-1 fixes; `t1a` SAMF + PBL, Noah-MP, sea

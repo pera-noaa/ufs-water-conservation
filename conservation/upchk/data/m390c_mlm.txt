@@ -1,0 +1,47 @@
+# out: 119 steps (kdt 1..119), area 5.100965e+14 m2, dt 720.0
+segment             dE-F W/m2  frameF r W/m2  sum|r| W/m2  water r kg/m2      dK W/m2
+ 1 sfc_pre      +0.000000e+00  +0.000000e+00   0.0000e+00  +0.000000e+00  +0.0000e+00
+ 2 radiation    -7.903207e-03  -7.903207e-03   2.6934e-02  +0.000000e+00  +0.0000e+00
+ 3 surface      +0.000000e+00  +0.000000e+00   0.0000e+00  +0.000000e+00  +0.0000e+00
+ 4 PBL          +3.847809e-01  -9.717918e-02   5.5226e+00  +4.388012e-04  -2.1858e+00
+ 5 GWD          -4.924426e-02  -4.924426e-02   6.4051e-01  -1.466499e-17  -4.1217e-01
+ 6 photochem    +1.558894e-05  +2.230551e-05   1.5589e-05  +5.342642e-07  +0.0000e+00
+ 7 SAMF deep    -5.245557e-01  +6.768600e-01   5.2456e-01  -1.413808e+00  -1.1394e-01
+ 8 SAMF shallow  -4.456230e-02  +2.450321e-01   4.4566e-02  -2.928587e-01  -2.6975e-02
+ 9 cnvc90       +0.000000e+00  +0.000000e+00   0.0000e+00  +0.000000e+00  +0.0000e+00
+10 microphysics  -1.280112e-01  +2.177410e+00   3.7841e-01  +9.639515e-02  +0.0000e+00
+11 MP post      +0.000000e+00  +0.000000e+00   0.0000e+00  +0.000000e+00  +0.0000e+00
+12 all physics  -3.694801e-01  +2.944998e+00   6.1857e+00  +1.124754e-01  -2.7389e+00
+# UCT tracer mass change per run / mass at first step (119 steps)
+  n          M0 kg          PBL   GWD..photo    SAMF deep    SAMF shal
+  1   1.221390e+16  +1.2099e-01  +2.2313e-08  -9.0439e-02  -3.1242e-02
+  2   2.294276e+13  +2.4302e+00  +0.0000e+00  +1.4368e+01  +1.0021e+01
+  3   1.972919e+13  +5.2716e-03  +0.0000e+00  +2.7268e+00  +1.1680e-01
+  4   5.224112e+12  +3.2609e-06  +0.0000e+00  +0.0000e+00  +0.0000e+00
+  5   1.027035e+13  +7.2947e-02  +0.0000e+00  +0.0000e+00  +0.0000e+00
+  6   8.049538e+11  -2.2730e-17  +0.0000e+00  +0.0000e+00  +0.0000e+00
+  7   0.000000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00
+  8   0.000000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00
+  9   3.212131e+12  +1.4315e-17  +6.0448e-05  -3.1107e-07  -2.2783e-08
+ 10   0.000000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00  +0.0000e+00
+# UCM MLM column integrals (119 steps; active columns per step max 126658404529493, mean 97339371315040.1)
+   1 E mass-weighted W/m2                    -1.275194e+00
+   2 W mass-weighted kg/m2/run               +4.387998e-04
+   3 gross |E| W/m2                          +1.691328e+01
+   4 gross |W| kg/m2/run                     +8.514130e-01
+   5 E dz-weighted (rel. to dz-gross)        -8.691895e-01
+   6 W dz-weighted                           -2.604289e+12
+   7 smoothing E mass-w W/m2                 -8.815752e-01
+   8 smoothing W kg/m2/run                   -6.020480e-04
+   9 smoothing E dz-w (rel. to dz-gross)     -7.665389e-03
+  10 smoothing W dz-w                        -3.636805e+08
+  11 momentum u (sum m du)                   +3.012589e+13
+  12 momentum v                              +5.805859e+12
+  13 KE rate sum m(u du + v dv) W/m2         +3.323273e-02
+  14 active area x steps                     +1.158339e+16
+  15 dz-gross |E|                            +7.556962e+18
+  16 sum cloud-base index                    +2.944774e+17
+  17 whole satmedmfvdifq water gap kg/m2/run  +4.388012e-04
+  18 its gross kg/m2/run                     +7.175278e+00
+  19 rain+graupel part kg/m2/run             +3.339588e-08
+  20 surface evap kg/m2/run                  +3.007662e+00

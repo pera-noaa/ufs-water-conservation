@@ -1,3 +1,6 @@
 {
-  "SAMF_ISSUE": 401
+ "SAMF_ISSUE": 401,
+ "RT_0c": "Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 57 tests identical, 150 change answers, 25 restart children not started (their parents change answers); none fails to run",
+ "RT_0b": "Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 116 tests identical, 101 change answers, 15 restart/IAU children not started (their parents change answers); none fails to run",
+ "WM_ISSUE": 3404
 }

@@ -1,0 +1,17 @@
+# k403_offke/out: 119 physics steps, 248 UCD lines (24.80 h), area 5.100965e+14
+PBL residual dE-F (EMS seg 4)            -1.604659e-12 W/m2
+(a) horizontal shear prod, as in prod     +0.000000e+00 W/m2   (2*dku_h*def_2 would be +0.000000e+00)
+(b) vertical shear prod, as in prod       +2.434712e+00 W/m2
+    surface-stress prod (k=1)             +1.521231e-01 W/m2
+(c) dissipative heating dspfac*diss       +3.511477e+00 W/m2
+(c') applied D1 heating sum m cp dspq        +2.254213e+00 W/m2
+(d) PBL KE change dK (EMS seg 4)          -2.254213e+00 W/m2
+    gate: (c) + (d) vs residual           +1.257264e+00 vs -1.604659e-12  (diff -1.257e+00)
+dycore heat_source nominal / applied      +7.651727e-01 / +7.651727e-01 W/m2
+(b-i) 2(dw/dz)^2 part                    +0.000000e+00 W/m2
+(b-ii) (du/dz)^2+(dv/dz)^2 part           +0.000000e+00 W/m2
+(b-iii) w-u cross part                    +0.000000e+00 W/m2
+    gate: i+ii+iii vs (b)                 +0.000000e+00 vs +2.434712e+00  (diff +2.435e+00)
+shr2 shadow (PBL own shear, as if off)    +2.434712e+00 W/m2
+(ii) - shr2 (level/timing/no dw2min)      -2.434712e+00 W/m2;  w part (i)+(iii) +0.000000e+00 W/m2
+divergent fraction of dku_h-weighted def_2 0.0000e+00 -> (a)_div = +0.000000e+00 W/m2

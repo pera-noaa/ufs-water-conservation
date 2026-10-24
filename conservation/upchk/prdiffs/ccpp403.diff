@@ -1,0 +1,2842 @@
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 8f862c9b9b..87d9ce8151 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -74,20 +74,23 @@ end subroutine samfdeepcnv_init
+ !!  -# For the "feedback control", calculate updated values of the state variables by multiplying the cloud base mass flux and the tendencies calculated per unit cloud base mass flux from the static control.
+ !!
+ !!  \section samfdeep_detailed GFS samfdeepcnv Detailed Algorithm
+-      subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+-     &    tmf,qmicro,itc,ntc,cliq,cp,cvap,                              
+-     &    eps,epsm1,fv,grav,hvap,rd,rv,                                 
+-     &    t0c,delt,ntk,ntr,delp, ten_t, ten_u, ten_v, ten_q,            
+-     &    prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,      
+-     &    hwrf_samfdeep,progsigma,progomega,cldwrk,rn,kbot,ktop,kcnv,   
+-     &    islimsk,garea,dot,ncloud,hpbl,ud_mf,dd_mf,dt_mf,cnvw,cnvc,    
+-     &    QLCN, QICN, w_upi, cf_upi, CNV_MFD,                           
+-     &    CNV_DQLDT,CLCN,CNV_FICE,CNV_NDROP,CNV_NICE,mp_phys,mp_phys_mg,
+-     &    clam,c0s,c1,betal,betas,evef,pgcon,asolfac,cscale,            
+-     &    do_ca, ca_closure, ca_entr, ca_trigger, nthresh,ca_deep,      
+-     &    rainevap,sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,   
+-     &    betascu,lbb1,lbb2,lbb3,dt_decay,maxMF,do_mynnedmf,            
+-     &    sigmab_coldstart,cat_adj_deep,                                
++      subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,     &
++     &    tmf,qmicro,itc,ntc,cliq,cp,cvap,                              &
++     &    eps,epsm1,fv,grav,hvap,rd,rv,                                 &
++     &    t0c,delt,ntk,ntr,delp, ten_t, ten_u, ten_v, ten_q,            &
++     &    prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,      &
++!The following variables are for Leonard term
++     &    leo_u,leo_v,leo_t,leo_q,leonard,leofac,                       &
++     &    hwrf_samfdeep,progsigma,progomega,cldwrk,rn,kbot,ktop,kcnv,   &
++     &    islimsk,garea,dot,ncloud,hpbl,ud_mf,dd_mf,dt_mf,cnvw,cnvc,    &
++     &    QLCN, QICN, w_upi, cf_upi, CNV_MFD,                           &
++     &    CNV_DQLDT,CLCN,CNV_FICE,CNV_NDROP,CNV_NICE,mp_phys,mp_phys_mg,&
++     &    clam,c0s,c1,betal,betas,evef,pgcon,asolfac,cscale,            &
++     &    do_ca, ca_closure, ca_entr, ca_trigger, nthresh,ca_deep,      &
++     &    rainevap,sigmain,sigmaout,omegain,omegaout,betadcu,betamcu,   &
++     &    betascu,lbb1,lbb2,lbb3,dt_decay,maxMF,do_mynnedmf,            &
++     &    sigmab_coldstart,cat_adj_deep,                                &
++     &    coldpool,buoyexcsgrs,buoyexcs,ucp,vcp,                        &
+      &    errmsg,errflg)
+ !
+       use machine , only : kind_phys
+@@ -114,20 +117,36 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       real(kind=kind_phys), dimension (:), intent(in),
+      &   optional :: maxMF
+       real(kind=kind_phys), intent(out) :: rainevap(:)
+-      real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),   
++      real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),
+      &     omegaout(:,:)
++!
++! for cold pool
++!
++      logical, intent(in)  :: coldpool
++      real(kind=kind_phys), intent(in), optional :: buoyexcsgrs(:,:)
++      real(kind=kind_phys), intent(inout), optional :: buoyexcs(:,:)
++      real(kind=kind_phys), intent(out) :: ucp(:), vcp(:)
++!
+       logical, intent(in)  :: do_ca,ca_closure,ca_entr,ca_trigger
+       integer, intent(inout)  :: kcnv(:)
+       ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+       real(kind=kind_phys), intent(inout) :: cnvw(:,:),  cnvc(:,:),
+      &                                       tkeh(:,:)
++! for Leonard term
++      logical, intent(in)  :: leonard !flag for leonard term
++      real(kind=kind_phys), intent(in) :: leofac  !parameter for Leonard term
++      real(kind=kind_phys), intent(in) ::
++     &                     leo_u(:,:),  leo_v(:,:),                     &
++     &                     leo_t(:,:),  leo_q(:,:,:)
+       
+       real(kind=kind_phys), intent(in) :: qtr(:,:,:), q1(:,:)
+       real(kind=kind_phys), intent(in) :: t1(:,:), u1(:,:), v1(:,:)
+ 
++      real(kind=kind_phys), intent(out) :: ten_t(:,:), ten_u(:,:),
++     & ten_v(:,:), ten_q(:,:,:), dqtr(:,:,:)
++
+       integer, intent(out) :: kbot(:), ktop(:)
+-      real(kind=kind_phys), intent(out) :: cldwrk(:),                   
+-     &   rn(:),                                                         
++      real(kind=kind_phys), intent(out) :: cldwrk(:), rn(:),                  
+      &   dd_mf(:,:), dt_mf(:,:)
+       real(kind=kind_phys), intent(out) :: ud_mf(:,:)
+       real(kind=kind_phys), dimension(:,:), intent(inout), optional ::
+@@ -152,7 +171,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &                     xlamde,  xlamdd,
+      &                     crtlame, crtlamd
+ !
+-!     real(kind=kind_phys) detad
++!     real(kind=conv_wp) detad
+       real(kind=conv_wp) adw,     aup,     aafac,   d0,
+      &                     dellat,  desdt,   dg,
+      &                     dh,      dhh,     dp,
+@@ -184,7 +203,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &                     jmin(im), lmin(im), kbmax(im),
+      &                     kbm(im), kmax(im), kd94(im)
+ !
+-!     real(kind=kind_phys) aa1(im),     acrt(im),   acrtfct(im),
++!     real(kind=conv_wp) aa1(im),     acrt(im),   acrtfct(im),
+       real(kind=conv_wp) aa1(im),     tkemean(im),clamt(im),
+      &                     ps(im),      del(im,km), prsl(im,km),
+      &                     umean(im),   advfac(im), gdx(im),
+@@ -224,6 +243,23 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       real(kind=conv_wp) gravinv,invdelt,sigmind,sigminm,sigmins,
+      &     wc_min, wc_eff 
+       logical flag_shallow, flag_mid
++!
++!  parameters for cold pool parameterization
++!
++      integer kdcp(im), kdcp1(im), kc(im)
++      real(kind=conv_wp) dd_detmf(im,km-1), dbyoc(im,km-1),
++     &     dellabu(im,km-1), bumax(im), vgf(im), wgke(im),
++     &     ukdcp(im), vkdcp(im), wskdcp(im)
++      real(kind=conv_wp) taucp, frdn, hcp, buxcr
++      real(kind=conv_wp) cpfac, wgfac
++      logical cptrig(im)
++!
++!    parameters for leonard term
++      real(kind=conv_wp) leodx1,leodx2,leodx3,leodx4
++      real(kind=conv_wp) saleofac(im)
++      parameter(leodx1=15000._conv_wp,leodx2=1500._conv_wp)
++      parameter(leodx3=500._conv_wp,leodx4=50._conv_wp)
++
+ c  physical parameters
+ !     parameter(grav=grav,asolfac=0.958)
+ !     parameter(elocp=hvap/cp,el2orc=hvap*hvap/(rv*cp))
+@@ -247,20 +283,22 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       parameter(dtke=tkemx-tkemn)
+       parameter(cthk=200.0_conv_wp,dthk=25.0_conv_wp,
+      &          sfclfac=0.2_conv_wp,rhcrt=0.75_conv_wp)
+-      parameter(cinpcrmx=180.0_conv_wp,cinpcrmn=120._conv_wp)
+-!     parameter(cinacrmx=-120.,cinacrmn=-120.)
+-      parameter(cinacrmx=-120.0_conv_wp,cinacrmn=-80.0_conv_wp)
++      parameter(cinpcrmx=180._conv_wp,cinpcrmn=120._conv_wp)
++!     parameter(cinacrmx=-120._conv_wp,cinacrmn=-120._conv_wp)
++      parameter(cinacrmx=-120._conv_wp,cinacrmn=-80._conv_wp)
+       parameter(bb1=4.0_conv_wp,bb2=0.8_conv_wp,csmf=0.2_conv_wp)
+       parameter(tkcrt=2.0_conv_wp,cmxfac=15.0_conv_wp)
+       parameter(betaw=.03_conv_wp)
+-
++      parameter(taucp=7200._conv_wp,frdn=0.45_conv_wp)
++      parameter(cpfac=1.0_conv_wp,wgfac=2.0_conv_wp)
++      parameter(hcp=500._conv_wp,buxcr=100._conv_wp)
+ !
+ !  local variables and arrays
+       real(kind=conv_wp) pfld(im,km),    to(im,km),     qo(im,km),
+      &                     uo(im,km),      vo(im,km),     qeso(im,km),
+      &                     ctr(im,km,ntr), ctro(im,km,ntr)
+ !  for aerosol transport
+-!     real(kind=kind_phys) qaero(im,km,ntc)
++!     real(kind=conv_wp) qaero(im,km,ntc)
+ c  variables for tracer wet deposition,
+       real(kind=conv_wp), dimension(im,km,ntc) :: chem_c, chem_pw,
+      &  wet_dep
+@@ -273,7 +311,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       real(kind=conv_wp) scaldfunc(im), sigmagfm(im)
+ !
+ c  cloud water
+-!     real(kind=kind_phys) tvo(im,km)
++!     real(kind=conv_wp) tvo(im,km)
+       real(kind=conv_wp) qlko_ktcon(im), dellal(im,km), tvo(im,km),
+      &                     dbyo(im,km),    zo(im,km),
+      &                     xlamue(im,km),  xlamud(im,km),
+@@ -288,13 +326,14 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &                     eta(im,km),     etad(im,km),   zi(im,km),
+      &                     qrcko(im,km),   qrcdo(im,km),
+      &                     pwo(im,km),     pwdo(im,km),   c0t(im,km),
+-     &                     tx1(im),        sumx(im),      cnvwt(im,km)
+-     &,                    rhbar(im)
++     &                     tx1(im),        sumx(im),      sumy(im),
++     &                     cnvwt(im,km),   rhbar(im)
++
+ !
+ !  variables for Total Variation Diminishing (TVD) flux-limiter scheme
+ !     on environmental subsidence and uplifting
+ !
+-      real(kind=kind_phys) q_diff(im,0:km-1), e_diff(im,0:km-1,ntr),
++      real(kind=conv_wp) q_diff(im,0:km-1), e_diff(im,0:km-1,ntr),
+      &                     flxtvd(im,0:km-1)
+       real(kind=conv_wp) rrkp, phkp
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
+@@ -303,7 +342,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ !
+ !    asqecflg: flag for the quasi-equilibrium assumption of Arakawa-Schubert
+ !
+-!     real(kind=kind_phys) pcrit(15), acritt(15), acrit(15)
++!     real(kind=conv_wp) pcrit(15), acritt(15), acrit(15)
+ !!    save pcrit, acritt
+ !     data pcrit/850.,800.,750.,700.,650.,600.,550.,500.,450.,400.,
+ !    &           350.,300.,250.,200.,150./
+@@ -321,9 +360,6 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       real(kind=conv_wp) :: sigmain_loc(im,km), sigmaout_loc(im,km)
+       real(kind=conv_wp) :: qmicro_loc(im,km)
+ 
+-      real(kind=kind_phys), intent(out) :: ten_t(:,:), ten_u(:,:),
+-     & ten_v(:,:), ten_q(:,:,:), dqtr(:,:,:)
+-
+       real(kind=conv_wp) :: new_t1(im,km),new_u1(im,km),new_v1(im,km),
+      & new_q1(im,km),new_qtr(im,km,nn)
+ 
+@@ -422,8 +458,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         edt(i)  = 0.0_conv_wp
+         edto(i) = 0.0_conv_wp
+         edtx(i) = 0.0_conv_wp
+-!       acrt(i) = 0.
+-!       acrtfct(i) = 1.
++!       acrt(i) = 0._conv_wp
++!       acrtfct(i) = 1._conv_wp
+         aa1(i)  = 0.0_conv_wp
+         aa2(i)  = 0.0_conv_wp
+         xaa0(i) = 0.0_conv_wp
+@@ -438,8 +474,29 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         rainevap(i) = 0.0_kind_phys
+         omegac(i)=0.0_conv_wp
+         gdx(i) = sqrt(real(garea(i), kind=conv_wp))
++        saleofac(i) = 0._conv_wp
+       enddo
+-
++!
++!>  - Compute scale dependent leonard factor (\p saleofac)
++!
++      if(leonard) then
++        do i=1,im
++          if(gdx(i) >= leodx1 .or. gdx(i) <= leodx4) then
++            saleofac(i) = 0._conv_wp
++          else if(gdx(i) < leodx1 .and. gdx(i) > leodx2) then
++            tem = leodx2 / gdx(i)
++!           tem = (leodx2 / gdx(i))**2
++            saleofac(i) = real(leofac, kind=conv_wp) * tem
++          else if(gdx(i) < leodx3 .and. gdx(i) > leodx4) then
++            tem = gdx(i) / leodx3
++!           tem = (gdx(i) / leodx3)**2
++            saleofac(i) = real(leofac, kind=conv_wp) * tem
++          else if(gdx(i) < leodx2 .and. gdx(i) > leodx3) then
++            saleofac(i) = real(leofac, kind=conv_wp)
++          endif
++        enddo
++      endif
++!
+       do k=1,km
+         do i=1,im
+           xlamud(i,k) = 0.0_conv_wp
+@@ -451,7 +508,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         do i=1,im
+           scaldfunc(i)=-1.0_conv_wp
+           sigmagfm(i)=-1.0_conv_wp
+-!         sigmuout(i)=-1.0
++!         sigmuout(i)=-1.0_conv_wp
+         enddo
+       endif
+ !
+@@ -483,6 +540,24 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           cnvc(i,k) = 0.0_kind_phys
+         enddo
+       enddo
++!
++!   initialize cold pool variables for cold pool parameterization
++      do i = 1, im
++        vgf(i) = 0._conv_wp
++        wgke(i) = 0._conv_wp
++        ucp(i) = 0._conv_wp
++        vcp(i) = 0._conv_wp
++        cptrig(i) = .false.
++        kdcp(i) = 0
++      enddo
++      do k = 1, km1
++        do i = 1, im
++          dd_detmf(i,k) = 0._conv_wp
++          dellabu(i,k) = 0._conv_wp
++          dbyoc(i,k) = 0._conv_wp
++        enddo
++      enddo
++!
+ ! hchuang code change
+ !>  - Initialize updraft and downdraft mass fluxes to zero.
+       do k = 1, km
+@@ -495,8 +570,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       if(mp_phys == mp_phys_mg) then
+         do k = 1, km
+           do i = 1, im
+-            QLCN(i,k)      = real(qtr(i,k,2), kind=conv_wp)
+-            QICN(i,k)      = real(qtr(i,k,1), kind=conv_wp)
++            QLCN(i,k)      = qtr(i,k,2)
++            QICN(i,k)      = qtr(i,k,1)
+             w_upi(i,k)     = 0.0_kind_phys
+             cf_upi(i,k)    = 0.0_kind_phys
+             CNV_MFD(i,k)   = 0.0_kind_phys
+@@ -600,6 +675,75 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         enddo
+         enddo
+       endif
++!
++!  determine cold pool depth with downdraft buoyancy excess for cold pool parameterization
++      if(coldpool)then
++!
++        if(first_time_step .and. .not.restart)then
++          do k = 1,km
++            do i = 1,im
++              buoyexcs(i,k) = 0._kind_phys
++            enddo
++          enddo
++        else
++!
++          do k = 1,km
++            do i = 1,im
++              tem = 1.5_conv_wp * hcp
++!             if(zo(i,k) < hcp) then
++              if(zo(i,k) < tem) then
++                buoyexcs(i,k) = max(buoyexcsgrs(i,k), 0._kind_phys)
++              else
++                buoyexcs(i,k) = 0._kind_phys
++              endif
++            enddo
++          enddo
++          do k = 1, km1
++            do i=1,im
++              if(zo(i,k)<hcp) then
++                kdcp(i) = k
++              endif
++            enddo
++          enddo
++          do i=1,im
++            bumax(i) = real(buoyexcs(i,1), kind=conv_wp)
++            kc(i) = 1
++          enddo
++          do k = 2, km1
++            do i=1,im
++              if(k <= kdcp(i)) then
++                if(real(buoyexcs(i,k), kind=conv_wp) > bumax(i)) then
++                  kc(i)   = k
++                  bumax(i) = real(buoyexcs(i,k), kind=conv_wp)
++                endif
++              endif
++            enddo
++          enddo
++!
++          do i=1,im
++            flg(i) = .true.
++            kdcp1(i) = 0
++            if(bumax(i) < buxcr) flg(i) = .false.
++          enddo
++          do k = 1, km1
++            do i=1,im
++              if(flg(i) .and. (k>=kc(i) .and. k<=kdcp(i))) then
++                if(real(buoyexcs(i,k), kind=conv_wp) >= buxcr) then
++                  kdcp1(i) = k
++                endif
++              endif
++            enddo
++          enddo
++          do i=1,im
++            if(kdcp1(i) > 0) then
++              cptrig(i) = .true.
++              kdcp(i) = kdcp1(i)
++            endif
++          enddo
++!
++        endif
++!
++      endif
+ c
+ c!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ c   convert surface pressure to mb from cb
+@@ -608,7 +752,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do k = 1, km
+         do i = 1, im
+           if (k <= kmax(i)) then
+-            pfld(i,k) = prsl(i,k) * 10.0
++            pfld(i,k) = prsl(i,k) * 10.0_conv_wp
+             eta(i,k)  = 1.0_conv_wp
+             fent1(i,k)= 1.0_conv_wp
+             fent2(i,k)= 1.0_conv_wp
+@@ -653,7 +797,110 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+             zeta(i,k)=1.0_conv_wp
+          enddo
+       enddo
+-
++!
++! estimate vertical velocity at the leading edge of cold pool,
++!   cold pool propagation speed,
++!   and compute its kinetic energy (wgke)
++!
++      if(coldpool)then
++!
++        do i=1,im
++          sumx(i) = 0._conv_wp
++          sumy(i) = 0._conv_wp
++          ukdcp(i) = 0._conv_wp
++          vkdcp(i) = 0._conv_wp
++        enddo
++        do k = 1, km1
++          do i = 1, im
++            if(cptrig(i) .and. k <= kdcp(i)) then
++              if(k == 1) then
++                dz = zi(i,1)
++              else
++                dz = zi(i,k) - zi(i,k-1)
++              endif
++              tem = 0.01_conv_wp * real(fpvs(t1(i,k)), kind=conv_wp)      ! fpvs is in pa
++              tem1 = real(eps, kind=conv_wp) * tem / 
++     &               (pfld(i,k) + real(epsm1, kind=conv_wp) * tem)
++              val1 = 1.e-8_conv_wp
++              tem1 = max(tem1, val1)
++              gamma = el2orc * tem1 / 
++     &                (real(t1(i,k), kind=conv_wp)**2)
++              rfact =  1.0_conv_wp + real(fv, kind=conv_wp)
++     &               * real(cp, kind=conv_wp) * gamma 
++     &               * real(t1(i,k), kind=conv_wp)
++     &               / real(hvap, kind=conv_wp)
++              sumx(i) = sumx(i) +
++     &                 dz * (real(grav, kind=conv_wp) / 
++     &                 (real(cp, kind=conv_wp) * 
++     &                 real(t1(i,k), kind=conv_wp)))
++     &                 * real(buoyexcs(i,k), kind=conv_wp) / 
++     &                 (1. + gamma) * rfact
++              val = 0._conv_wp
++              sumx(i) = sumx(i) +
++     &                 dz * real(grav, kind=conv_wp) * 
++     &                 real(fv, kind=conv_wp) *
++     &                 max(val,(tem1 - real(q1(i,k), kind=conv_wp)))
++!
++              ukdcp(i) = ukdcp(i) + real(u1(i,k), kind=conv_wp) * dz
++              vkdcp(i) = vkdcp(i) + real(v1(i,k), kind=conv_wp) * dz
++              sumy(i) = sumy(i) + dz
++!
++            endif
++          enddo
++        enddo
++        do i=1,im
++          wskdcp(i) = 0._conv_wp
++        enddo
++        do i = 1, im
++          if(cptrig(i)) then
++            if(sumy(i) <= 0._conv_wp) then
++              cptrig(i) = .false.
++            else
++              ukdcp(i)=ukdcp(i)/sumy(i)
++              vkdcp(i)=vkdcp(i)/sumy(i)
++              wskdcp(i)=sqrt(ukdcp(i)*ukdcp(i)+vkdcp(i)*vkdcp(i))
++            endif
++          endif
++        enddo
++!
++        do i=1,im
++          if(cptrig(i)) then
++            k = kdcp(i)
++            sumx(i) = max(sumx(i), 0._conv_wp)
++            vgf(i) = frdn* sqrt(sumx(i))
++!
++!           ptem = 0.707_conv_wp * gdx(i) / dt2
++            ptem = gdx(i) / dt2
++            tem = vgf(i) * ukdcp(i) / wskdcp(i)
++            if (tem > 0._conv_wp) then
++               ptem1 = ptem - ukdcp(i)
++               ptem1 = max(ptem1, 0._conv_wp)
++               ucp(i) = min(tem, ptem1)
++            else
++               ptem1 = -ptem - ukdcp(i)
++               ptem1 = min(ptem1, 0._conv_wp)
++               ucp(i) = max(tem, ptem1)
++            endif
++            tem1 = vgf(i) * vkdcp(i) / wskdcp(i)
++            if (tem1 > 0._conv_wp) then
++               ptem1 = ptem - vkdcp(i)
++               ptem1 = max(ptem1, 0._conv_wp)
++               vcp(i) = min(tem1, ptem1)
++            else
++               ptem1 = -ptem - vkdcp(i)
++               ptem1 = min(ptem1, 0._conv_wp)
++               vcp(i) = max(tem1, ptem1)
++            endif
++!           vgf(i) = sqrt(ucp(i)*ucp(i)+vcp(i)*vcp(i))
++!
++!           tem1 = 0.5_conv_wp * vgf(i)
++            tem1 = wgfac * 0.7071_conv_wp * vgf(i)
++!           print*,'ucp:vcp:vgf= ',ucp(i),vcp(i),vgf(i)
++            wgke(i) = 0.5_conv_wp * tem1 * tem1
++          endif
++        enddo
++!
++      endif
+ !
+ !  initialize tracer variables
+ !
+@@ -746,6 +993,21 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           endif
+         enddo
+       enddo
++!
++! if cold pool depth is smaller than the convection initiation level, no cold pool trigger
++!
++!     if(coldpool)then
++!
++!       do i=1,im
++!         if(cptrig(i)) then
++!           if(kdcp(i) < kb(i)) then
++!             cptrig(i) = .false.
++!             wgke(i) = 0.
++!           endif
++!         endif
++!       enddo
++!
++!     endif
+ c
+ !> - Calculate the temperature, specific humidity, and pressure at interface levels.
+       do k = 1, km1
+@@ -820,7 +1082,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do k = 1, km1
+         do i=1,im
+           if (flg(i) .and. k <= kbmax(i)) then
+-            if(k > kb(i) .and. heo(i,kb(i)) > heso(i,k)) then
++            tem = heo(i,kb(i))
++            dbyo(i,k) = tem - heso(i,k)
++            if(k > kb(i) .and. tem > heso(i,k)) then
+               kbcon(i) = k
+               flg(i)   = .false.
+             endif
+@@ -833,7 +1097,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega)then
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -841,6 +1105,48 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+          if(totflg) return
+       endif
+ !!
++!
++!  if wgke is less than subcloud convective inhibition (cina), no cold pool trigger
++!
++      if(coldpool)then
++!
++      do k = 2, km1
++        do i = 1, im
++          if (cnvflg(i) .and. cptrig(i)) then
++            if(k > kb(i) .and. k < kbcon(i)) then
++              dz1 = zo(i,k+1) - zo(i,k)
++              gamma = el2orc * qeso(i,k) / (to(i,k)**2)
++              rfact =  1._conv_wp + real(fv, kind=conv_wp)
++     &               * real(cp, kind=conv_wp) * gamma
++     &               * to(i,k) / real(hvap, kind=conv_wp)
++              cina(i) = cina(i) +
++     &                 dz1 * (real(grav, kind=conv_wp) 
++     &                 / (real(cp, kind=conv_wp) * to(i,k)))
++     &                 * dbyo(i,k) / (1. + gamma)
++     &                 * rfact
++              val = 0._conv_wp
++              cina(i) = cina(i) +
++     &                 dz1 * real(grav, kind=conv_wp) 
++     &                 * real(fv, kind=conv_wp) *
++     &                 max(val,(qeso(i,k) - qo(i,k)))
++            endif
++          endif
++        enddo
++      enddo
++!
++      do i=1,im
++        if (cnvflg(i) .and. cptrig(i)) then
++          tem = min(cina(i), 0._conv_wp)
++          ptem = -tem
++          if(wgke(i) < ptem) then
++            cptrig(i) = .false.
++            wgke(i) = 0.
++          endif
++        endif
++      enddo
++!
++      endif
++!
+ !> - Determine the vertical pressure velocity at the LFC. After Han and Pan (2011) \cite han_and_pan_2011 , determine the maximum pressure thickness between a parcel's starting level and the LFC. If a parcel doesn't reach the LFC within the critical thickness, then the convective inhibition is deemed too great for convection to be triggered, and the subroutine returns to the calling routine without modifying the state variables.
+       do i=1,im
+         if(cnvflg(i)) then
+@@ -854,7 +1160,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ c      and cloud base is larger than a critical value, cinpcr
+ c
+       do i=1,im
+-        if(cnvflg(i)) then
++        if(cnvflg(i) .and. .not.cptrig(i)) then
+           if(islimsk(i) == 1) then
+             w1 = w1l
+             w2 = w2l
+@@ -896,7 +1202,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -931,7 +1237,16 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do k = 1, km1
+         do i=1,im
+           if (flg(i) .and. k <= kbmax(i)) then
+-            if(k > kb(i) .and. heo(i,kb(i)) > heso(i,k)) then
++!           if(cptrig(i)) then
++!             kk = kb(i)
++!             tem = 0.5_conv_wp * 
++!                  (real(buoyexcs(i,kk), kind=conv_wp)+
++!                   real(buoyexcs(i,kk+1), kind=conv_wp))
++!             tem1 = heo(i,kb(i)) + tem
++!           else
++              tem1 = heo(i,kb(i))
++!           endif
++            if(k > kb(i) .and. tem1 > heso(i,k)) then
+               kbcon(i) = k
+               flg(i)   = .false.
+             endif
+@@ -953,7 +1268,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -977,7 +1292,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       enddo
+       do k = 1, km1
+         do i = 1, im
+-          if (cnvflg(i)) then
++          if(cnvflg(i) .and. .not.cptrig(i)) then
+             if(k >= kb(i) .and. k < kbcon(i)) then
+               dz = zo(i,k+1) - zo(i,k)
+               rhbar(i) = rhbar(i) + rh(i,k) * dz
+@@ -987,14 +1302,14 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         enddo
+       enddo
+       do i= 1, im
+-        if(cnvflg(i)) then
++        if(cnvflg(i) .and. .not.cptrig(i)) then
+           rhbar(i) = rhbar(i) / sumx(i)
+           if(rhbar(i) < rhcrt) then
+             cnvflg(i) = .false.
+           endif
+         endif
+       enddo
+-!!
++!
+       if(do_ca .and. ca_trigger)then
+          do i=1,im
+             if(real(ca_deep(i), kind=conv_wp)
+@@ -1002,8 +1317,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+             if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+          enddo
+       endif
+-
+-      if(.not.progomega)then
++!!
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -1122,7 +1437,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           if(cnvflg(i)) then
+             dz =zo(i,k+1) - zo(i,k)
+             xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+-            xlamue(i,k) = max(xlamue(i,k), crtlame)
++!           xlamue(i,k) = max(xlamue(i,k), crtlame)
++            tem = 0.001_conv_wp * clamt(i)
++            xlamue(i,k) = max(xlamue(i,k), tem)
+           endif
+         enddo
+       enddo
+@@ -1183,9 +1500,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         do i=1,im
+           if(cnvflg(i).and.
+      &      (k > kbcon(i) .and. k < kmax(i))) then
+-              tem = qeso(i,k)/qeso(i,kbcon(i))
+-              fent1(i,k) = min(tem**2, 3.0_conv_wp)
+-              fent2(i,k) = min(tem**3, 5.2_conv_wp)
++              tem = min(qeso(i,k)/qeso(i,kbcon(i)), 1.0_conv_wp)
++              fent1(i,k) = tem**2
++              fent2(i,k) = tem**3
+           endif
+         enddo
+       enddo
+@@ -1269,7 +1586,14 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do i = 1, im
+         if(cnvflg(i)) then
+           indx         = kb(i)
+-          hcko(i,indx) = heo(i,indx)
++!         if(cptrig(i)) then
++!           tem = 0.5_conv_wp * 
++!                (real(buoyexcs(i,indx), kind=conv_wp)+
++!                 real(buoyexcs(i,indx+1), kind=conv_wp))
++!           hcko(i,indx) = heo(i,indx) + tem
++!         else
++            hcko(i,indx) = heo(i,indx)
++!         endif
+           ucko(i,indx) = uo(i,indx)
+           vcko(i,indx) = vo(i,indx)
+           pwavo(i)     = 0.0_conv_wp
+@@ -1305,7 +1629,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &                    0.5_conv_wp*(heo(i,k)+heo(i,k-1)))/factor
+               dbyo(i,k) = hcko(i,k) - heso(i,k)
+ !
+-              tem  = 0.5_conv_wp * real(cm,kind=conv_wp) * tem
++              tem  = 0.5_conv_wp * cm * tem
+               factor = 1.0_conv_wp + tem
+               ptem = tem + real(pgcon,kind=conv_wp)
+               ptem1= tem - real(pgcon,kind=conv_wp)
+@@ -1411,15 +1735,14 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         endif
+       enddo
+       do i=1,im
+-        if(cnvflg(i)) then
++        if(cnvflg(i) .and. .not.cptrig(i)) then
+           tem = pfld(i,kbcon(i)) - pfld(i,kbcon1(i))
+           if(tem > dthk) then
+              cnvflg(i) = .false.
+           endif
+         endif
+       enddo
+-!!
+-
++!
+       if(do_ca .and. ca_trigger)then
+          do i=1,im
+             if(real(ca_deep(i), kind=conv_wp) > real(nthresh,
+@@ -1427,8 +1750,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+             if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+          enddo
+       endif
+-
+-      if(.not.progomega)then
++!!
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i = 1, im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -1440,6 +1763,11 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ c  calculate convective inhibition
+ c
+ !> - Calculate additional trigger condition of the convective inhibition (CIN) according to Han et al.'s (2017) \cite han_et_al_2017 equation 13.
++      do i = 1, im
++        if(cnvflg(i)) then
++           cina(i) = 0.
++        endif
++      enddo
+       do k = 2, km1
+         do i = 1, im
+           if (cnvflg(i)) then
+@@ -1467,14 +1795,14 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ !> - Turn off convection if the CIN is less than a critical value (cinacr) which is inversely proportional to the large-scale vertical velocity.
+       if(hwrf_samfdeep) then
+        do i = 1, im
+-        if(cnvflg(i)) then
++        if(cnvflg(i) .and. .not.cptrig(i)) then
+           cinacr = cinacrmx
+           if(cina(i) < cinacr) cnvflg(i) = .false.
+         endif
+        enddo
+       else   !gfs_samfdeep
+        do i = 1, im
+-        if(cnvflg(i)) then
++        if(cnvflg(i) .and. .not.cptrig(i)) then
+           if(islimsk(i) == 1) then
+             w1 = w1l
+             w2 = w2l
+@@ -1505,7 +1833,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         endif
+        enddo
+       endif !hwrf_samfdeep
+-!!
++!
+       if(do_ca .and. ca_trigger)then
+          do i=1,im
+             if(real(ca_deep(i), kind=conv_wp) > real(nthresh,
+@@ -1513,8 +1841,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+             if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+          enddo
+       endif
+-
+-      if(.not.progomega)then
++!!
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -1550,8 +1878,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           if(tem < cthk) cnvflg(i) = .false.
+         endif
+       enddo
+-
+-
++!
+       if(do_ca .and. ca_trigger)then
+          do i=1,im
+             if(real(ca_deep(i), kind=conv_wp) > real(nthresh,
+@@ -1559,8 +1886,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+             if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+          enddo
+       endif
+-
+-      if(.not.progomega)then
++!!
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -1618,12 +1945,23 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ !> - Set cloud moisture property equal to the enviromental moisture at updraft starting level (kb).
+       do i = 1, im
+         if (cnvflg(i)) then
+-!         aa1(i) = 0.
+-          qcko(i,kb(i)) = qo(i,kb(i))
+-          qrcko(i,kb(i)) = qo(i,kb(i))
+-!         rhbar(i) = 0.
++!!        aa1(i) = 0.
++!         if(cptrig(i)) then
++!           k = kb(i)
++!           tem = 0.5_conv_wp * 
++!                (real(buoyexcs(i,k), kind=conv_wp)+
++!                 real(buoyexcs(i,k+1), kind=conv_wp))
++!           tem1 = tem / real(hvap, kind=conv_wp)
++!           qcko(i,kb(i)) = qo(i,kb(i)) + tem1
++!           qrcko(i,kb(i)) = qo(i,kb(i)) + tem1
++!         else
++            qcko(i,kb(i)) = qo(i,kb(i))
++            qrcko(i,kb(i)) = qo(i,kb(i))
++!         endif
++!!        rhbar(i) = 0.
+         endif
+       enddo
++!
+ !> - Calculate the moisture content of the entraining/detraining parcel (qcko) and the value it would have if just saturated (qrch), according to equation A.14 in Grell (1993) \cite grell_1993 . Their difference is the amount of convective cloud water (qlk = rain + condensate). Determine the portion of convective cloud water that remains suspended and the portion that is converted into convective precipitation (pwo). Calculate and save the negative cloud work function (aa1) due to water loading. The liquid water in the updraft layer is assumed to be detrained from the layers above the level of the minimum moist static energy into the grid-scale cloud water (dellal).
+       do k = 2, km1
+         do i = 1, im
+@@ -1757,7 +2095,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         if(cnvflg(i) .and. aa1(i) <= 0.0_conv_wp) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega)then
++      if(.not.progomega .or. .not.coldpool)then
+          totflg = .true.
+          do i=1,im
+             totflg = totflg .and. (.not. cnvflg(i))
+@@ -1870,13 +2208,32 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+                tem = po(i,k) / (real(rd, kind=conv_wp) * to(i,k))
+                wucb = -0.01_conv_wp * real(dot(i,k), kind=conv_wp) /
+      &                (tem * real(grav, kind=conv_wp))
+-               if(wucb.gt.0.0_conv_wp) then
+-                  wu2(i,k) = wucb * wucb
++               if(wucb > 0._conv_wp) then
++!                if(cptrig(i)) then
++!                  wu2(i,k) = wucb * wucb + 2._conv_wp * wgke(i)
++!                else
++                   wu2(i,k) = wucb * wucb
++!                endif
+                else
+-                  wu2(i,k) = 0.0_conv_wp
++!                if(cptrig(i)) then
++!                  wu2(i,k) = 2._conv_wp *wgke(i)
++!                else
++                   wu2(i,k) = 0._conv_wp
++!                endif
+                endif
+             endif
+          enddo
++      else
++        do i = 1, im
++          if (cnvflg(i)) then
++            k = kbcon1(i)
++!           if(cptrig(i)) then
++!             wu2(i,k) = 2._conv_wp *wgke(i)
++!           else
++              wu2(i,k) = 0._conv_wp
++!           endif
++          endif
++        enddo
+       endif
+ !                  
+       if (progomega) then
+@@ -2156,8 +2513,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ !> - Calculate the normalized downdraft mass flux from equation 1 of Pan and Wu (1995) \cite pan_and_wu_1995 . Downdraft entrainment and detrainment rates are constants from the downdraft origination to the level of 60mb above the ground surface (kd94).
+       do k = km1, 1, -1
+         do i = 1, im
+-          if (cnvflg(i) .and. k <= kmax(i)-1) then
+-           if(k < jmin(i) .and. k >= kd94(i)) then
++          if (cnvflg(i) .and. k < jmin(i)) then
++           if(k >= kd94(i)) then
+               dz        = zi(i,k+1) - zi(i,k)
+               ptem      = xlamddt(i) - xlamdet(i)
+               etad(i,k) = etad(i,k+1) * (1.0_conv_wp - ptem * dz)
+@@ -2169,6 +2526,38 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           endif
+         enddo
+       enddo
++!
++! compute downdraft detrainment mass flux
++! for downdraft buoyancy excess term in cold pool parameterization
++!
++      if(coldpool)then
++!
++        do k = km1, 2, -1
++          do i = 1, im
++            if (cnvflg(i) .and. k < jmin(i)) then
++              if(k >= kd94(i)) then
++                dz = zi(i,k) - zi(i,k-1)
++                ptem = 0.5_conv_wp * (etad(i,k-1) + etad(i,k))
++                dd_detmf(i,k) = xlamddt(i) * ptem * dz
++              else if(k < kd94(i)) then
++                dz = zi(i,k) - zi(i,k-1)
++                tem = xlamd(i) + xlamddt(i)
++                ptem = 0.5_conv_wp * (etad(i,k-1) + etad(i,k))
++                dd_detmf(i,k) = tem * ptem * dz
++              endif
++            endif
++          enddo
++        enddo
++        do i = 1, im
++          if (cnvflg(i)) then
++            dz = zi(i,1)
++            tem = xlamd(i) + xlamddt(i)
++            ptem = 0.5_conv_wp * etad(i,1)
++            dd_detmf(i,1) = tem * ptem * dz
++          endif
++        enddo
++!
++      endif
+ c
+ c--- downdraft moisture properties
+ c
+@@ -2212,6 +2601,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+               hcdo(i,k) = ((1.0_conv_wp-tem1)*hcdo(i,k+1)+tem*
+      &                    0.5_conv_wp*(heo(i,k)+heo(i,k+1)))/factor
+               dbyo(i,k) = hcdo(i,k) - heso(i,k)
++              dbyoc(i,k) = hcdo(i,k) - heo(i,k)
+ !
+               tem  = 0.5_conv_wp * cm * tem
+               factor = 1.0_conv_wp + tem
+@@ -2286,6 +2676,33 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           endif
+         endif
+       enddo
++!
++! compute the source term for downdraft buyoyancy excess
++!
++      if(coldpool)then
++!
++        do k = 2, km1
++          do i = 1, im
++            if (cnvflg(i) .and. k < jmin(i)) then
++              dp = 1000._conv_wp * del(i,k)
++              factor = real(grav, kind=conv_wp) / dp
++              tem = 0.5_conv_wp * (dbyoc(i,k-1) + dbyoc(i,k))
++              dellabu(i,k) = edto(i)*dd_detmf(i,k)*tem*factor
++              dellabu(i,k) = min(dellabu(i,k), 0._conv_wp)
++            endif
++          enddo
++        enddo
++        do i = 1, im
++          if (cnvflg(i)) then
++            dp = 1000._conv_wp * del(i,1)
++            factor = real(grav, kind=conv_wp) / dp
++            tem = 0.5_conv_wp * dbyoc(i,1)
++            dellabu(i,1) = edto(i)*dd_detmf(i,1)*tem*factor
++            dellabu(i,1) = min(dellabu(i,1), 0._conv_wp)
++          endif
++        enddo
++!
++      endif
+ c
+ c--- downdraft cloudwork functions
+ c
+@@ -2319,13 +2736,13 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         endif
+       enddo
+ !!
+-
+-      totflg = .true.
+-      do i=1,im
+-         totflg = totflg .and. (.not. cnvflg(i))
+-      enddo
+-      if(totflg) return
+-      
++      if(.not.coldpool)then
++        totflg = .true.
++        do i=1,im
++          totflg = totflg .and. (.not. cnvflg(i))
++        enddo
++        if(totflg) return
++      endif
+ !!
+ c
+ c--- what would the change be, that a cloud with unit mass
+@@ -2807,8 +3224,17 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do i = 1, im
+         if(asqecflg(i)) then
+           indx = kb(i)
+-          hcko(i,indx) = heo(i,indx)
+-          qcko(i,indx) = qo(i,indx)
++!         if(cptrig(i)) then
++!           tem = 0.5_conv_wp * 
++!                (real(buoyexcs(i,indx), kind=conv_wp)+
++!                 real(buoyexcs(i,indx+1), kind=conv_wp))
++!           tem1 = tem / hvap
++!           hcko(i,indx) = heo(i,indx) + tem
++!           qcko(i,indx) = qo(i,indx) + tem1
++!         else
++            hcko(i,indx) = heo(i,indx)
++            qcko(i,indx) = qo(i,indx)
++!         endif
+         endif
+       enddo
+       do k = 2, km1
+@@ -2820,7 +3246,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+               tem1 = 0.25_conv_wp * (xlamud(i,k)+xlamud(i,k-1)) * dz
+               factor = 1.0_conv_wp + tem - tem1
+               hcko(i,k) = ((1.0_conv_wp-tem1)*hcko(i,k-1)+tem*
+-     &                    0.50_conv_wp*(heo(i,k)+heo(i,k-1)))/factor
++     &                    0.5_conv_wp*(heo(i,k)+heo(i,k-1)))/factor
+             endif
+           endif
+         enddo
+@@ -2964,8 +3390,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+       do k = km1, 1, -1
+         do i = 1, im
+           if (asqecflg(i) .and. k < jmin(i)) then
+-              gamma = el2orc * qeso(i,k) / to(i,k)
+-     &              **2
++              gamma = el2orc * qeso(i,k) / to(i,k)**2
+               dhh = hcdo(i,k)
+               dt = to(i,k)
+               dg = gamma
+@@ -3221,13 +3646,13 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         endif
+       enddo
+ !!
+-
+-!> - If the large scale destabilization is less than zero, or the stabilization by the convection is greater than zero, then the scheme returns to the calling routine without modifying the state variables.
+-      totflg = .true.
+-      do i=1,im
+-        totflg = totflg .and. (.not. cnvflg(i))
+-      enddo
+-      if(totflg) return
++      if(.not.coldpool)then
++        totflg = .true.
++        do i=1,im
++          totflg = totflg .and. (.not. cnvflg(i))
++        enddo
++        if(totflg) return
++      endif
+ !!
+ !
+ !> - For scale-aware parameterization, the updraft fraction (sigmagfm) is first computed as a function of the lateral entrainment rate at cloud base (see Han et al.'s (2017) \cite han_et_al_2017 equation 4 and 5), following the study by Grell and Freitas (2014) \cite grell_and_freitas_2014.
+@@ -3593,10 +4018,9 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+               if(k <= kb(i)) aup = 0.0_conv_wp
+               adw = 1.0_conv_wp
+               if(k >= jmin(i)) adw = 0.0_conv_wp
+-              rain = real((aup * pwo(i,k)) + (adw * edto(i) * pwdo(i,k))
+-     &              , kind=kind_phys)
+-              rn(i) = real(real(rn(i), kind=conv_wp) + (real(rain,
+-     &                kind=conv_wp) * xmb(i) * 0.001_conv_wp * dt2),
++              rain =  aup * pwo(i,k) + adw * edto(i) * pwdo(i,k)
++              rn(i) = real(real(rn(i), kind=conv_wp) + 
++     &                (rain * xmb(i) * 0.001_conv_wp * dt2),
+      &                kind=kind_phys)
+             endif
+             if(flg(i) .and. k < ktcon(i)) then
+@@ -3638,7 +4062,42 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           endif
+         enddo
+       enddo
+-
++!
++! update the downdraft buoyancy excess in cold pool parameterization
++!
++      if(coldpool) then
++!
++        do k = 1, km1
++          do i = 1, im
++            if(cnvflg(i) .and. real(rn(i), kind=conv_wp) 
++     &         <= 0._conv_wp) then
++              dellabu(i,k) = 0._conv_wp 
++            endif
++          enddo
++        enddo
++        do k = 1, km1
++          do i = 1, im
++            if(cnvflg(i) .and. real(rn(i), kind=conv_wp) 
++     &         > 0._conv_wp) then
++              if(k < jmin(i)) then
++                dellabu(i,k) = -cpfac * dellabu(i,k) * xmb(i)
++                dellabu(i,k) = max(dellabu(i,k), 0._conv_wp)
++              endif
++            endif
++          enddo
++        enddo
++!
++        do k = 1, km1
++          do i = 1, im
++            tem = real(buoyexcs(i,k), kind=conv_wp) 
++     &            + dellabu(i,k) * dt2
++            ptem = 1. + dt2 / taucp
++            buoyexcs(i,k) = real(tem / ptem, kind=kind_phys)
++          enddo
++        enddo
++!
++      endif
++!
+ !LB:                                                                                                                                                                                                                                                  
+       if(do_ca)then
+          do i = 1,im
+@@ -3650,12 +4109,16 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+ !     if(me == 31 .and. cnvflg(i)) then
+ !     if(cnvflg(i)) then
+ !       if(i==1) print*,'ntr:ntk= ',ntr,ntk
++!       if(i==1) print*,'itc:ntc= ',itc,ntc
++!       print*,'buoyexcs= ',real(buoyexcs(i,1), kind=conv_wp)
+ !       print *, ' deep delhbar, delqbar, deltbar = ',
+-!    &             delhbar(i),hvap*delqbar(i),cp*deltbar(i)
++!    &             delhbar(i),real(hvap, kind=conv_wp)*delqbar(i),
++!    &             real(cp, kind=conv_wp)*deltbar(i)
+ !       print *, ' deep delebar ozone = ',delebar(i,1)
+ !       print *, ' deep delebar tke = ',delebar(i,2)
+ !       print *, ' deep delubar, delvbar = ',delubar(i),delvbar(i)
+-!       print *, ' precip =', hvap*rn(i)*1000./dt2
++!       print *, ' precip =', real(hvap, kind=conv_wp)*
++!                     real(rn(i), kind=conv_wp)*1000._conv_wp/dt2
+ !       print*,'pdif= ',pfld(i,kbcon(i))-pfld(i,ktcon(i))
+ !     endif
+ !     enddo
+@@ -3682,6 +4145,60 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           endif
+         endif
+       enddo
++!
++!  compute change due to leonard term
++!
++      if(leonard) then
++!
++        do i = 1, im
++          if(cnvflg(i) .and. real(rn(i), kind=conv_wp) 
++     &       > 0._conv_wp) then
++            if(gdx(i) < dxcrtuf) then
++              tem = 1._conv_wp - scaldfunc(i) * advfac(i)
++              tem1 = min(max(tem, 0._conv_wp), 1._conv_wp)
++              saleofac(i) = saleofac(i) * tem1
++            else
++              saleofac(i) = 0._conv_wp
++            endif
++          endif
++        enddo
++!
++        do k = 2, km
++          do i = 1, im
++            if(cnvflg(i) .and.
++     &        (real(rn(i), kind=conv_wp) > 0._conv_wp .and. 
++     &         gdx(i) < dxcrtuf)) then
++              if(zo(i,k) >= real(hpbl(i), kind=conv_wp) .and.
++     &         (k > kbcon(i) .and. k <= ktcon(i))) then
++!    &           (k > kb(i) .and. k <= ktcon(i))) then
++!             if(k > kb(i) .and. k < ktcon(i)) then
++!             if(k < ktcon(i)) then
++!             if(zo(i,k) > real(hpbl(i), kind=conv_wp) .and.
++!    &           k < ktcon(i)) then
++!             if(k >= kbcon(i) .and. k < ktcon(i)) then
++                dz = zo(i,k+1) - zo(i,k-1)
++                tem = real(leo_t(i,k+1), kind=conv_wp)-
++     &                real(leo_t(i,k-1), kind=conv_wp)
++                tem1 = saleofac(i) * tem / dz
++                new_t1(i,k) = new_t1(i,k) + tem1 * dt2
++                tem = real(leo_q(i,k+1,1), kind=conv_wp)-
++     &                real(leo_q(i,k-1,1), kind=conv_wp)
++                tem1 = saleofac(i) * tem / dz
++                new_q1(i,k) = new_q1(i,k) + tem1 * dt2
++!               tem = real(leo_u(i,k+1), kind=conv_wp)-
++!                     real(leo_u(i,k-1), kind=conv_wp)
++!               tem1 = saleofac(i) * tem / dz
++!               new_u1(i,k) = new_u1(i,k) + tem1 * dt2
++!               tem = real(leo_v(i,k+1), kind=conv_wp)-
++!                     real(leo_v(i,k-1), kind=conv_wp)
++!               tem1 = saleofac(i) * tem / dz
++!               new_v1(i,k) = new_v1(i,k) + tem1 * dt2
++              endif
++            endif
++          enddo
++        enddo
++!
++      endif
+ c
+ !> - Calculate convective cloud water.
+       do k = 1, km
+@@ -3691,13 +4208,8 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+                if (k >= kbcon(i) .and. k < ktcon(i)) then
+                   cnvw(i,k) = real(cnvwt(i,k) * xmb(i) * dt2,
+      &                        kind=kind_phys)
+-                  if(progsigma)then
+-                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
++                  cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+      &                    real(cscale, kind=conv_wp), kind=kind_phys)
+-                  else
+-                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+-     &                    real(cscale, kind=conv_wp), kind=kind_phys)
+-                  endif
+                endif
+             endif
+          enddo
+@@ -3711,8 +4223,6 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+           if (cnvflg(i) .and. real(rn(i), kind=conv_wp)
+      &       > 0.0_conv_wp) then
+             if (k >= kbcon(i) .and. k < ktcon(i)) then
+-              cnvc(i,k) = 0.04_conv_wp * log(1.0_conv_wp + 
+-     &                    675.0_conv_wp * eta(i,k) * xmb(i))
+               cnvc(i,k) = real(0.04_conv_wp * log(1.0_conv_wp
+      &                  + 675.0_conv_wp * eta(i,k) * xmb(i)),
+      &                    kind=kind_phys)
+@@ -3739,8 +4249,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+               tem  = dellal(i,k) * xmb(i) * dt2
+               tem1 = max(0.0_conv_wp, min(1.0_conv_wp,
+      &               (tcr - new_t1(i,k)) * tcrf))
+-              if (new_qtr(i,k,2) > -999.0_conv_wp)
+-     &        then
++              if (new_qtr(i,k,2) > -999.0_conv_wp) then
+                 new_qtr(i,k,1) = new_qtr(i,k,1) + tem * tem1  ! ice
+                 new_qtr(i,k,2) = new_qtr(i,k,2) + tem * (1.0_conv_wp
+      &                         - tem1) ! water
+@@ -3831,7 +4340,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         if(cnvflg(i) .and. real(rn(i), kind=conv_wp)
+      &    > 0.0_conv_wp) then
+            k = ktop(i)-1
+-           dt_mf(i,k) = real(ud_mf(i,k),kind=kind_phys)
++           dt_mf(i,k) = ud_mf(i,k)
+         endif
+       enddo
+ !> - Calculate the downdraft convective mass flux.
+@@ -3920,7 +4429,23 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+         enddo
+       endif
+       endif ! (.not.hwrf_samfdeep)
+-
++!
++!     if(coldpool)then
++!       print*,'buoyexcs_max= ',maxval(real(buoyexcs, kind=conv_wp))
++!       print*,'buoyexcs_min= ',minval(real(buoyexcs, kind=conv_wp))
++!     endif
++!
++!     if(coldpool)then
++!
++!       i=im/2
++!       if(cptrig(i)) then
++!       do k = 1,kdcp(i)
++!         print*,'z:buex= ',zo(i,k),real(buoyexcs(i,k), kind=conv_wp)
++!       enddo
++!       endif
++!
++!     endif
++!
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))
+@@ -3931,7 +4456,7 @@ subroutine samfdeepcnv_run (im,km,nn,first_time_step,restart,
+      &        kind=conv_wp), kind=kind_phys)
+       dqtr  = real((new_qtr - real(qtr, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+-
++!
+       return
+       end subroutine samfdeepcnv_run
+ 
+diff --git a/physics/CONV/SAMF/samfdeepcnv.meta b/physics/CONV/SAMF/samfdeepcnv.meta
+index ed2054166b..d04be9c3d1 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.meta
++++ b/physics/CONV/SAMF/samfdeepcnv.meta
+@@ -370,6 +370,53 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[leo_u]
++  standard_name = leonard_term_for_u_velocity
++  long_name = leonard term for u velocity calculated from dynamics
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_v]
++  standard_name = leonard_term_for_v_velocity
++  long_name = leonard term for v velocity calculated from dynamics
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_t]
++  standard_name = leonard_term_for_temperature
++  long_name = leonard term for temperature calculated from dynamics
++  units = K m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_q]
++  standard_name = leonard_term_for_tracers
++  long_name = leonard term for tracers calculated from dynamics
++  units = kg kg-1 m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[leonard]
++  standard_name = flag_for_leonard_term
++  long_name = flag for adding leonard term
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[leofac]
++  standard_name = parameter_for_leonard_term
++  long_name = constant parameter for leonard term
++  units = none
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [hwrf_samfdeep]
+   standard_name = flag_for_hurricane_specific_code_in_scale_aware_mass_flux_deep_convection
+   long_name = flag for hwrf samfdeepcnv scheme 
+@@ -598,6 +645,47 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[coldpool]
++  standard_name = do_cold_pool_parameterization
++  long_name = flag for cold pool parameterization in deep cumulus scheme
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[buoyexcsgrs]
++  standard_name = downdraft_buoyancy_excess_in_convection
++  long_name = downdraft buoyancy excess in convection
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++  optional = True
++[buoyexcs]
++  standard_name = downdraft_buoyancy_excess_in_convection_updated_by_physics
++  long_name = downdraft buoyancy excess in convection updated by physics
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++  optional = True
++[ucp]
++  standard_name = cold_pool_propagation_speed_in_east_west_direction
++  long_name = cold pool propagation speed in east west direction
++  units = m s-1
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = out
++[vcp]
++  standard_name = cold_pool_propagation_speed_in_north_south_direction
++  long_name = cold pool propagation speed in north south direction
++  units = m s-1
++  dimensions = (horizontal_loop_extent)
++  type = real
++  kind = kind_phys
++  intent = out
+ [maxMF]
+   standard_name = maximum_mass_flux
+   long_name = maximum mass flux within a column
+diff --git a/physics/CONV/SAMF/samfshalcnv.f b/physics/CONV/SAMF/samfshalcnv.f
+index dc2e89961c..4183838f5f 100644
+--- a/physics/CONV/SAMF/samfshalcnv.f
++++ b/physics/CONV/SAMF/samfshalcnv.f
+@@ -56,6 +56,8 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+      &     t0c,delt,ntk,ntr,delp,first_time_step,restart,               & 
+      &     tmf,qmicro,progsigma,progomega,                              &
+      &     prslp,psp,phil,tkeh,qtr,dqtr,prevsq,q,q1,t1,u1,v1,fscav,     &
++!The following variables are for Leonard term
++     &     leo_u,leo_v,leo_t,leo_q,leonard,leofac,                      &
+      &     rn,kbot,ktop,kcnv,islimsk,garea,cscale,ten_t, ten_u, ten_v,  &
+      &     ten_q, dot,ncloud,hpbl,ud_mf,dt_mf,cnvw,cnvc,                &
+      &     clam,c0s,c1,evef,pgcon,asolfac,hwrf_samfshal,                & 
+@@ -82,19 +84,28 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+      &     omegain(:,:)
+ !
+       real(kind=kind_phys), dimension(:), intent(in) :: fscav
+-      integer, intent(inout)  :: kcnv(:)
+       ! DH* TODO - check dimensions of qtr, ntr+2 correct?  *DH
+       real(kind=kind_phys), intent(inout) :: tkeh(:,:)
+-      real(kind=kind_phys), intent(in) ::   qtr(:,:,:),                 &
+-     &   q1(:,:)
++      real(kind=kind_phys), intent(in) ::   qtr(:,:,:), q1(:,:)
+ 
+       real(kind=kind_phys), intent(in) :: t1(:,:), u1(:,:), v1(:,:)
++
++      real(kind=kind_phys), intent(out) :: ten_t(:,:), ten_u(:,:),
++     & ten_v(:,:), ten_q(:,:,:), dqtr(:,:,:)
++
++!
++! for Leonard term
++      logical, intent(in)  :: leonard !flag for leonard term
++      real(kind=kind_phys), intent(in) :: leofac  !parameter for Leonard term
++      real(kind=kind_phys), intent(in) ::
++     &                     leo_u(:,:),  leo_v(:,:),                     &
++     &                     leo_t(:,:),  leo_q(:,:,:)
+ !
+-      integer, intent(out) :: kbot(:), ktop(:)
+-      real(kind=kind_phys), intent(out) :: rn(:),                       &
+-     &   cnvw(:,:), cnvc(:,:), dt_mf(:,:)
++      integer, intent(inout) :: kbot(:), ktop(:), kcnv(:)
++      real(kind=kind_phys), intent(out) :: rn(:)
++      real(kind=kind_phys), intent(inout) :: cnvw(:,:), cnvc(:,:),      &
++     &               ud_mf(:,:), dt_mf(:,:)
+ !
+-      real(kind=kind_phys), intent(out) :: ud_mf(:,:)
+       real(kind=kind_phys), intent(inout), optional :: sigmaout(:,:),   &
+      &   omegaout(:,:)
+ 
+@@ -218,7 +229,7 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+      &                     uo(im,km),      vo(im,km),     qeso(im,km),
+      &                     ctr(im,km,ntr), ctro(im,km,ntr)
+ !  for aerosol transport
+-!     real(kind=kind_phys) qaero(im,km,ntc)
++!     real(kind=conv_wp) qaero(im,km,ntc)
+ c  variables for tracer wet deposition,
+       real(kind=conv_wp), dimension(im,km,ntc) :: chem_c, chem_pw,
+      &  wet_dep
+@@ -233,7 +244,7 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+       real(kind=conv_wp) scaldfunc(im), sigmagfm(im)
+ !
+ c  cloud water
+-!     real(kind=kind_phys) qlko_ktcon(im), dellal(im,km), tvo(im,km),
++!     real(kind=conv_wp) qlko_ktcon(im), dellal(im,km), tvo(im,km),
+       real(kind=conv_wp) qlko_ktcon(im), dellal(im,km),
+      &                     dbyo(im,km),    zo(im,km),    xlamue(im,km),
+      &                     rh(im,km),
+@@ -248,6 +259,13 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+      &                     sumx(im),      tx1(im),        cnvwt(im,km),
+      &                     rhbar(im)
+ !
++!    parameters for leonard term
++      real(kind=conv_wp) leodx1,leodx2,leodx3,leodx4
++      real(kind=conv_wp) saleofac(im)
++      parameter(leodx1=15000._conv_wp,leodx2=1500._conv_wp)
++      parameter(leodx3=500._conv_wp,leodx4=50._conv_wp)
++
++!
+ !  variables for Total Variation Diminishing (TVD) flux-limiter scheme
+ !      on environmental subsidence and uplifting
+ !
+@@ -262,9 +280,6 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+       parameter (tf=233.16_conv_wp, tcr=263.16_conv_wp,
+      &           tcrf=1.0_conv_wp/(tcr-tf))
+ 
+-      real(kind=kind_phys), intent(out) :: ten_t(:,:), ten_u(:,:),
+-     & ten_v(:,:), ten_q(:,:,:), dqtr(:,:,:)
+-
+       real(kind=conv_wp) :: new_t1(im,km),new_u1(im,km),new_v1(im,km),
+      & new_q1(im,km), new_qtr(im,km,nn)
+ 
+@@ -365,13 +380,14 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+         kb(i)=km
+         pdot(i) = 0.0_conv_wp
+         qlko_ktcon(i) = 0.0_conv_wp
+-!        edt(i)  = 0.
++!        edt(i)  = 0._conv_wp
+         aa1(i)  = 0.0_conv_wp
+         cina(i) = 0.0_conv_wp
+-!        vshear(i) = 0.
++!        vshear(i) = 0._conv_wp
+         advfac(i) = 0.0_conv_wp
+         gdx(i) = sqrt(real(garea(i), kind=conv_wp))
+         xmb(i) = 0.0_conv_wp
++        saleofac(i) = 0._conv_wp
+           scaldfunc(i)=-1.0_conv_wp  ! wang initialized
+           sigmagfm(i)=-1.0_conv_wp
+        enddo
+@@ -391,15 +407,38 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+         kb(i)=km
+         pdot(i) = 0.0_conv_wp
+         qlko_ktcon(i) = 0.0_conv_wp
+-!        edt(i)  = 0.0
++!        edt(i)  = 0.0_conv_wp
+         aa1(i)  = 0.0_conv_wp
+         cina(i) = 0.0_conv_wp
+-!        vshear(i) = 0.
++!        vshear(i) = 0._conv_wp
+         gdx(i) = sqrt(real(garea(i), kind=conv_wp))
+         xmb(i) = 0.0_conv_wp
++        saleofac(i) = 0._conv_wp
+        enddo
+       endif
++!
++!>  - Compute scale dependent leonard factor (\p saleofac)
++!
++      if(leonard) then
++        do i=1,im
++          if(gdx(i) >= leodx1 .or. gdx(i) <= leodx4) then
++            saleofac(i) = 0._conv_wp
++          else if(gdx(i) < leodx1 .and. gdx(i) > leodx2) then
++            tem = leodx2 / gdx(i)
++!           tem = (leodx2 / gdx(i))**2
++            saleofac(i) = real(leofac, kind=conv_wp) * tem
++          else if(gdx(i) < leodx3 .and. gdx(i) > leodx4) then
++            tem = gdx(i) / leodx3
++!           tem = (gdx(i) / leodx3)**2
++            saleofac(i) = real(leofac, kind=conv_wp) * tem
++          else if(gdx(i) < leodx2 .and. gdx(i) > leodx3) then
++            saleofac(i) = real(leofac, kind=conv_wp)
++          endif
++        enddo
++      endif
++!      
+ !>  - Return to the calling routine if deep convection is present or the surface buoyancy flux is negative.
++!!
+       if (.not. progomega) then
+          totflg = .true.
+          do i=1,im
+@@ -439,28 +478,12 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+         enddo
+       enddo
+ !
+-!>  - Initialize convective cloud water and cloud cover to zero.
+-      do k = 1, km
+-        do i = 1, im
+-          cnvw(i,k) = 0.0_kind_phys
+-          cnvc(i,k) = 0.0_kind_phys
+-        enddo
+-      enddo
+-! hchuang code change
+-!>  - Initialize updraft mass fluxes to zero.
+-      do k = 1, km
+-        do i = 1, im
+-          ud_mf(i,k) = 0.0_kind_phys
+-          dt_mf(i,k) = 0.0_kind_phys
+-        enddo
+-      enddo
+-c
+       dt2   = real(delt, kind=conv_wp)
+ !
+ c  model tunable parameters are all here
+       aafac   = .1_conv_wp
+-!      evfact  = 0.3
+-!      evfactl = 0.3
++!      evfact  = 0.3_conv_wp
++!      evfactl = 0.3_conv_wp
+ !
+       crtlame = 1.0e-4_conv_wp
+       crtlamd = 3.0e-4_conv_wp
+@@ -1002,7 +1025,9 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+           if(cnvflg(i)) then
+             dz = zo(i,k+1) - zo(i,k)
+             xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+-            xlamue(i,k) = max(xlamue(i,k), crtlame)
++!           xlamue(i,k) = max(xlamue(i,k), crtlame)
++            tem = 0.001_conv_wp * clamt(i)
++            xlamue(i,k) = max(xlamue(i,k), tem)
+           endif
+         enddo
+       enddo
+@@ -1108,7 +1133,7 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+      &                   *0.5_conv_wp*(heo(i,k)+heo(i,k-1)))/factor
+               dbyo(i,k) = hcko(i,k) - heso(i,k)
+ !
+-              tem  = 0.5_conv_wp * real(cm,kind=conv_wp) * tem
++              tem  = 0.5_conv_wp * cm * tem
+               factor = 1.0_conv_wp + tem
+               ptem = tem + real(pgcon, kind=conv_wp)
+               ptem1= tem - real(pgcon, kind=conv_wp)
+@@ -2308,6 +2333,56 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+         enddo
+       enddo
+ !
++!  compute change due to leonard term
++!
++      if(leonard) then
++!
++        do i = 1, im
++          if(cnvflg(i)) then
++            if(gdx(i) < dxcrt) then
++              tem = 1._conv_wp - scaldfunc(i) * advfac(i)
++              tem1 = min(max(tem, 0._conv_wp), 1._conv_wp)
++              saleofac(i) = saleofac(i) * tem1
++            else
++              saleofac(i) = 0._conv_wp
++            endif
++          endif
++        enddo
++!
++        do k = 2, km
++          do i = 1, im
++            if(cnvflg(i) .and. gdx(i) < dxcrt) then
++              if(zo(i,k) >= real(hpbl(i), kind=conv_wp) .and.
++     &         (k > kbcon(i) .and. k <= ktcon(i))) then
++!    &           (k > kb(i) .and. k <= ktcon(i))) then
++!             if(zo(i,k) > real(hpbl(i), kind=conv_wp) .and.
++!    &           (k > kb(i) .and. k < ktcon(i))) then
++!             if(k > kb(i) .and. k < ktcon(i)) then
++!             if(k >= kbcon(i) .and. k < ktcon(i)) then
++                dz = zo(i,k+1) - zi(i,k-1)
++                tem = real(leo_t(i,k+1), kind=conv_wp)-
++     &                real(leo_t(i,k-1), kind=conv_wp)
++                tem1 = saleofac(i) * tem / dz
++                new_t1(i,k) = new_t1(i,k) + tem1 * dt2
++                tem = real(leo_q(i,k+1,1), kind=conv_wp)-
++     &                real(leo_q(i,k-1,1), kind=conv_wp)
++                tem1 = saleofac(i) * tem / dz
++                new_q1(i,k) = new_q1(i,k) + tem1 * dt2
++!               tem = real(leo_u(i,k+1), kind=conv_wp)-
++!                     real(leo_u(i,k-1), kind=conv_wp)
++!               tem1 = saleofac(i) * tem / dz
++!               new_u1(i,k) = new_u1(i,k) + tem1 * dt2
++!               tem = real(leo_v(i,k+1), kind=conv_wp)-
++!                     real(leo_v(i,k-1), kind=conv_wp)
++!               tem1 = saleofac(i) * tem / dz
++!               new_v1(i,k) = new_v1(i,k) + tem1 * dt2
++              endif
++            endif
++          enddo
++        enddo
++!
++      endif
++!
+ ! Negative moisture is set to zero after borrowing it from
+ !    positive values within the mass-flux transport layers
+ !
+@@ -2606,7 +2681,8 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+ !        print *, ' shallow delhbar, delqbar, deltbar = ',
+ !     &             delhbar(i),hvap*delqbar(i),cp*deltbar(i)
+ !        print *, ' shallow delubar, delvbar = ',delubar(i),delvbar(i)
+-!        print *, ' precip =', hvap*rn(i)*1000./dt2
++!       print *, ' precip =', real(hvap, kind=conv_wp)*
++!                     real(rn(i), kind=conv_wp)*1000._conv_wp/dt2
+ !        print*,'pdif= ',pfld(i,kbcon(i))-pfld(i,ktcon(i))
+ !      endif
+ !      enddo
+@@ -2636,13 +2712,8 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+                if (k >= kbcon(i) .and. k < ktcon(i)) then
+                   cnvw(i,k) = real(cnvwt(i,k) * xmb(i) * dt2,
+      &                        kind=kind_phys)
+-                  if (progsigma) then
+-                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
++                  cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+      &                    real(cscale, kind=conv_wp), kind=kind_phys)
+-                  else
+-                     cnvw(i,k) = real(real(cnvw(i,k), kind=conv_wp) *
+-     &                    real(cscale, kind=conv_wp), kind=kind_phys)
+-                  endif
+                endif
+             endif
+          enddo
+@@ -2729,7 +2800,7 @@ subroutine samfshalcnv_run(im,km,nn,itc,ntc,cliq,cp,cvap,            &
+       do i = 1, im
+         if(cnvflg(i)) then
+            k = ktop(i)-1
+-           dt_mf(i,k) = real(ud_mf(i,k),kind=kind_phys)
++           dt_mf(i,k) = ud_mf(i,k)
+         endif
+       enddo
+ !
+diff --git a/physics/CONV/SAMF/samfshalcnv.meta b/physics/CONV/SAMF/samfshalcnv.meta
+index 7d9415ff26..ad968547fb 100644
+--- a/physics/CONV/SAMF/samfshalcnv.meta
++++ b/physics/CONV/SAMF/samfshalcnv.meta
+@@ -370,6 +370,53 @@
+   type = real
+   kind = kind_phys
+   intent = in
++[leo_u]
++  standard_name = leonard_term_for_u_velocity
++  long_name = leonard term for u velocity calculated from dynamics
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_v]
++  standard_name = leonard_term_for_v_velocity
++  long_name = leonard term for v velocity calculated from dynamics
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_t]
++  standard_name = leonard_term_for_temperature
++  long_name = leonard term for temperature calculated from dynamics
++  units = K m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[leo_q]
++  standard_name = leonard_term_for_tracers
++  long_name = leonard term for tracers calculated from dynamics
++  units = kg kg-1 m s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[leonard]
++  standard_name = flag_for_leonard_term
++  long_name = flag for adding leonard term
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[leofac]
++  standard_name = parameter_for_leonard_term
++  long_name = constant parameter for leonard term
++  units = none
++  dimensions = ()
++  type = real
++  kind = kind_phys
++  intent = in
+ [rn]
+   standard_name = lwe_thickness_of_shallow_convective_precipitation_amount
+   long_name = shallow convective rainfall amount on physics timestep
+@@ -384,14 +431,14 @@
+   units = index
+   dimensions = (horizontal_loop_extent)
+   type = integer
+-  intent = out
++  intent = inout
+ [ktop]
+   standard_name = vertical_index_at_cloud_top
+   long_name = index at cloud top
+   units = index
+   dimensions = (horizontal_loop_extent)
+   type = integer
+-  intent = out
++  intent = inout
+ [kcnv]
+   standard_name = flag_deep_convection
+   long_name = deep convection: 0=no, 1=yes
+@@ -444,7 +491,7 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  intent = out
++  intent = inout
+ [dt_mf]
+   standard_name = instantaneous_atmosphere_detrainment_convective_mass_flux
+   long_name = (detrainment mass flux) * delt
+@@ -452,7 +499,7 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  intent = out
++  intent = inout
+ [cnvw]
+   standard_name = convective_cloud_water_mixing_ratio
+   long_name = moist convective cloud water mixing ratio
+@@ -460,7 +507,7 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  intent = out
++  intent = inout
+ [cnvc]
+   standard_name = convective_cloud_cover
+   long_name = convective cloud cover
+@@ -468,7 +515,7 @@
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-  intent = out
++  intent = inout
+ [clam]
+   standard_name = entrainment_rate_coefficient_for_shallow_convection
+   long_name = entrainment rate coefficient for shal conv.
+diff --git a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.F90 b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.F90
+index 9451c568f2..2a5828eaa0 100644
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.F90
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.F90
+@@ -16,7 +16,7 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+         imp_physics, imp_physics_gfdl, imp_physics_thompson, imp_physics_wsm6,           &
+         imp_physics_tempo, lthailaware, imp_physics_mg, imp_physics_fer_hires,           &
+         imp_physics_nssl, ltaerosol, mraerosol, nssl_ccn_on, nssl_hail_on, nssl_3moment, &
+-        hybedmf, do_shoc, satmedmf, qgrs, vdftra,                                        &
++        hybedmf, do_shoc, satmedmf, sa3dtke, qgrs, vdftra, def_4, def4q,                 &
+         ugrs, vgrs, tgrs, errmsg, errflg)
+         
+       use machine,                only : kind_phys
+@@ -34,12 +34,13 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+       integer, intent(in) :: imp_physics, imp_physics_gfdl, imp_physics_thompson, imp_physics_wsm6, imp_physics_tempo
+       integer, intent(in) :: imp_physics_mg, imp_physics_fer_hires
+       logical, intent(in) :: ltaerosol, hybedmf, do_shoc, satmedmf, mraerosol, lthailaware
++      logical, intent(in) :: sa3dtke !flag for SA-3D-TKE scheme
+       integer, intent(in) :: imp_physics_nssl
+       logical, intent(in) :: nssl_hail_on, nssl_ccn_on, nssl_3moment
+ 
+-      real(kind=kind_phys), dimension(:,:,:), intent(in) :: qgrs
++      real(kind=kind_phys), dimension(:,:,:), intent(in) :: qgrs, def_4
+       real(kind=kind_phys), dimension(:,:), intent(in) :: ugrs, vgrs, tgrs
+-      real(kind=kind_phys), dimension(:,:, :), intent(inout) :: vdftra
++      real(kind=kind_phys), dimension(:,:,:), intent(inout) :: vdftra, def4q
+ 
+       ! CCPP error handling variables
+       character(len=*), intent(out) :: errmsg
+@@ -58,6 +59,9 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+ !DH: dvdftra is only used if nvdiff != ntrac or (nvdiff == ntrac .and. )
+       if (nvdiff == ntrac .and. (hybedmf .or. do_shoc .or. satmedmf)) then
+         vdftra = qgrs
++        if(sa3dtke) then
++          def4q = def_4
++        endif
+         rtg_ozone_index = ntoz
+       else
+         if (imp_physics == imp_physics_wsm6) then
+@@ -68,6 +72,12 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+               vdftra(i,k,2) = qgrs(i,k,ntcw)
+               vdftra(i,k,3) = qgrs(i,k,ntiw)
+               vdftra(i,k,4) = qgrs(i,k,ntoz)
++              if(sa3dtke) then
++                def4q(i,k,1) = def_4(i,k,ntqv)
++                def4q(i,k,2) = def_4(i,k,ntcw)
++                def4q(i,k,3) = def_4(i,k,ntiw)
++                def4q(i,k,4) = def_4(i,k,ntoz)
++              endif
+             enddo
+           enddo
+           rtg_ozone_index = 4
+@@ -82,6 +92,14 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+               vdftra(i,k,4) = qgrs(i,k,ntrw)
+               vdftra(i,k,5) = qgrs(i,k,nqrimef)
+               vdftra(i,k,6) = qgrs(i,k,ntoz)
++              if(sa3dtke) then
++                def4q(i,k,1) = def_4(i,k,ntqv)
++                def4q(i,k,2) = def_4(i,k,ntcw)
++                def4q(i,k,3) = def_4(i,k,ntiw)
++                def4q(i,k,4) = def_4(i,k,ntrw)
++                def4q(i,k,5) = def_4(i,k,nqrimef)
++                def4q(i,k,6) = def_4(i,k,ntoz)
++              endif
+             enddo
+           enddo
+           rtg_ozone_index = 6
+@@ -103,6 +121,20 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,10) = qgrs(i,k,ntoz)
+                 vdftra(i,k,11) = qgrs(i,k,ntwa)
+                 vdftra(i,k,12) = qgrs(i,k,ntia)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntgl)
++                  def4q(i,k,7)  = def_4(i,k,ntlnc)
++                  def4q(i,k,8)  = def_4(i,k,ntinc)
++                  def4q(i,k,9)  = def_4(i,k,ntrnc)
++                  def4q(i,k,10) = def_4(i,k,ntoz)
++                  def4q(i,k,11) = def_4(i,k,ntwa)
++                  def4q(i,k,12) = def_4(i,k,ntia)
++                endif
+               enddo
+             enddo
+             rtg_ozone_index = 10
+@@ -119,6 +151,19 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,8)  = qgrs(i,k,ntinc)
+                 vdftra(i,k,9)  = qgrs(i,k,ntrnc)
+                 vdftra(i,k,10) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntgl)
++                  def4q(i,k,7)  = def_4(i,k,ntlnc)
++                  def4q(i,k,8)  = def_4(i,k,ntinc)
++                  def4q(i,k,9)  = def_4(i,k,ntrnc)
++                  def4q(i,k,10) = def_4(i,k,ntoz)
++                endif
+               enddo
+             enddo
+             rtg_ozone_index = 10
+@@ -134,6 +179,17 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,7) = qgrs(i,k,ntinc)
+                 vdftra(i,k,8) = qgrs(i,k,ntrnc)
+                 vdftra(i,k,9) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1) = def_4(i,k,ntqv)
++                  def4q(i,k,2) = def_4(i,k,ntcw)
++                  def4q(i,k,3) = def_4(i,k,ntiw)
++                  def4q(i,k,4) = def_4(i,k,ntrw)
++                  def4q(i,k,5) = def_4(i,k,ntsw)
++                  def4q(i,k,6) = def_4(i,k,ntgl)
++                  def4q(i,k,7) = def_4(i,k,ntinc)
++                  def4q(i,k,8) = def_4(i,k,ntrnc)
++                  def4q(i,k,9) = def_4(i,k,ntoz)
++                endif
+               enddo
+             enddo
+             rtg_ozone_index = 9
+@@ -151,6 +207,17 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                  vdftra(i,k,7)  = qgrs(i,k,ntinc)
+                  vdftra(i,k,8)  = qgrs(i,k,ntrnc)
+                  vdftra(i,k,9)  = qgrs(i,k,ntoz)
++                 if(sa3dtke) then
++                   def4q(i,k,1)  = def_4(i,k,ntqv)
++                   def4q(i,k,2)  = def_4(i,k,ntcw)
++                   def4q(i,k,3)  = def_4(i,k,ntiw)
++                   def4q(i,k,4)  = def_4(i,k,ntrw)
++                   def4q(i,k,5)  = def_4(i,k,ntsw)
++                   def4q(i,k,6)  = def_4(i,k,ntgl)
++                   def4q(i,k,7)  = def_4(i,k,ntinc)
++                   def4q(i,k,8)  = def_4(i,k,ntrnc)
++                   def4q(i,k,9)  = def_4(i,k,ntoz)
++                 endif
+               enddo
+            enddo
+            rtg_ozone_index = 9
+@@ -162,6 +229,11 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                     vdftra(i,k,n) = qgrs(i,k,ntlnc)
+                     vdftra(i,k,n+1) = qgrs(i,k,ntwa)
+                     vdftra(i,k,n+2) = qgrs(i,k,ntia)
++                    if(sa3dtke) then
++                      def4q(i,k,n) = def_4(i,k,ntlnc)
++                      def4q(i,k,n+1) = def_4(i,k,ntwa)
++                      def4q(i,k,n+2) = def_4(i,k,ntia)
++                    endif
+                  enddo
+               enddo
+               n = 13
+@@ -172,6 +244,10 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                  do i=1,im              
+                     vdftra(i,k,n) = qgrs(i,k,ntgnc)
+                     vdftra(i,k,n+1) = qgrs(i,k,ntgv)
++                    if(sa3dtke) then
++                      def4q(i,k,n) = def_4(i,k,ntgnc)
++                      def4q(i,k,n+1) = def_4(i,k,ntgv)
++                    endif
+                  enddo
+               enddo
+            endif
+@@ -192,6 +268,20 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,10) = qgrs(i,k,ntsnc)
+                 vdftra(i,k,11) = qgrs(i,k,ntgnc)
+                 vdftra(i,k,12) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntgl)
++                  def4q(i,k,7)  = def_4(i,k,ntlnc)
++                  def4q(i,k,8)  = def_4(i,k,ntinc)
++                  def4q(i,k,9)  = def_4(i,k,ntrnc)
++                  def4q(i,k,10) = def_4(i,k,ntsnc)
++                  def4q(i,k,11) = def_4(i,k,ntgnc)
++                  def4q(i,k,12) = def_4(i,k,ntoz)
++                endif
+               enddo
+             enddo
+             rtg_ozone_index = 12
+@@ -208,6 +298,18 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,8)  = qgrs(i,k,ntrnc)
+                 vdftra(i,k,9)  = qgrs(i,k,ntsnc)
+                 vdftra(i,k,10) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntlnc)
++                  def4q(i,k,7)  = def_4(i,k,ntinc)
++                  def4q(i,k,8)  = def_4(i,k,ntrnc)
++                  def4q(i,k,9)  = def_4(i,k,ntsnc)
++                  def4q(i,k,10) = def_4(i,k,ntoz)
++                endif
+               enddo
+             enddo
+             rtg_ozone_index = 10
+@@ -223,6 +325,15 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+               vdftra(i,k,5) = qgrs(i,k,ntsw)
+               vdftra(i,k,6) = qgrs(i,k,ntgl)
+               vdftra(i,k,7) = qgrs(i,k,ntoz)
++              if(sa3dtke) then
++                def4q(i,k,1) = def_4(i,k,ntqv)
++                def4q(i,k,2) = def_4(i,k,ntcw)
++                def4q(i,k,3) = def_4(i,k,ntiw)
++                def4q(i,k,4) = def_4(i,k,ntrw)
++                def4q(i,k,5) = def_4(i,k,ntsw)
++                def4q(i,k,6) = def_4(i,k,ntgl)
++                def4q(i,k,7) = def_4(i,k,ntoz)
++              endif
+             enddo
+           enddo
+           rtg_ozone_index = 7
+@@ -247,15 +358,41 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,14) = qgrs(i,k,ntgv)
+                 vdftra(i,k,15) = qgrs(i,k,nthv)
+                 vdftra(i,k,16) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntgl)
++                  def4q(i,k,7)  = def_4(i,k,nthl)
++                  def4q(i,k,8)  = def_4(i,k,ntlnc)
++                  def4q(i,k,9)  = def_4(i,k,ntinc)
++                  def4q(i,k,10) = def_4(i,k,ntrnc)
++                  def4q(i,k,11) = def_4(i,k,ntsnc)
++                  def4q(i,k,12) = def_4(i,k,ntgnc)
++                  def4q(i,k,13) = def_4(i,k,nthnc)
++                  def4q(i,k,14) = def_4(i,k,ntgv)
++                  def4q(i,k,15) = def_4(i,k,nthv)
++                  def4q(i,k,16) = def_4(i,k,ntoz)
++                endif
+                 n = 16
+                 IF ( nssl_ccn_on ) THEN
+                  vdftra(i,k,n+1)  = qgrs(i,k,ntccn)
++                 if(sa3dtke) then
++                   def4q(i,k,n+1)  = def_4(i,k,ntccn)
++                 endif
+                  n = n+1
+                 ENDIF
+                 IF ( nssl_3moment ) THEN
+                  vdftra(i,k,n+1)  = qgrs(i,k,ntrz)
+                  vdftra(i,k,n+2)  = qgrs(i,k,ntgz)
+                  vdftra(i,k,n+3)  = qgrs(i,k,nthz)
++                 if(sa3dtke) then
++                   def4q(i,k,n+1)  = def_4(i,k,ntrz)
++                   def4q(i,k,n+2)  = def_4(i,k,ntgz)
++                   def4q(i,k,n+3)  = def_4(i,k,nthz)
++                 endif
+                  n = n+3
+                 ENDIF
+               enddo
+@@ -278,14 +415,36 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+                 vdftra(i,k,11) = qgrs(i,k,ntgnc)
+                 vdftra(i,k,12) = qgrs(i,k,ntgv)
+                 vdftra(i,k,13) = qgrs(i,k,ntoz)
++                if(sa3dtke) then
++                  def4q(i,k,1)  = def_4(i,k,ntqv)
++                  def4q(i,k,2)  = def_4(i,k,ntcw)
++                  def4q(i,k,3)  = def_4(i,k,ntiw)
++                  def4q(i,k,4)  = def_4(i,k,ntrw)
++                  def4q(i,k,5)  = def_4(i,k,ntsw)
++                  def4q(i,k,6)  = def_4(i,k,ntgl)
++                  def4q(i,k,7)  = def_4(i,k,ntlnc)
++                  def4q(i,k,8)  = def_4(i,k,ntinc)
++                  def4q(i,k,9)  = def_4(i,k,ntrnc)
++                  def4q(i,k,10) = def_4(i,k,ntsnc)
++                  def4q(i,k,11) = def_4(i,k,ntgnc)
++                  def4q(i,k,12) = def_4(i,k,ntgv)
++                  def4q(i,k,13) = def_4(i,k,ntoz)
++                endif
+                  n = 13
+                 IF ( nssl_ccn_on ) THEN
+                  vdftra(i,k,n+1) = qgrs(i,k,ntccn)
++                 if(sa3dtke) then
++                   def4q(i,k,n+1) = def_4(i,k,ntccn)
++                 endif
+                  n = n+1
+                 ENDIF
+                 IF ( nssl_3moment ) THEN
+                  vdftra(i,k,n+1) = qgrs(i,k,ntrz)
+                  vdftra(i,k,n+2) = qgrs(i,k,ntgz)
++                 if(sa3dtke) then
++                   def4q(i,k,n+1) = def_4(i,k,ntrz)
++                   def4q(i,k,n+2) = def_4(i,k,ntgz)
++                 endif
+                  n = n+2
+                 ENDIF
+               enddo
+@@ -312,6 +471,9 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+             do k=1,levs
+               do i=1,im
+                 vdftra(i,k,k1) = qgrs(i,k,n)
++                if(sa3dtke) then
++                  def4q(i,k,k1) = def_4(i,k,n)
++                endif
+               enddo
+             enddo
+           enddo
+@@ -321,6 +483,9 @@ subroutine GFS_PBL_generic_pre_run (im, levs, nvdiff, ntrac, rtg_ozone_index,
+           do k=1,levs
+             do i=1,im
+               vdftra(i,k,ntkev) = qgrs(i,k,ntke)
++              if(sa3dtke) then
++                def4q(i,k,ntkev) = def_4(i,k,ntke)
++              endif
+             enddo
+           enddo
+         endif
+diff --git a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.meta b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.meta
+index 6621c28bd9..dfa6141ca5 100644
+--- a/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.meta
++++ b/physics/Interstitials/UFS_SCM_NEPTUNE/GFS_PBL_generic_pre.meta
+@@ -357,6 +357,13 @@
+   dimensions = ()
+   type = logical
+   intent = in
++[sa3dtke]
++  standard_name = do_scale_aware_3d_tke
++  long_name = flag for scale-aware 3d tke scheme
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
+ [qgrs]
+   standard_name = tracer_concentration
+   long_name = model layer mean tracer concentration
+@@ -373,6 +380,22 @@
+   type = real
+   kind = kind_phys
+   intent = inout
++[def_4]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_tracers
++  long_name = horizontal turbulent eddy diffusion for tracers calculated from dynamics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[def4q]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_vertically_diffused_tracers
++  long_name = horizontal turbulent eddy diffusion for vertically diffused tracers calculated from dynamics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_vertical_diffusion_tracers)
++  type = real
++  kind = kind_phys
++  intent = inout
+ [ugrs]
+   standard_name = x_wind
+   long_name = zonal wind
+diff --git a/physics/PBL/SATMEDMF/canopy_driver.meta b/physics/PBL/SATMEDMF/canopy_driver.meta
+index 466aa7c9eb..43e51deff9 100644
+--- a/physics/PBL/SATMEDMF/canopy_driver.meta
++++ b/physics/PBL/SATMEDMF/canopy_driver.meta
+@@ -331,9 +331,9 @@
+   kind = kind_phys
+   intent = in
+ [def_3]
+-  standard_name = horizontal_transfer_rate_of_tke_due_to_dynamics
+-  long_name = rate of horizontal TKE transfer and pressure correlation calculated from dynamics
+-  units =  m2 s-3
++  standard_name = horizontal_turbulent_eddy_diffusion_for_temperature
++  long_name = horizontal turbulent eddy diffusion for temperature calculated from dynamics
++  units = K s-1
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+diff --git a/physics/PBL/SATMEDMF/satmedmfvdifq.F b/physics/PBL/SATMEDMF/satmedmfvdifq.F
+index 0eff654505..439fee9c30 100644
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.F
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.F
+@@ -87,9 +87,9 @@ end subroutine satmedmfvdifq_init
+ !! (mfscuq.f).
+ !! \section detail_satmedmfvidfq GFS satmedmfvdifq Detailed Algorithm
+       subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+-     &     ntiw,ntke,grav,pi,rd,cp,rv,hvap,hfus,fv,eps,epsm1,              &
+-!The following three variables are for SA-3D-TKE
+-     &     def_1,def_2,def_3,sa3dtke,dku3d_h,dku3d_e,                   &
++     &     ntiw,ntke,grav,pi,rd,cp,rv,hvap,hfus,fv,eps,epsm1,           &
++!The following variables are for SA-3D-TKE
++     &     def_1,def_2,def_3,def4q,sa3dtke,dku3d_h,dku3d_e,             &
+      &     rtg,u1,v1,t1,q1,usfco,vsfco,use_oceanuv,                     &
+      &     swh,hlw,xmu,garea,zvfun,sigmaf,                              &
+      &     psk,rbsoil,zorl,u10m,v10m,fm,fh,                             &
+@@ -98,6 +98,8 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+      &     dspheat,dusfc,dvsfc,dtsfc,dqsfc,hpbl,dkt,dku,tkeh,           &
+      &     kinver,xkzm_m,xkzm_h,xkzm_s,dspfac,bl_upfr,bl_dnfr,          &
+      &     rlmx,elmx,sfc_rlm,tc_pbl,use_lpt,                            &
++! Cold pool
++     &     coldpool, buoyexcsgrs, cpadv,                                &
+      &     do_canopy, cplaqm, claie, cfch, cfrt, cclu, cpopu,           &
+      &     ntqv,dtend,dtidx,index_of_temperature,index_of_x_wind,       &
+      &     index_of_y_wind,index_of_process_pbl,gen_tend,ldiag3d,       &
+@@ -135,8 +137,9 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+      &                     u1(:,:),     v1(:,:),                        &
+      &                     usfco(:),    vsfco(:),                       &
+      &                     t1(:,:),     q1(:,:,:),                      &
+-!The following two variables are for SA-3D-TKE
+-     &                     def_1(:,:),  def_2(:,:), def_3(:,:),         &
++!The following 4 variables are for SA-3D-TKE
++     &                     def_1(:,:),  def_2(:,:),                     &
++     &                     def_3(:,:),  def4q(:,:,:),                   &
+      &                     swh(:,:),    hlw(:,:),                       &
+      &                     xmu(:),       garea(:),                      &
+      &                     zvfun(:),     sigmaf(:),                     &
+@@ -149,6 +152,10 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+      &                     prsi(:,:), del(:,:),                         &
+      &                     prsl(:,:),   prslk(:,:),                     &
+      &                     phii(:,:), phil(:,:)
++!The following variable is for cold pool
++      real(kind=kind_phys), intent(inout), optional :: buoyexcsgrs(:,:)
++      real(kind=kind_phys), intent(in) :: cpadv(:,:)
++!
+       real(kind=kind_phys), intent(inout), dimension(:,:,:), optional ::&
+      &     dtend
+       integer, intent(in) :: dtidx(:,:), index_of_temperature,          &
+@@ -163,6 +170,8 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+ 
+ !
+       logical, intent(in)  :: sa3dtke !flag for SA-3D-TKE scheme
++!
++      logical, intent(in)  :: coldpool !flag for cold pool
+ !
+ !  flag for tke dissipative heating
+       logical, intent(in)  :: dspheat
+@@ -224,7 +233,7 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+ !
+       real(kind=kind_phys) elm(im,km),   ele(im,km),
+      &                     ckz(im,km),   chz(im,km),
+-     &                     diss(im,km-1),prod(im,km-1),
++     &                     diss(im,km-1),prod(im,km-1), rik(im,km-1),
+      &                     bf(im,km-1),  shr2(im,km-1), wush(im,km),
+      &                     xlamue(im,km-1), xlamde(im,km-1),
+      &                     gotvx(im,km), rlam(im,km-1)
+@@ -283,22 +292,25 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+      &                     tkmin,   tkbmx,  disste, xkgdx,
+      &                     xkinv1,  xkinv2,
+      &                     zlup,    zldn,   cs0,    csmf,
+-     &                     tem,     tem1,   tem2,   tem3,
++     &                     tem,     tem1,   tem2,
+      &                     ptem,    ptem0,  ptem1,  ptem2
+ !
+ !The following variables are for SA-3D-TKE
+-      integer kk
+       real(kind=kind_phys) thetal(im,km),dku_les(im,km),dkt_les(im,km),
+      &                     elmh(im,km),ele_les(im,km),pftke(im),
+      &                     dkq_les(im,km),pfl(im),pfdx(im),
+      &                     dku_h(im,km),dkq_h(im,km),
+-     &                     elmhfac,elmhmx,ckh,elm_les,
++     &                     elmhfac,elmhmx,elm_les,
+      &                     cpl1,cpl2,cpl3,cpl4,cpl5,cpl6,
+      &                     cptke1,cptke2,cptke3
+       integer ktkemax(im)
+       real(kind=kind_phys) tkemax(im),scl(im)
+       real(kind=kind_phys) sclmax,sclmin,dkmaxles
+ ! end of SA-3D-TKE variables
++!
++!    variable for cold pool
++      real(kind=kind_phys) bux(im,km), buxi(im,km-1),
++     &                     bcko(im,km), bcdo(im,km)
+ !
+       real(kind=kind_phys) slfac
+ !
+@@ -369,7 +381,8 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+       parameter(cpl4=0.153,cpl5=0.278,cpl6=0.720)
+       parameter(cptke1=0.07,cptke2=0.142,cptke3=0.071)
+       parameter(dkmaxles=300.0,sclmin=500.,sclmax=2500.)
+-      parameter(elmhfac=1.5,elmhmx=1000.,ckh=0.4)
++!     parameter(elmhfac=1.5,elmhmx=1000.)
++      parameter(elmhfac=2.0,elmhmx=2000.)
+ 
+ !PCC_CANOPY------------------------------------
+       if (do_canopy) then
+@@ -395,14 +408,24 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+         cfac  = 3.0
+         prmax = 6.0
+         prscu = 0.4
+-        ck1   = 0.16
+-        ch1   = 0.16
++        if(sa3dtke) then
++          ck1   = 0.18
++          ch1   = 0.18
++        else
++          ck1   = 0.16
++          ch1   = 0.16
++        endif
+       else
+         cfac  = 4.5
+         prmax = 4.0
+         prscu = 0.67
+-        ck1   = 0.15
+-        ch1   = 0.15
++        if(sa3dtke) then
++          ck1   = 0.17
++          ch1   = 0.17
++        else
++          ck1   = 0.15
++          ch1   = 0.15
++        endif
+       endif
+ 
+       gravi = 1.0 / grav
+@@ -455,6 +478,20 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+       do i=1,im
+         gdx(i) = sqrt(garea(i))
+       enddo
++!
++! cold pool
++      if(coldpool)then
++!
++! advect cold pool by its propagation speed
++!
++        do k = 1,km
++          do i = 1,im
++            bux(i,k) = buoyexcsgrs(i,k) + cpadv(i,k) * dt2
++          enddo
++        enddo
++!
++      endif
++!
+ !>  - Initialize tke value at vertical layer centers and interfaces
+ !! from tracer (\p tke and \p tkeh)
+       do k=1,km
+@@ -1063,8 +1100,6 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ !  compute tke using tte & ri for TTE-EDMF
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-!
+-      if(tte_edmf) then
+ !
+       do i = 1, im
+         tem = phims(i) * phims(i)
+@@ -1075,7 +1110,7 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+         do i = 1, im
+           ptem = sfcfrac*hpbl(i)
+           if (zl(i,k) <= ptem) then
+-            ri = ris(i)
++            rik(i,k) = ris(i)
+           else
+             if(k == 1) then
+               tem = gotvx(i,1) * (thlvx(i,1)-thvs(i))
+@@ -1084,19 +1119,26 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+               ptem = max((u1(i,1)**2+v1(i,1)**2), 1.)
+               ptem1 = ptem / (zl(i,1) * zl(i,1))
+               ptem1 = 0.5 * (ptem1 + shr2(i,1))
+-              ri = max(tem1/ptem1, rimin)
++              rik(i,k) = max(tem1/ptem1, rimin)
+             else
+               tem1 = 0.5 * (bf(i,k-1) + bf(i,k))
+               ptem1 = 0.5 * (shr2(i,k-1) + shr2(i,k))
+-              ri = max(tem1/ptem1, rimin)
++              rik(i,k) = max(tem1/ptem1, rimin)
+             endif
+           endif
+-          if(ri < 0) then
+-            tem = 2. * ri - pr0
+-            epotte = ri / tem
++        enddo
++      enddo
++!
++      if(tte_edmf) then
++!
++      do k = 1, km1
++        do i = 1, im
++          if(rik(i,k) < 0) then
++            tem = 2. * rik(i,k) - pr0
++            epotte = rik(i,k) / tem
+           else
+-            tem = pr0 + 3. * ri
+-            epotte = ri / tem
++            tem = pr0 + 3. * rik(i,k)
++            epotte = rik(i,k) / tem
+           endif
+           tke(i,k) = te(i,k) * (1. - epotte)
+         enddo
+@@ -1655,10 +1697,70 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+ !
+ ! 2. compute MS horizontal km
+ !
+-        do k = 1, km
++        if(tte_edmf) then
++!
++        do k = 1, km1
++          do i = 1, im
++             tesq(i,k) = tke(i,k) / sqrt(te(i,k))
++          enddo
++        enddo
++!
++        else
++!
++        do k = 1, km1
+           do i = 1, im
+-            dku_h(i,k)=ckh*elmh(i,k)*sqrt(tke(i,k))
+-            dkq_h(i,k)=dku_h(i,k)
++             tesq(i,k) = sqrt(tke(i,k))
++          enddo
++        enddo
++!
++        endif
++!
++        do k = 1, km1
++          do i = 1, im
++           tem = elmh(i,k) * tesq(i,k)
++           if(k < kpbl(i)) then
++             if(pcnvflg(i)) then
++               dku_h(i,k) = ckz(i,k) * tem
++               dkq_h(i,k) = dku_h(i,k) / prn(i,k)
++             else
++               if(rik(i,k) < 0.) then ! unstable regime
++                 dku_h(i,k) = ckz(i,k) * tem
++                 dkq_h(i,k) = dku_h(i,k) / prn(i,k)
++               else             ! stable regime
++                 dkq_h(i,k) = chz(i,k) * tem
++                 dku_h(i,k) = dkq_h(i,k) * prn(i,k)
++               endif
++             endif
++           else
++             if(rik(i,k) < 0.) then ! unstable regime
++               dku_h(i,k) = ck1 * tem
++               dkq_h(i,k) = rchck * dku_h(i,k)
++             else             ! stable regime
++               dkq_h(i,k) = ch1 * tem
++               prnum = pr0 + 2.1 * rik(i,k)
++               prnum = min(prnum,prmax)
++               dku_h(i,k) = dkq_h(i,k) * prnum
++             endif
++           endif
++!
++           if(scuflg(i)) then
++             if(k >= mrad(i) .and. k < krad(i)) then
++               if(tte_edmf) then
++                 tem1 = ck0 * tem
++               else
++                 tem1 = ckz(i,k) * tem
++               endif
++               ptem1 = tem1 / prscu
++               dku_h(i,k) = max(dku_h(i,k), tem1)
++               dkq_h(i,k) = max(dkq_h(i,k), ptem1)
++             endif
++           endif
++!
++           dkq_h(i,k) = min(dkq_h(i,k),dkmax)
++           dkq_h(i,k) = max(dkq_h(i,k),xkzo(i,k))
++           dku_h(i,k) = min(dku_h(i,k),dkmax)
++           dku_h(i,k) = max(dku_h(i,k),xkzmo(i,k))
++!
+           enddo
+         enddo
+ !
+@@ -2048,9 +2150,7 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+            tem1 = prod(i,k) + te(i,k) / dtn
+            disste=max(min(disste, tem1), 0.)
+            if(.not. tte_edmf) diss(i,k) = disste
+-!          tem=2.0*def_3(i,k)
+-           tem=def_3(i,k)
+-!          tem=min(tem,1.0)
++           tem=def4q(i,k,ntke)
+            te(i,k) = te(i,k) + dtn * (prod(i,k)-disste+tem)
+ !          te(i,k) = max(te(i,k), tkmin)
+            te(i,k) = max(te(i,k), tkmnz(i,k))
+@@ -2437,19 +2537,299 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+      &        (f1(1:im,1:km)-q1(1:im,1:km,ntke))*rdt
+          endif
+       endif
++!
++! Compute vertical diffusion for cold pool
++!
++      if(coldpool) then
++!
++      do k = 1, km
++        do i = 1, im
++          if(pcnvflg(i)) then
++            bcko(i,k) = bux(i,k)
++          endif
++          if(scuflg(i)) then
++            bcdo(i,k) = bux(i,k)
++          endif
++        enddo
++      enddo
++      do k = 2, kmpbl
++        do i = 1, im
++          if (pcnvflg(i) .and. k <= kpbl(i)) then
++             dz   = zl(i,k) - zl(i,k-1)
++             tem  = 0.5 * xlamue(i,k-1) * dz
++             factor = 1. + tem
++             bcko(i,k)=((1.-tem)*bcko(i,k-1)+tem*
++     &                (bux(i,k)+bux(i,k-1)))/factor
++          endif
++        enddo
++      enddo
++      do k = kmscu, 1, -1
++        do i = 1, im
++          if (scuflg(i) .and. k < krad(i)) then
++            if(k >= mrad(i)) then
++              dz = zl(i,k+1) - zl(i,k)
++              tem  = 0.5 * xlamde(i,k) * dz
++              factor = 1. + tem
++              bcdo(i,k)=((1.-tem)*bcdo(i,k+1)+tem*
++     &                 (bux(i,k)+bux(i,k+1)))/factor
++            endif
++          endif
++        enddo
++      enddo
++!
++!  compute variables for TVD flux-limiter scheme
++!     on environmental subsidence and uplifting
++!     for cold pool
++!
++      do k=1,kps
++        do i=1,im
++          buxi(i,k) = 0.5 * (bux(i,k)+bux(i,k+1))
++        enddo
++      enddo
++!
++      do k=1,kps
++        do i=1,im
++          e_diff(i,k) = bux(i,k) - bux(i,k+1)
++        enddo
++      enddo
++      do i=1,im
++        if(bux(i,1) >= 0.) then
++          e_diff(i,0) = max(0.,2.*bux(i,1)-bux(i,2))-
++     &                        bux(i,1)
++        else
++          e_diff(i,0) = min(0.,2.*bux(i,1)-bux(i,2))-
++     &                          bux(i,1)
++        endif
++      enddo
++!
++      do k = 1, kps
++        do i = 1, im
++          kmx = max(kpbl(i), krad(i))
++          e_half(i,k) = buxi(i,k)
++          if((pcnvflg(i) .or. scuflg(i)) .and. (k < kmx)) then
++            tem = 0.
++            if(pcnvflg(i) .and. k < kpbl(i)) then
++              tem = xmf(i,k)
++            endif
++            if(scuflg(i) .and.
++     &          (k >= mrad(i) .and. k < krad(i))) then
++              tem = tem - xmfd(i,k)
++            endif
++            if(tem > 0.) then
++              rrkp = 0.
++              if(abs(e_diff(i,k)) > 1.e-22)
++     &               rrkp = e_diff(i,k+1) / e_diff(i,k)
++              phkp = (rrkp+abs(rrkp)) / (1.+abs(rrkp))
++              e_half(i,k) = bux(i,k+1) +
++     &                   phkp*(buxi(i,k)-bux(i,k+1))
++            elseif (tem < 0.) then
++              rrkp = 0.
++              if(abs(e_diff(i,k)) > 1.e-22)
++     &               rrkp = e_diff(i,k-1) / e_diff(i,k)
++              phkp = (rrkp+abs(rrkp)) / (1.+abs(rrkp))
++              e_half(i,k) = bux(i,k) +
++     &                  phkp*(buxi(i,k)-bux(i,k))
++            endif
++          endif
++        enddo
++      enddo
++
++!----------------------------------------------------------------------
++!>  - Compute tridiagonal matrix elements for bux (buoyancy excess in cold pool)
++!
++      do i=1,im
++         ad(i,1) = 1.0
++         f1(i,1) = bux(i,1)
++      enddo
++!
++      do k = 1,km1
++        do i=1,im
++          dtodsd  = dt2/del(i,k)
++          dtodsu  = dt2/del(i,k+1)
++          dsig    = prsl(i,k)-prsl(i,k+1)
++          rdz     = rdzt(i,k)
++          tem1    = dsig * dkq(i,k) * rdz
++          dsdz2   = tem1 * rdz
++          au(i,k) = -dtodsd*dsdz2
++          al(i,k) = -dtodsu*dsdz2
++          ad(i,k) = ad(i,k)-au(i,k)
++          ad(i,k+1)= 1.-al(i,k)
++          tem2    = dsig * rdz
++!
++          if(pcnvflg(i) .and. k < kpbl(i)) then
++             ptem      = 0.5 * tem2 * xmf(i,k)
++             ptem1     = dtodsd * ptem
++             ptem2     = dtodsu * ptem
++             ptem      = bcko(i,k) + bcko(i,k+1)
++             f1(i,k)   = f1(i,k) - ptem * ptem1
++             f1(i,k+1) = bux(i,k+1) + ptem * ptem2
++          else
++             f1(i,k+1) = bux(i,k+1)
++          endif
++!
++          if(scuflg(i)) then
++            if(k >= mrad(i) .and. k < krad(i)) then
++              ptem      = 0.5 * tem2 * xmfd(i,k)
++              ptem1     = dtodsd * ptem
++              ptem2     = dtodsu * ptem
++              ptem      = bcdo(i,k) + bcdo(i,k+1)
++              f1(i,k)   = f1(i,k) + ptem * ptem1
++              f1(i,k+1) = f1(i,k+1) - ptem * ptem2
++            endif
++          endif
++!
++          kmx = max(kpbl(i), krad(i))
++          if((pcnvflg(i) .or. scuflg(i)) .and. (k < kmx)) then
++            ptem  = tem2 * (xmf(i,k) - xmfd(i,k))
++            ptem1 = dtodsd * ptem
++            ptem2 = dtodsu * ptem
++            f1(i,k)   = f1(i,k) + e_half(i,k) * ptem1
++            f1(i,k+1) = f1(i,k+1) - e_half(i,k) * ptem2
++          endif
++!
++        enddo
++      enddo
++c
++!>  - Call tridit() to solve tridiagonal problem for bux
++c
++      call tridit(im,km,1,al,ad,au,f1,au,f1)
++!
++! Negative bux are set to zero after borrowing it from positive
++!   values within the mass-flux transport layers
++!
++      do i = 1,im
++        tsumn(i) = 0.
++        tsump(i) = 0.
++        rtnp(i) = 1.
++      enddo
++      do k = 1,kps
++        do i = 1,im
++          if(pcnvflg(i) .and. scuflg(i)) then
++            kbx = 1
++            kmx = max(kpbl(i), krad(i))
++          elseif(pcnvflg(i) .and. .not. scuflg(i)) then
++            kbx = 1
++            kmx = kpbl(i)
++          elseif(.not. pcnvflg(i) .and. scuflg(i)) then
++            kbx = mrad(i)
++            kmx = krad(i)
++          endif
++          if((pcnvflg(i) .or. scuflg(i)) .and.
++     &       (k >= kbx .and. k <= kmx)) then
++            tem = f1(i,k) * del(i,k) * gravi
++            if(f1(i,k) < 0.) tsumn(i) = tsumn(i) + tem
++            if(f1(i,k) > 0.) tsump(i) = tsump(i) + tem
++          endif
++        enddo
++      enddo
++      do i = 1,im
++        if(pcnvflg(i) .or. scuflg(i)) then
++          if(tsump(i) > 0. .and. tsumn(i) < 0.) then
++            if(tsump(i) > abs(tsumn(i))) then
++              rtnp(i) = tsumn(i) / tsump(i)
++            else
++              rtnp(i) = tsump(i) / tsumn(i)
++            endif
++          endif
++        endif
++      enddo
++      do k = 1,kps
++        do i = 1,im
++          if(pcnvflg(i) .and. scuflg(i)) then
++            kbx = 1
++            kmx = max(kpbl(i), krad(i))
++          elseif(pcnvflg(i) .and. .not. scuflg(i)) then
++            kbx = 1
++            kmx = kpbl(i)
++          elseif(.not. pcnvflg(i) .and. scuflg(i)) then
++            kbx = mrad(i)
++            kmx = krad(i)
++          endif
++          if((pcnvflg(i) .or. scuflg(i)) .and.
++     &       (k >= kbx .and. k <= kmx)) then
++            if(rtnp(i) < 0.) then
++              if(tsump(i) > abs(tsumn(i))) then
++                if(f1(i,k) < 0.) f1(i,k) = 0.
++                if(f1(i,k) > 0.) f1(i,k) = (1.+rtnp(i))*f1(i,k)
++              else
++                if(f1(i,k) < 0.) f1(i,k) = (1.+rtnp(i))*f1(i,k)
++                if(f1(i,k) > 0.) f1(i,k) = 0.
++              endif
++            endif
++          endif
++        enddo
++      enddo
++!
++! To remove negative buxs which were leaked out of the mass-flux transport layers
++!   by eddy diffusion or potential negative buxs from the diffusion scheme,
++!   positive buxs are borrowed again now from the entire layers
++!
++      do i = 1,im
++        tsumn(i) = 0.
++        tsump(i) = 0.
++        rtnp(i) = 1.
++      enddo
++      do k = 1,km
++        do i = 1,im
++          tem = f1(i,k) * del(i,k) * gravi
++          if(f1(i,k) < 0.) tsumn(i) = tsumn(i) + tem
++          if(f1(i,k) > 0.) tsump(i) = tsump(i) + tem
++        enddo
++      enddo
++      do i = 1,im
++        if(tsump(i) > 0. .and. tsumn(i) < 0.) then
++          if(tsump(i) > abs(tsumn(i))) then
++            rtnp(i) = tsumn(i) / tsump(i)
++          else
++            rtnp(i) = tsump(i) / tsumn(i)
++          endif
++        endif
++      enddo
++      do k = 1,km
++        do i = 1,im
++          if(rtnp(i) < 0.) then
++            if(tsump(i) > abs(tsumn(i))) then
++              if(f1(i,k) < 0.) f1(i,k) = 0.
++              if(f1(i,k) > 0.) f1(i,k) = (1.+rtnp(i))*f1(i,k)
++            else
++              if(f1(i,k) < 0.) f1(i,k) = (1.+rtnp(i))*f1(i,k)
++              if(f1(i,k) > 0.) f1(i,k) = 0.
++            endif
++          endif
++        enddo
++      enddo
++!
++!  update buoyexcs with gust front advection and vertical turbulent mixing
++!
++      do k = 1,km
++         do i = 1,im
++            buoyexcsgrs(i,k) = f1(i,k)
++         enddo
++      enddo
++!
++      endif   !end of cold pool
+ c
+ !> ## Compute tridiagonal matrix elements for heat and moisture
+ c
+       do i=1,im
+-         ad(i,1) = 1.
+-         f1(i,1) = t1(i,1)   + dtdz1(i) * heat(i)
+-         f2(i,1) = q1(i,1,1) + dtdz1(i) * evap(i)
++        ad(i,1) = 1.
++        if(sa3dtke) then
++          f1(i,1)=t1(i,1)  +dtdz1(i)*heat(i)+def_3(i,1)*dt2
++          f2(i,1)=q1(i,1,1)+dtdz1(i)*evap(i)+def4q(i,1,1)*dt2
++        else
++          f1(i,1)=t1(i,1)  +dtdz1(i)*heat(i)
++          f2(i,1)=q1(i,1,1)+dtdz1(i)*evap(i)
++        endif
+       enddo
+       if(ntrac1 >= 2) then
+         do n = 2, ntrac1
+           is = (n-1) * km
+           do i = 1, im
+-            f2(i,1+is) = q1(i,1,n)
++            if(sa3dtke) then
++              f2(i,1+is) = q1(i,1,n) + def4q(i,1,n)*dt2
++            else
++              f2(i,1+is) = q1(i,1,n)
++            endif
+           enddo
+         enddo
+       endif
+@@ -2481,13 +2861,24 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+              ptem      = tcko(i,k) + tcko(i,k+1)
+              f1(i,k)   = f1(i,k)+dtodsd*dsdzt-(ptem-tem)*ptem1
+              f1(i,k+1) = t1(i,k+1)-dtodsu*dsdzt+(ptem-tem)*ptem2
++             if(sa3dtke) then
++               f1(i,k+1) = f1(i,k+1) + def_3(i,k+1)*dt2
++             endif
+              ptem      = qcko(i,k,1) + qcko(i,k+1,1)
+              f2(i,k)   = f2(i,k) - ptem * ptem1
+              f2(i,k+1) = q1(i,k+1,1) + ptem * ptem2
++             if(sa3dtke) then
++               f2(i,k+1) = f2(i,k+1) + def4q(i,k+1,1)*dt2
++             endif
+           else
+              f1(i,k)   = f1(i,k)+dtodsd*dsdzt
+-             f1(i,k+1) = t1(i,k+1)-dtodsu*dsdzt
+-             f2(i,k+1) = q1(i,k+1,1)
++             if(sa3dtke) then
++               f1(i,k+1)=t1(i,k+1)+def_3(i,k+1)*dt2-dtodsu*dsdzt
++               f2(i,k+1)=q1(i,k+1,1)+def4q(i,k+1,1)*dt2
++             else
++               f1(i,k+1)=t1(i,k+1)-dtodsu*dsdzt
++               f2(i,k+1)=q1(i,k+1,1)
++             endif
+           endif
+ !
+           if(scuflg(i)) then
+@@ -2534,8 +2925,15 @@ subroutine satmedmfvdifq_run(im,km,ntrac,ntcw,ntrw,               &
+                 ptem  = qcko(i,k,n) + qcko(i,k+1,n)
+                 f2(i,k+is) = f2(i,k+is) - ptem * ptem1
+                 f2(i,k+1+is)= q1(i,k+1,n) + ptem * ptem2
++                if(sa3dtke) then
++                  f2(i,k+1+is)=f2(i,k+1+is)+def4q(i,k+1,n)*dt2
++                endif
+               else
+-                f2(i,k+1+is) = q1(i,k+1,n)
++                if(sa3dtke) then
++                  f2(i,k+1+is)=q1(i,k+1,n)+def4q(i,k+1,n)*dt2
++                else
++                  f2(i,k+1+is)=q1(i,k+1,n)
++                endif
+               endif
+ !
+               if(scuflg(i)) then
+diff --git a/physics/PBL/SATMEDMF/satmedmfvdifq.meta b/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+index b3dcd12040..3c2645be2b 100644
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.meta
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+@@ -257,9 +257,41 @@
+   kind = kind_phys
+   intent = in
+ [def_3]
+-  standard_name = horizontal_transfer_rate_of_tke_due_to_dynamics
+-  long_name = rate of horizontal TKE transfer and pressure correlation calculated from dynamics
+-  units =  m2 s-3
++  standard_name = horizontal_turbulent_eddy_diffusion_for_temperature
++  long_name = horizontal turbulent eddy diffusion for temperature calculated from dynamics
++  units = K s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = in
++[def4q]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_vertically_diffused_tracers
++  long_name = horizontal turbulent eddy diffusion for vertically diffused tracers calculated from dynamics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_vertical_diffusion_tracers)
++  type = real
++  kind = kind_phys
++  intent = in
++[coldpool]
++  standard_name = do_cold_pool_parameterization
++  long_name = flag for cold pool parameterization in deep cumulus scheme
++  units = flag
++  dimensions = ()
++  type = logical
++  intent = in
++[buoyexcsgrs]
++  standard_name = downdraft_buoyancy_excess_in_convection
++  long_name = downdraft buoyancy excess in convection
++  units = m2 s-2
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  intent = inout
++  optional = True
++[cpadv]
++  standard_name = cold_pool_propagation_term
++  long_name = cold pool propagation term calculated from dynamics
++  units = m2 s-3
+   dimensions = (horizontal_loop_extent,vertical_layer_dimension)
+   type = real
+   kind = kind_phys

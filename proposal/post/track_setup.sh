@@ -31,7 +31,7 @@ git fetch -q --update-head-ok $S/UFSATM '+refs/heads/pr1-round1:refs/heads/pr1-r
 git checkout -q -B pr1-$T $ATM_BASE
 FV3PIN=$(git ls-tree $ATM_BASE fv3/atmos_cubed_sphere | awk '{print $3}')
 git -C fv3/atmos_cubed_sphere checkout -q $FV3PIN
-[ $T = 0b ] && "${G[@]}" cherry-pick -q 554f8b9
+[ $T = 0b ] && "${G[@]}" cherry-pick 554f8b9 >/dev/null
 git config -f .gitmodules submodule.ccpp/physics.url https://github.com/pera-noaa/ccpp-physics
 git config -f .gitmodules submodule.ccpp/physics.branch pr1-$T
 git add .gitmodules ccpp/physics
@@ -78,7 +78,7 @@ sed -i 's/\$(( \$(id -u) + 1500 ))/$(( $(id -u) + 1500 + ${ECF_OFF:-0} ))/' $R/t
 echo "ECF_OFF lines: $(grep -c 'ECF_OFF' $R/tests/rt.sh)"
 
 case $T in 0b) OFF=21; NODE=hercules-dtn-2 ;; 0c) OFF=22; NODE=hercules-dtn-3 ;; esac
-sed -e "s#rt_final4#rt_t$T#g" -e "s#/rt2/tests#/rt_t$T/tests#" -e "s/-t 08:00:00/-t 16:00:00/" \
+sed -e "s#rt_final4#rt_t$T#g" -e "s#/rt2/tests#/rt_t$T/tests#" \
     -e "s/^# FINAL:.*/# track $T: full suite on the WM pr1-$T branch, vs develop baselines, no -c; this log goes in the WM PR/" \
     -e "s/^export MACHINE_ID=hercules/export MACHINE_ID=hercules\nexport ECF_OFF=$OFF/" $P/rt_final4.sbatch > $P/rt_t$T.sbatch
 grep -q "rt_t$T/tests" $P/rt_t$T.sbatch && grep -q "ECF_OFF=$OFF" $P/rt_t$T.sbatch || { echo "GATE: sbatch edit"; exit 1; }

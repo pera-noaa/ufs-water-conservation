@@ -25,7 +25,7 @@ Noise (one-ulp perturbation): ≤ 0.24 %. The graupel fix removes water created 
 Three more Thompson water fixes follow in a separate PR, because each has a second reasonable form: cloud water settling out of the lowest layer, clipped condensate, and water at or below R1.
 
 ## Tests Conducted:
-Intel on Hercules: compiled alone on `develop` and with the other round-1 fixes. Full Intel + GNU `rt.sh` on Hercules: see ufs-community/ufs-weather-model#TBD ([RT 0c]). With all round-1 fixes together: none fails to run; reproducibility (restart, decomposition, threading; `rt.sh -c` then `-m`) 123 of 123 bitwise. Effects are from in-model budget meters, C96, 24 h.
+Intel on Hercules: compiled alone on `develop` and with the other round-1 fixes. Full Intel + GNU `rt.sh` on Hercules: see ufs-community/ufs-weather-model#TBD (Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 57 tests identical, 150 change answers, 25 restart children not started (their parents change answers); none fails to run). With all round-1 fixes together: none fails to run; reproducibility (restart, decomposition, threading; `rt.sh -c` then `-m`) 123 of 123 bitwise. Effects are from in-model budget meters, C96, 24 h.
 
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
@@ -34,7 +34,7 @@ ufs-community/ufs-weather-model#TBD
 None needed.
 
 ## Issue (optional):
-ufs-community/ufs-weather-model#TBD
+ufs-community/ufs-weather-model#3404
 
 ## Contributors (optional):
 Lori Bruhwiler (NOAA GML). AI-assisted: Claude Opus 5.5; reviewed by author (trailer on every commit).

@@ -5,10 +5,10 @@
 Answers change: the physics fixes in the suites that use them, and SAMF is now really single precision in the `_conv32` tests.
 
 ### Issue(s) addressed
-- ufs-community/ufs-weather-model#TBD
+- ufs-community/ufs-weather-model#3404
 
 ## Testing
-Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7a). Baselines change.
+Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD. Baselines change.
 
 ## Dependencies
 ufs-community/ccpp-physics#TBD (SAMF + PBL), #TBD (Noah-MP), #TBD (GFDL MP v3)

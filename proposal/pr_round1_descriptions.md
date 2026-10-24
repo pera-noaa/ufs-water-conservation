@@ -93,7 +93,7 @@ New argument: `hfus` (`latent_heat_of_fusion_of_water_at_0C`, already provided b
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
 
-Overlaps ufs-community/ccpp-physics#390 in one block; whichever merges second needs a rebase. Ours onto #390 is ready.
+Rebased onto `ufs/dev` after ufs-community/ccpp-physics#390 (one block in `samfdeepcnv.f` re-resolved around its `progomega` guards). #403 adds arguments to `samfdeepcnv_run` beside ours (`hfus`); whichever merges second needs a one-block rebase.
 
 ### 3.2 Thompson
 
@@ -158,19 +158,15 @@ Overlaps ufs-community/ccpp-physics#389 in one block; whichever merges second ne
 **Title:** Noah-MP: water and energy bugs in the driver, coastal snow, snow initialisation, truncations, snow layers
 
 ## Description of Changes:
-Eleven fixes in Noah-MP and its interstitials, one commit each.
+Seven fixes in Noah-MP and its interstitials, one commit each.
 
 | Fix | Bug | Effect |
 |---|---|---|
 | Evaporation hand-off | latent heat ÷ a different constant | atmosphere gains 0.07–0.10 % of global precipitation |
 | Coastal snow (`frac_grid`) | land snow overwritten with the cell mean every step | thin coastal snow lost |
 | Snow initialisation | cold-start snow layers built from the cell-mean snow | 0.29 kg/m² land snow lost at step 1 |
-| Thin snow | snow < 10⁻³ mm without layers deleted | 0.009 % of global precipitation |
-| Canopy truncation | canopy water ≤ 10⁻⁶ mm deleted | 4 × 10⁻⁷ of land precipitation |
-| Latent heats | Noah-MP's own constants, not the host's | land pays 0.4 % more latent energy than its vapour carries |
 | `combine` count | tests `isnow_old`, not `isnow` (NCAR/noahmp#47) | per firing up to 0.16 mm water, 8.5 MJ/m² |
-| Melt-out heat | leftover heat deleted when the layer below is frozen | did not fire in the test case |
-| Snow layer heat (3 commits) | merge keeps receiver's T; capped volume fractions; m⁻³ capacities used per kg | Noah-MP soil energy residual 3.9 × 10⁻⁴ → 4.3 × 10⁻⁸ W/m² |
+| Snow layer heat (3 commits) | merge keeps receiver's T; capped volume fractions; m⁻³ capacities used per kg | Noah-MP soil energy residual 3.9 × 10⁻⁴ → 4.3 × 10⁻⁸ W/m² (measured with the thin-snow fix, now held) |
 
 Noah-MP's coastal land is also stepped twice per time step with `frac_grid`; that fix follows with its sea-ice twin
 (the same cause, two tested forms).
@@ -301,7 +297,7 @@ Answers change: the physics fixes in the suites that use them, and SAMF is now r
 - ufs-community/ufs-weather-model#TBD
 
 ## Testing
-Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7a). Baselines change.
+Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD. Baselines change.
 
 ## Dependencies
 ufs-community/ccpp-physics#TBD (SAMF + PBL), #TBD (Noah-MP), #TBD (GFDL MP v3)
@@ -316,7 +312,7 @@ Thompson and TEMPO suites.
 - ufs-community/ufs-weather-model#TBD
 
 ## Testing
-Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD (7b). Baselines change.
+Intel + GNU, Hercules: full `rt.sh` in ufs-community/ufs-weather-model#TBD. Baselines change.
 
 ## Dependencies
 ufs-community/ccpp-physics#TBD (Thompson), #TBD (TEMPO driver)

@@ -1,0 +1,515 @@
+diff --git a/.gitmodules b/.gitmodules
+index 21e176b8a..1e7510b8b 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -1,15 +1,15 @@
+ [submodule "fv3/atmos_cubed_sphere"]
+   path = fv3/atmos_cubed_sphere
+-  url = https://github.com/NOAA-GFDL/GFDL_atmos_cubed_sphere
+-  branch = dev/emc
++  url = https://github.com/ChristianBoyer-NOAA/GFDL_atmos_cubed_sphere
++  branch = CP-LEO-3D_TTE_EDMF-V2
+ [submodule "ccpp/framework"]
+   path = ccpp/framework
+   url = https://github.com/NCAR/ccpp-framework
+   branch = feature/capgen-v1
+ [submodule "ccpp/physics"]
+   path = ccpp/physics
+-  url = https://github.com/ufs-community/ccpp-physics
+-  branch = ufs/dev
++  url = https://github.com/ChristianBoyer-NOAA/ccpp-physics
++  branch = CP-LEO-3D_TTE_EDMF-Merged
+ [submodule "upp"]
+   path = upp
+   url = https://github.com/NOAA-EMC/UPP
+diff --git a/ccpp/data/CCPP_typedefs.F90 b/ccpp/data/CCPP_typedefs.F90
+index d04a4ad41..a1ed2f5d8 100644
+--- a/ccpp/data/CCPP_typedefs.F90
++++ b/ccpp/data/CCPP_typedefs.F90
+@@ -292,6 +292,7 @@ module CCPP_typedefs
+     real (kind=kind_phys), pointer      :: uustar_land(:)     => null()  !<
+     real (kind=kind_phys), pointer      :: uustar_water(:)    => null()  !<
+     real (kind=kind_phys), pointer      :: vdftra(:,:,:)      => null()  !<
++    real (kind=kind_phys), pointer      :: def4q(:,:,:)       => null()  !<
+     real (kind=kind_phys), pointer      :: vegf1d(:)          => null()  !<
+     real (kind=kind_phys)               :: lndp_vgf                      !<
+ 
+@@ -707,6 +708,7 @@ subroutine gfs_interstitial_create (Interstitial, ixs, ixe, Model)
+     allocate (Interstitial%uustar_land     (ixs:ixe))
+     allocate (Interstitial%uustar_water    (ixs:ixe))
+     allocate (Interstitial%vdftra          (ixs:ixe,Model%levs,Interstitial%nvdiff))  !GJF first dimension was set as 'IX' in GFS_physics_driver
++    allocate (Interstitial%def4q           (ixs:ixe,Model%levs,Interstitial%nvdiff))
+     allocate (Interstitial%vegf1d          (ixs:ixe))
+     allocate (Interstitial%wcbmax          (ixs:ixe))
+     allocate (Interstitial%wind            (ixs:ixe))
+@@ -1063,6 +1065,7 @@ subroutine gfs_interstitial_destroy (Interstitial, Model)
+     deallocate (Interstitial%uustar_land)
+     deallocate (Interstitial%uustar_water)
+     deallocate (Interstitial%vdftra)
++    deallocate (Interstitial%def4q)
+     deallocate (Interstitial%vegf1d)
+     deallocate (Interstitial%wcbmax)
+     deallocate (Interstitial%wind)
+@@ -1377,7 +1380,7 @@ subroutine gfs_interstitial_setup_tracers(Interstitial, Model)
+                   n /= Model%nthl  .and. n /= Model%nthnc .and. n /= Model%ntgv    .and. &
+                   n /= Model%nthv  .and. n /= Model%ntccn .and. n /= Model%ntccna  .and. &
+                   n /= Model%ntrz  .and. n /= Model%ntgz  .and. n /= Model%nthz    .and. &
+-                  n /= Model%ntsigma .and.  n /= Model%ntomega)
++                  n /= Model%ntsigma .and.  n /= Model%ntomega .and. n /= Model%ntbuexs)
+         Interstitial%otsptflag(n) = ltest
+         if ( ltest ) then
+           tracers = tracers + 1
+@@ -1630,6 +1633,7 @@ subroutine gfs_interstitial_reset (Interstitial, Model)
+     Interstitial%uustar_land     = Model%huge
+     Interstitial%uustar_water    = Model%huge
+     Interstitial%vdftra          = clear_val
++    Interstitial%def4q           = clear_val
+     Interstitial%vegf1d          = clear_val
+     Interstitial%wcbmax          = clear_val
+     Interstitial%wind            = Model%huge
+diff --git a/ccpp/data/CCPP_typedefs.meta b/ccpp/data/CCPP_typedefs.meta
+index 822cea696..a6e688224 100644
+--- a/ccpp/data/CCPP_typedefs.meta
++++ b/ccpp/data/CCPP_typedefs.meta
+@@ -2317,6 +2317,13 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension,number_of_vertical_diffusion_tracers)
+   type = real
+   kind = kind_phys
++[def4q]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_vertically_diffused_tracers
++  long_name = horizontal turbulent eddy diffusion for vertically diffused tracers calculated from dynamics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_loop_extent,vertical_layer_dimension,number_of_vertical_diffusion_tracers)
++  type = real
++  kind = kind_phys
+ [lndp_vgf]
+   standard_name = magnitude_of_perturbation_of_vegetation_fraction
+   long_name = magnitude of perturbation of vegetation fraction
+diff --git a/ccpp/data/GFS_typedefs.F90 b/ccpp/data/GFS_typedefs.F90
+index 5318d5b3b..7d5ae4a2e 100644
+--- a/ccpp/data/GFS_typedefs.F90
++++ b/ccpp/data/GFS_typedefs.F90
+@@ -166,7 +166,15 @@ module GFS_typedefs
+     real (kind=kind_phys), pointer :: def_1 (:,:)   => null()  !< deformation
+     real (kind=kind_phys), pointer :: def_2 (:,:)   => null()  !< deformation
+     real (kind=kind_phys), pointer :: def_3 (:,:)   => null()  !< deformation
++    real (kind=kind_phys), pointer :: def_4 (:,:,:) => null()  !< deformation
+ !SA-3D-TKE-end
++!Leonard term
++    real (kind=kind_phys), pointer :: leo_u (:,:)   => null()  !< leonard term for u
++    real (kind=kind_phys), pointer :: leo_v (:,:)   => null()  !< leonard term for v
++    real (kind=kind_phys), pointer :: leo_t (:,:)   => null()  !< leonard term for t
++    real (kind=kind_phys), pointer :: leo_q (:,:,:) => null()  !< leonard term for q & tracers
++!Cold pool variable passing from dycore to physics
++    real (kind=kind_phys), pointer :: cpadv(:,:) => null()  !< cold pool propagation term calculated from dynamics
+ ! dissipation estimate
+     real (kind=kind_phys), pointer :: diss_est(:,:)   => null()  !< model layer mean temperature in k
+     ! soil state variables - for soil SPPT - sfc-perts, mgehne
+@@ -1237,6 +1245,7 @@ module GFS_typedefs
+     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
+     logical              :: dspheat         !< flag for tke dissipative heating
+     logical              :: sa3dtke         !< flag for scale-aware 3D tke scheme
++    logical              :: leonard         !< flag for leonard term in subgrid turbulent fluxes
+     logical              :: hurr_pbl        !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg       !< flag for canopy heat storage parameterization
+     logical              :: lseaspray       !< flag for sea spray parameterization
+@@ -1261,6 +1270,7 @@ module GFS_typedefs
+     logical              :: hwrf_samfdeep           !< flag for HWRF SAMF deepcnv scheme (HWRF)
+     logical              :: progsigma               !< flag for prognostic area fraction in samf ddepcnv scheme (GFS)
+     logical              :: progomega               !< flag for prognostic vertical velocity in samf ddepcnv scheme (GFS)
++    logical              :: coldpool                !< flag for cold pool parameterization in samf ddepcnv scheme (GFS)
+     integer              :: imfdeepcnv      !< flag for mass-flux deep convection scheme
+                                             !<     1: July 2010 version of SAS conv scheme
+                                             !<           current operational version as of 2016
+@@ -1437,6 +1447,7 @@ module GFS_typedefs
+     real(kind=kind_phys) :: bl_dnfr         !< downdraft fraction in boundary layer mass flux scheme
+     real(kind=kind_phys) :: rlmx            !< maximum allowed mixing length in boundary layer mass flux scheme
+     real(kind=kind_phys) :: elmx            !< maximum allowed dissipation mixing length in boundary layer mass flux scheme
++    real(kind=kind_phys) :: leofac          !< parameter for leonard term
+     integer              :: sfc_rlm         !< choice of near surface mixing length in boundary layer mass flux scheme
+     integer              :: tc_pbl          !< control for TC applications in the PBL scheme
+     integer              :: use_lpt         !< control for using Liquid Potential Temp for TC applications in the GFSPBL scheme
+@@ -1569,6 +1580,7 @@ module GFS_typedefs
+     integer              :: ntke            !< tracer index for kinetic energy
+     integer              :: ntsigma         !< tracer index for updraft area fraction
+     integer              :: ntomega         !< tracer index for updraft velocity
++    integer              :: ntbuexs         !< tracer index for downdraft buoyancy excess in cold pool parameterization
+     integer              :: nto             !< tracer index for oxygen ion
+     integer              :: nto2            !< tracer index for oxygen
+     integer              :: ntwa            !< tracer index for water friendly aerosol
+@@ -1875,7 +1887,11 @@ module GFS_typedefs
+ 
+ !-- Diagnostic variable that passes to dyn_core (SA-3D-TKE)
+     real (kind=kind_phys), pointer :: dku3d_h  (:,:)     => null()  !< Horizontal eddy diffusitivity for momentum
+-    real (kind=kind_phys), pointer :: dku3d_e  (:,:)     => null()  !< Eddy diffusitivity for momentum for tke
++    real (kind=kind_phys), pointer :: dku3d_e  (:,:)     => null()  !< Eddy diffusitivity for tke
++
++!-- Cold pool variables passing from physics to dycore
++    real (kind=kind_phys), pointer :: ucp (:)   => null()  !< cold pool propagation speed in east west direction
++    real (kind=kind_phys), pointer :: vcp (:)   => null()  !< cold pool propagation speed in north south direction
+ 
+     !--- dynamical forcing variables for Grell-Freitas convection
+     real (kind=kind_phys), pointer :: forcet (:,:)     => null()  !<
+@@ -2375,7 +2391,15 @@ subroutine statein_create (Statein, Model)
+     allocate (Statein%def_1   (IM,Model%levs))
+     allocate (Statein%def_2   (IM,Model%levs))
+     allocate (Statein%def_3   (IM,Model%levs))
++    allocate (Statein%def_4   (IM,Model%levs,Model%ntrac))
+ !SA-3D-TKE-end
++!Leonard term
++    allocate (Statein%leo_u   (IM,Model%levs))
++    allocate (Statein%leo_v   (IM,Model%levs))
++    allocate (Statein%leo_t   (IM,Model%levs))
++    allocate (Statein%leo_q   (IM,Model%levs,Model%ntrac))
++!Cold pool variable
++    allocate (Statein%cpadv  (IM,Model%levs))
+ 
+     Statein%qgrs   = clear_val
+     Statein%pgr    = clear_val
+@@ -2385,7 +2409,15 @@ subroutine statein_create (Statein, Model)
+     Statein%def_1   = clear_val
+     Statein%def_2   = clear_val
+     Statein%def_3   = clear_val
++    Statein%def_4   = clear_val
+ !SA-3D-TKE-end
++!Leonard term
++    Statein%leo_u   = clear_val
++    Statein%leo_v   = clear_val
++    Statein%leo_t   = clear_val
++    Statein%leo_q   = clear_val
++!Cold pool variable
++    Statein%cpadv  = clear_val
+ 
+     if(Model%lightning_threat) then
+       Statein%wgrs = clear_val
+@@ -3887,6 +3919,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     logical              :: do_ysu         = .false.                  !< flag for YSU vertical turbulent mixing scheme
+     logical              :: dspheat        = .false.                  !< flag for tke dissipative heating
+     logical              :: sa3dtke        = .false.                  !< flag for scale-aware 3D tke scheme
++    logical              :: leonard        = .false.                  !< flag for leonard term in subgrid turbulent flux
+     logical              :: hurr_pbl       = .false.                  !< flag for hurricane-specific options in PBL scheme
+     logical              :: lheatstrg      = .false.                  !< flag for canopy heat storage parameterization
+     logical              :: lseaspray      = .false.                  !< flag for sea spray parameterization
+@@ -3917,6 +3950,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     logical              :: hwrf_samfshal     = .false.               !< flag for HWRF SAMF shalcnv scheme
+     logical              :: progsigma         = .false.               !< flag for prognostic updraft area fraction closure in saSAS or C3
+     logical              :: progomega         = .false.               !< flag for prognostic updraft velocity in saSAS or C3
++    logical              :: coldpool          = .false.               !< flag for cold pool parameterization in samfdeepcnv
+     integer              :: conv_cf_opt       =  0                    !< option for convection scheme cloud fraction computation
+     logical              :: do_mynnedmf       = .false.               !< flag for MYNN-EDMF
+     logical              :: do_mynnsfclay     = .false.               !< flag for MYNN Surface Layer Scheme
+@@ -4073,6 +4107,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     real(kind=kind_phys) :: bl_dnfr        = 0.1             !< downdraft fraction in boundary layer mass flux scheme
+     real(kind=kind_phys) :: rlmx           = 300.            !< maximum allowed mixing length in boundary layer mass flux scheme
+     real(kind=kind_phys) :: elmx           = 300.            !< maximum allowed dissipation mixing length in boundary layer mass flux scheme
++    real(kind=kind_phys) :: leofac         = 2.0             !< parameter for leonard term
+     integer              :: sfc_rlm        = 0               !< choice of near surface mixing length in boundary layer mass flux scheme
+     integer              :: tc_pbl         = 0               !< control for TC applications in the PBL scheme
+     integer              :: use_lpt        = 0               !< control for using Liquid Potential Temp for TC applications in the GFSPBL scheme
+@@ -4319,9 +4354,9 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+                                do_ugwp_v1, do_ugwp_v1_orog_only,  do_ugwp_v1_w_gsldrag,     &
+                                ugwp_seq_update, var_ric, coef_ric_l, coef_ric_s, hurr_pbl,  &
+                                do_myjsfc, do_myjpbl,                                        &
+-                               hwrf_samfdeep, hwrf_samfshal,progsigma,progomega,betascu,    &
+-                               betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+-                               pdfcld, shcnvcw, redrag,                                     &
++                               hwrf_samfdeep, hwrf_samfshal,progsigma,progomega,coldpool,   &
++                               betascu, betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay,       &
++                               h2o_phys, pdfcld, shcnvcw, redrag,                           &
+                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
+                                shinhong, do_ysu, dspheat, lheatstrg, lseaspray, cnvcld,     &
+                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
+@@ -4336,6 +4371,8 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+                                pert_mp,pert_clds,pert_radtend,                              &
+                           !--- Scale-aware 3D TKE scheme
+                                sa3dtke,                                                     &
++                          !--- Leonard term
++                               leonard,                                                     &
+                           !--- Rayleigh friction
+                                prslrd0, ral_ts,  ldiag_ugwp, do_ugwp, do_tofd,              &
+                           ! --- Ferrier-Aligo
+@@ -4359,7 +4396,8 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+                                diag_flux, diag_log,                                         &
+                           !    vertical diffusion
+                                xkzm_m, xkzm_h, xkzm_s, xkzminv, moninq_fac, dspfac,         &
+-                               bl_upfr, bl_dnfr, rlmx, elmx, sfc_rlm, tc_pbl, use_lpt,      &
++                               bl_upfr, bl_dnfr, rlmx, elmx, leofac,                        &
++                               sfc_rlm, tc_pbl, use_lpt,                                    &
+                           !--- canopy heat storage parameterization
+                                h0facu, h0facs,                                              &
+                           !--- cellular automata
+@@ -5265,7 +5303,10 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     Model%lbb2 = lbb2
+     Model%lbb3 = lbb3
+     Model%dt_decay = dt_decay
+-    
++!
++!  cold pool parameterization
++    Model%coldpool = coldpool
++
+     if (oz_phys .and. oz_phys_2015) then
+        write(*,*) 'Logic error: can only use one ozone physics option (oz_phys or oz_phys_2015), not both. Exiting.'
+        stop
+@@ -5426,6 +5467,8 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     Model%diag_log         = diag_log
+ !--- SA-3D-TKE option
+     Model%sa3dtke          = sa3dtke
++!--- Leonard term
++    Model%leonard          = leonard
+ 
+ !--- vertical diffusion
+     Model%xkzm_m           = xkzm_m
+@@ -5438,6 +5481,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     Model%bl_dnfr          = bl_dnfr
+     Model%rlmx             = rlmx
+     Model%elmx             = elmx
++    Model%leofac           = leofac
+     Model%sfc_rlm          = sfc_rlm
+     Model%tc_pbl           = tc_pbl
+     Model%use_lpt          = use_lpt
+@@ -5586,6 +5630,7 @@ subroutine control_initialize (Model, nlunit, fn_nml, me,         &
+     Model%ntke             = get_physics_tracer_index('sgs_tke', Model)
+     Model%ntsigma          = get_physics_tracer_index('sigmab', Model)
+     Model%ntomega          = get_physics_tracer_index('omegab', Model)
++    Model%ntbuexs          = get_physics_tracer_index('buoyexcs',Model)
+     Model%nqrimef          = get_physics_tracer_index('q_rimef', Model)
+     Model%ntwa             = get_physics_tracer_index('liq_aero', Model)
+     Model%ntia             = get_physics_tracer_index('ice_aero', Model)
+@@ -7284,6 +7329,7 @@ subroutine control_print(Model)
+       print *, ' do_ysu            : ', Model%do_ysu
+       print *, ' dspheat           : ', Model%dspheat
+       print *, ' sa3dtke           : ', Model%sa3dtke
++      print *, ' leonard           : ', Model%leonard
+       print *, ' lheatstrg         : ', Model%lheatstrg
+       print *, ' lseaspray         : ', Model%lseaspray
+       print *, ' cnvcld            : ', Model%cnvcld
+@@ -7382,6 +7428,7 @@ subroutine control_print(Model)
+       print *, ' bl_dnfr           : ', Model%bl_dnfr
+       print *, ' rlmx              : ', Model%rlmx
+       print *, ' elmx              : ', Model%elmx
++      print *, ' leofac            : ', Model%leofac
+       print *, ' sfc_rlm           : ', Model%sfc_rlm
+       print *, ' tc_pbl            : ', Model%tc_pbl
+       print *, ' use_lpt           : ', Model%use_lpt
+@@ -7469,6 +7516,7 @@ subroutine control_print(Model)
+       print *, ' ntke              : ', Model%ntke
+       print *, ' ntsigma           : ', Model%ntsigma
+       print *, ' ntomega           : ', Model%ntomega
++      print *, ' ntbuexs           : ', Model%ntbuexs
+       print *, ' nto               : ', Model%nto
+       print *, ' nto2              : ', Model%nto2
+       print *, ' ntwa              : ', Model%ntwa
+@@ -7750,6 +7798,11 @@ subroutine tbd_create (Tbd, Model)
+     Tbd%dku3d_h    = clear_val
+     allocate (Tbd%dku3d_e (IM,Model%levs))
+     Tbd%dku3d_e    = clear_val
++! Allocate variables for cold pool
++    allocate (Tbd%ucp (IM))
++    Tbd%ucp    = clear_val
++    allocate (Tbd%vcp (IM))
++    Tbd%vcp    = clear_val
+ 
+     if (Model%imfdeepcnv == Model%imfdeepcnv_gf .or. Model%imfdeepcnv == Model%imfdeepcnv_ntiedtke .or. Model%imfdeepcnv == Model%imfdeepcnv_samf .or. Model%imfshalcnv == Model%imfshalcnv_samf .or. Model%imfdeepcnv == Model%imfdeepcnv_c3 .or. Model%imfshalcnv == Model%imfshalcnv_c3) then
+        allocate (Tbd%prevsq(IM, Model%levs))
+diff --git a/ccpp/data/GFS_typedefs.meta b/ccpp/data/GFS_typedefs.meta
+index 28ca1324b..3219ba78a 100644
+--- a/ccpp/data/GFS_typedefs.meta
++++ b/ccpp/data/GFS_typedefs.meta
+@@ -153,13 +153,6 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-[def_1(:,1)]
+-  standard_name = square_of_vertical_shear_due_to_dynamics_at_surface_adjacent_layer
+-  long_name = square of vertical shear calculated from dynamics at lowest model layer
+-  units = m2 s-2
+-  dimensions = (horizontal_dimension)
+-  type = real
+-  kind = kind_phys
+ [def_2]
+   standard_name = square_of_horizontal_shear_due_to_dynamics
+   long_name = square of horizontal shear calculated from dynamics
+@@ -167,25 +160,53 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-[def_2(:,1)]
+-  standard_name = square_of_horizontal_shear_due_to_dynamics_at_surface_adjacent_layer
+-  long_name = square of horizontal shear calculated from dynamics at lowest model layer
++[def_3]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_temperature
++  long_name = horizontal turbulent eddy diffusion for temperature calculated from dynamics
++  units = K s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++[def_4]
++  standard_name = horizontal_turbulent_eddy_diffusion_for_tracers
++  long_name = horizontal turbulent eddy diffusion for tracers calculated from dynamics
++  units = kg kg-1 s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++[leo_u]
++  standard_name = leonard_term_for_u_velocity
++  long_name = leonard term for u velocity calculated from dynamics
+   units = m2 s-2
+-  dimensions = (horizontal_dimension)
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-[def_3]
+-  standard_name = horizontal_transfer_rate_of_tke_due_to_dynamics
+-  long_name = rate of horizontal TKE transfer and pressure correlation calculated from dynamics
+-  units = m2 s-3
++[leo_v]
++  standard_name = leonard_term_for_v_velocity
++  long_name = leonard term for v velocity calculated from dynamics
++  units = m2 s-2
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++[leo_t]
++  standard_name = leonard_term_for_temperature
++  long_name = leonard term for temperature calculated from dynamics
++  units = K m s-1
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+-[def_3(:,1)]
+-  standard_name = horizontal_transfer_rate_tke_due_to_dynamics_at_surface_adjacent_layer
+-  long_name = rate of horizontal TKE transfer and pressure correlation calculated from dynamics at lowest model layer
++[leo_q]
++  standard_name = leonard_term_for_tracers
++  long_name = leonard term for tracers calculated from dynamics
++  units = kg kg-1 m s-1
++  dimensions = (horizontal_dimension,vertical_layer_dimension,number_of_tracers)
++  type = real
++  kind = kind_phys
++[cpadv]
++  standard_name = cold_pool_propagation_term
++  long_name = cold pool propagation term calculated from dynamics
+   units = m2 s-3
+-  dimensions = (horizontal_dimension)
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
+ [vvl]
+@@ -426,6 +447,14 @@
+   type = real
+   kind = kind_phys
+   active = (index_of_updraft_velocity_in_tracer_concentration_array > 0 )
++[qgrs(:,:,index_of_downdraft_buoyancy_excess_in_tracer_concentration_array)]
++  standard_name = downdraft_buoyancy_excess_in_convection
++  long_name = downdraft buoyancy excess in convection
++  units = m2 s-2
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = (index_of_downdraft_buoyancy_excess_in_tracer_concentration_array > 0 )
+ [qgrs(:,:,index_for_smoke_in_tracer_concentration_array)]
+   standard_name = physics_timestep_initial_smoke_tracer_concentration
+   long_name = concentration of smoke at the beginning of the physics timestep
+@@ -717,6 +746,14 @@
+   type = real
+   kind = kind_phys
+   active = ( index_of_updraft_velocity_in_tracer_concentration_array > 0 )
++[gq0(:,:,index_of_downdraft_buoyancy_excess_in_tracer_concentration_array)]
++  standard_name = downdraft_buoyancy_excess_in_convection_updated_by_physics
++  long_name = downdraft buoyancy excess in convection updated by physics
++  units = m2 s-2
++  dimensions = (horizontal_dimension,vertical_layer_dimension)
++  type = real
++  kind = kind_phys
++  active = ( index_of_downdraft_buoyancy_excess_in_tracer_concentration_array > 0 )
+ [gq0(:,:,index_of_turbulent_kinetic_energy_in_tracer_concentration_array)]
+   standard_name = turbulent_kinetic_energy
+   long_name = turbulent kinetic energy
+@@ -5881,6 +5918,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[leonard]
++  standard_name = flag_for_leonard_term
++  long_name = flag for adding leonard term
++  units = flag
++  dimensions = ()
++  type = logical
+ [hurr_pbl]
+   standard_name = flag_hurricane_PBL
+   long_name = flag for hurricane-specific options in PBL scheme
+@@ -6037,6 +6080,12 @@
+   units = flag
+   dimensions = ()
+   type = logical
++[coldpool]
++  standard_name = do_cold_pool_parameterization
++  long_name = do_cold_pool_parameterization
++  units = flag
++  dimensions = ()
++  type = logical
+ [betascu]
+   standard_name = tuning_param_for_shallow_cu
+   long_name = tuning param for shallow cu in case prognostic closure is used
+@@ -6505,6 +6554,13 @@
+   dimensions = ()
+   type = real
+   kind = kind_phys
++[leofac]
++  standard_name = parameter_for_leonard_term
++  long_name = constant parameter for leonard term
++  units = none
++  dimensions = ()
++  type = real
++  kind = kind_phys
+ [sfc_rlm]
+   standard_name = choice_of_near_surface_mixing_length_in_boundary_layer_mass_flux_scheme
+   long_name = choice of near surface mixing length in boundary layer mass flux scheme
+@@ -7089,6 +7145,12 @@
+   units = index
+   dimensions = ()
+   type = integer
++[ntbuexs]
++  standard_name = index_of_downdraft_buoyancy_excess_in_tracer_concentration_array
++  long_name = tracer index of downdraft_buoyancy_excess
++  units = index
++  dimensions = ()
++  type = integer
+ [nqrimef]
+   standard_name = index_of_mass_weighted_rime_factor_in_tracer_concentration_array
+   long_name = tracer index for mass weighted rime factor
+@@ -8472,6 +8534,20 @@
+   dimensions = (horizontal_dimension,vertical_layer_dimension)
+   type = real
+   kind = kind_phys
++[ucp]
++  standard_name = cold_pool_propagation_speed_in_east_west_direction
++  long_name = cold pool propagation speed in east west direction
++  units = m s-1
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
++[vcp]
++  standard_name = cold_pool_propagation_speed_in_north_south_direction
++  long_name = cold pool propagation speed in north south direction
++  units = m s-1
++  dimensions = (horizontal_dimension)
++  type = real
++  kind = kind_phys
+ [ud_mf]
+   standard_name = instantaneous_atmosphere_updraft_convective_mass_flux
+   long_name = (updraft mass flux) * delt
+diff --git a/ccpp/physics b/ccpp/physics
+index d9b70feba..2a95266be 160000
+--- a/ccpp/physics
++++ b/ccpp/physics
+@@ -1 +1 @@
+-Subproject commit d9b70feba915022424b35aa0ab33535b9b8c6571
++Subproject commit 2a95266bea0a2448970b3381af2e815f5a54db1c
+diff --git a/fv3/atmos_cubed_sphere b/fv3/atmos_cubed_sphere
+index 71ff473b9..e3af577ce 160000
+--- a/fv3/atmos_cubed_sphere
++++ b/fv3/atmos_cubed_sphere
+@@ -1 +1 @@
+-Subproject commit 71ff473b9f4254ee4e436ff4df41be09c6e78dc6
++Subproject commit e3af577ce70dc4335a24548fe0a15eb0f667778d
