@@ -1,73 +1,89 @@
-# Posting tracks 0a, 0b, 0c
+# Upstream posting: state and plan
 
-Posted: item 0, the SAMF issue, ufs-community/ccpp-physics#401 (20 October 2026; `numbers.json`). `post_bundle.py [numbers.json]` renders `bodies/` from `../pr_round1_descriptions.md` in
-each repository's template order, unwrapped for GitHub. It fills each `#TBD` from `numbers.json` and prints, per
-item, what is still unfilled and the `gh` command. Tracks 1c and 1d, and the GFDL issue (§2, which goes with the
-FV3 PR), are not in the bundle.
+## Status (29 October 2026)
 
-| # | Item | Repository | Head (fork `pera-noaa`) → base | Body |
-|---|---|---|---|---|
-| 0 | SAMF issue (0a), **posted #401** | ufs-community/ccpp-physics | — | `00_SAMF_ISSUE.md` |
-| 1 | WM issue (0a) | ufs-community/ufs-weather-model | — | `01_WM_ISSUE.md` |
-| 2 | SAMF + PBL (0b) | ufs-community/ccpp-physics | `pr1-samf` → `ufs/dev` | `02_PR_SAMF.md` |
-| 3 | Noah-MP (0b) | ufs-community/ccpp-physics | `pr1-noahmp` → `ufs/dev` | `03_PR_NM.md` |
-| 4 | GFDL MP v3 (0b) | ufs-community/ccpp-physics | `pr1-gfdlmp` → `ufs/dev` | `04_PR_GMP.md` |
-| 5 | Thompson (0c) | ufs-community/ccpp-physics | `pr1-thompson` → `ufs/dev` | `05_PR_TH.md` |
-| 6 | TEMPO driver (0c) | ufs-community/ccpp-physics | `pr1-tempo` → `ufs/dev` | `06_PR_TP.md` |
-| 7 | ufsatm 0b | NOAA-EMC/ufsatm | `pr1-0b` → `develop` | `07_ATM_0b.md` |
-| 8 | ufsatm 0c | NOAA-EMC/ufsatm | `pr1-0c` → `develop` | `08_ATM_0c.md` |
-| 9 | WM 0b | ufs-community/ufs-weather-model | `pr1-0b` → `develop` | `09_WM_0b.md` |
-| 10 | WM 0c | ufs-community/ufs-weather-model | `pr1-0c` → `develop` | `10_WM_0c.md` |
+- **Packaging.** rhaesung (ccpp-physics code manager) asked for one ufsatm/WM pair per group
+  ([#405 comment 6500346441](https://github.com/ufs-community/ccpp-physics/pull/405#issuecomment-6500346441)); agreed
+  ([reply 6501639298](https://github.com/ufs-community/ccpp-physics/pull/405#issuecomment-6501639298)). The ccpp-physics
+  PRs stay separate so their reviews stand. Tracks 0b/0c are replaced by these packages.
+- **Package 1, SAMF / PBL** (#405 ✓, #408 ✓, #414 ✓): pair NOAA-EMC/ufsatm#1156 + ufs-community/ufs-weather-model#3408
+  (draft). Pushed: #405 + #414 only. RT with #408 added done; push and body update **on hold** (user, 29 Oct).
+- **Package 2, microphysics** (#406 ✓, #407, #413): waiting for reviews of #407 and #413. No pair yet.
+- **Package 3, Noah-MP** (#409, #410): waiting for reviews. No pair yet.
+- **Held:** `reply_408_returns.md` — wait for Lisa's answer to the early-return question
+  ([#408 comment 6485108259](https://github.com/ufs-community/ccpp-physics/pull/408#issuecomment-6485108259)); don't ping.
+  If she wants the deletion in #408, package 1 reruns its RT.
+- **Owed:** NCAR/TEMPO report (#407 says it will follow); draft `tempo_attr/ncar_tempo_issue.md`, to split into the
+  semi-Lagrangian sign fix (issue + one-line PR) and fixes 2–4.
+- **Build side track:** FMS#1937 answered (rem1776, 29 Oct: add the flag to `ReleaseUFS`/`DebugUFS` as needed).
+  JCSDA/spack-packages#103 merged; cherry-picks for `spack-stack-dev` and spack/spack-packages prepared locally
+  (`fpe/pr_fms/sp/`), not pushed. JCSDA/spack-stack#2144 is with EPIC.
+- Approved (✓) as of 29 Oct: #405, #406, #408, #414. Roadmap and verification plan: [`../../README.md`](../../README.md).
 
-`numbers.json` keys: `SAMF_ISSUE`, `WM_ISSUE`, `PR_SAMF`, `PR_NM`, `PR_GMP`, `PR_TH`, `PR_TP`, `ATM_0b`,
-`ATM_0c`, `WM_0b`, `WM_0c` (numbers); `RT_0b`, `RT_0c` (the RT result line, replacing `[RT 0b]`/`[RT 0c]`). The WM PR
-RT boxes stay unticked, and the PR is created as a draft, until its `RT_*` key is set.
+## Package 1: what is where
 
-## Before posting
+| Repo | Branch (fork `pera-noaa`) | On GitHub | Held on Hercules (`$U/pr1/series`, `$U/pr1/rt_sxs`) |
+|---|---|---|---|
+| ccpp-physics | `pr1-sa1x` | bbb4749f (#405 + #414) | f2a09680 (+ merge of #408 a3a39c1b) |
+| ufsatm | `pr1-sx` | 046f4713 | 0b5097e6 |
+| ufs-weather-model | `pr1-sx` | 6a240b4b (RT log, #405 + #414) | 362fc3e5, 47dbddfb (RT log with #408) |
 
-State (20 October 2026): steps 1 and 3 done. Branches pushed to `pera-noaa/ccpp-physics` (the five PR branches,
-`pr1-0b` c4314069, `pr1-0c` 3da54198), `pera-noaa/ufsatm` (`pr1-0b` 68264fb7, `pr1-0c` 9c7f8371) and
-`pera-noaa/ufs-weather-model` (`pr1-0b` 165b3d13, `pr1-0c` fa4aafe2) by `push_forks.sh`. Step 2: 0c done (10187059: 54 compiles
-pass, 59 identical, 150 changed, 25 restart children not started, none fails to run); its log and
-`test_changes.list` are committed on WM `pr1-0c` (98844b7a) and pushed; `RT_0c` set. 0b's first run (10187047) lost 3
-tests to I/O errors copying EPIC's input data (`rt_logs_t0b_run1/`); the rerun (10189670) lost 6 the same way
-(`rt_logs_t0b_run2/`; the files read cleanly afterwards on both service nodes); third run 10190986 on `dtn-3`. Fifth run 10200567 (22 Oct, driver `--mem=64G` with `unset SLURM_MEM_*`): 54 compiles pass, 118 identical, 101 changed, 15 restart/IAU children not started, none lost (`rt_logs_t0b_run5/`); its log and `test_changes.list` committed on WM `pr1-0b` as a1c632d5 and fetched into `series`. **Push blocked (22 Oct):** upstream WM `develop` moved f1d68949 → 5651397d (15:08Z; CDEPS sync, UFSATM bump to ufsatm 54cebd36 = diagnostic-tendency fix #3383, PR template; `BL_DATE` 20261008 → 20261016; 4 tests change: `control_diag_debug`, `rap_diag_debug`, intel and gnu). ufsatm `develop` moved aa0ba811 → 54cebd36; ccpp-physics `ufs/dev` unchanged (d9b70feb). Both WM track branches (0b, and 0c already pushed) and both ufsatm branches need rebasing, and both track RTs rerunning against 20261016. Runs 1–4's `stmp` dirs deleted.
-In all runs every test that started either matched or changed answers as expected.
+All three held tips fast-forward the GitHub ones; local copies are in `fpe/pr_fms/cp` and the scratch clones, bundles in
+`$U/pr1/sxs_bundles/`. Bodies for the update: `bodies_v2/14_ATM_sxs.md`, `bodies_v2/15_WM_sxs.md`; new titles
+"Update ccpp-physics for SAMF/PBL conservation fixes (#405, #408, #414)" and "SAMF and PBL conservation fixes".
 
-**23 Oct: rebased onto the new heads.** #390 merged (ccpp-physics `ufs/dev` 9b65688c), ufsatm `develop` c9c98451 (#1138), WM `develop` still 5651397d.
-- **ccpp-physics** (`rebase9b.sh`): the five PR branches cherry-picked onto 9b65688c; old heads kept as `pr1-*-d9b70feb`.
-  - noahmp c1cad62a, gfdlmp 69a3a82d, thompson bbe56251, tempo ea6ff1c3: patch-ids equal.
-  - samf 3e5a4f09: from `prep-samf-on390`. Its CA-trigger commit was re-resolved around #390's `progomega` guards and now only adds lines.
-- **Track trees** `rt_u0b`, `rt_u0c` (`track_setup2.sh`; all WM submodules at develop's pins; series `pr1-0b`/`pr1-0c` replaced, old kept as `pr1-0*-old22oct`):
-  - physics 33d33b30 / 9e8a5142;
-  - ufsatm 2d8b5aa / e02f1ad;
-  - WM bc69c789 / 2b1ec42a.
-- **RTs** 10210659 (0b), 10210693 (0c), vs BL_DATE 20261016. `develop-20261022` baselines already exist on Hercules, so WM #3355 will likely move BL_DATE.
-- **RT results** (both rc 0; logs and `test_changes.list` committed on WM `pr1-0b` f66de571 and `pr1-0c` 0ededd27, copied to series; `RT_0b`/`RT_0c` set):
-  - 0b: 116 identical, 101 changed, 15 not started.
-  - 0c: 57 identical, 150 changed, 25 not started.
-  - Same test-by-test outcomes as 22 Oct; develop dropped `datm_cdeps_lnd_era5` and its restart test.
-- **Not yet pushed to the forks** (`push_forks.sh` still has the d9b70feb/aa0ba811/f1d68949 bases).
+| RT (Hercules, Intel + GNU, WM develop 783f524a, baselines 20261026) | job | compiles | identical | changed | not started | failed |
+|---|---|---|---|---|---|---|
+| #405 alone (`rt_sa1`) | 10314680 | 54/54 | 122 | 94 | 15 | 1 (`hafs_global_multiple_4nests_atm`, #401) |
+| #405 + #414 (`rt_sx`, posted log) | 10317863 | 54/54 | 122 | 95 | 15 | 0 |
+| #405 + #408 + #414 (`rt_sxs`, held) | 10322653 | 54/54 | 122 | 95 (same tests) | 15 | 0 |
 
-1. **Branches** (Hercules, `track_setup.sh 0b`, then `0c`): ccpp-physics `pr1-0b`/`pr1-0c` (the track's PR branches
-   merged on `ufs/dev`), ufsatm and WM `pr1-0b`/`pr1-0c` (bumps; `.gitmodules` at the fork branches).
-   Gates: gitlinks = HEADs, FV3 and noahmp at develop's pins.
-2. **Full RT per track** (`rt_t0b.sbatch`, `rt_t0c.sbatch`, about 7 h each, run together on two nodes): commit
-   `tests/logs/RegressionTests_hercules.log` and `test_changes.list` on each WM branch; set `RT_0b`/`RT_0c`.
-3. **Forks**: `pera-noaa/ccpp-physics`, `ufsatm`, `ufs-weather-model` (none exist yet; `noahmp` only for 1d's `iter` form). Push the branches
-   in the table, plus ccpp-physics `pr1-0b`/`pr1-0c`, which the ufsatm `.gitmodules` points at.
+`rt_sxs` was checked to contain #408: `control_p8` 24-h output differs from `rt_sx` (T up to 5.2 K, q up to 4.6 g/kg).
+The 4-nest HAFS crash is the #401 instability (5 `consv_te` members: develop 1 crash, #405 2, either + floor 0;
+[#401 comment 6488726665](https://github.com/ufs-community/ccpp-physics/issues/401#issuecomment-6488726665)).
 
-## Posting
+## Items
 
-Post in the table's order and add each number to `numbers.json` as you go: the WM issue once the WM PRs it names can
-follow, then lowest repository first, so every body links what already exists. Then rerun `post_bundle.py numbers.json` (no item should list
-anything unfilled) and update the bodies that were posted with forward `#TBD`s (`gh issue edit` / `gh pr edit
---body-file`). WM PRs leave draft once their RT is committed.
+| # | Item | Repository | Head (fork `pera-noaa`) → base | Text | State |
+|---|---|---|---|---|---|
+| 0 | SAMF instability issue, **#401** | ufs-community/ccpp-physics | — | `bodies/00_SAMF_ISSUE.md` | open |
+| — | MLM issue, **#404** | ufs-community/ccpp-physics | — | `issue_390_mlm.md` | open, no reply |
+| 1 | WM staged-plan issue, **#3404** | ufs-community/ufs-weather-model | — | `issue_3404_body.md` | open |
+| — | FPE issue, **#3406** | ufs-community/ufs-weather-model | — | `fpe/wm_issue.md` | open |
+| 11 | SA1, **#405** | ufs-community/ccpp-physics | `pr1-sa1` → `ufs/dev` | `gh pr view 405` | approved; package 1 |
+| 2 | SAMF + PBL, **#408** | ufs-community/ccpp-physics | `pr1-samf` → `ufs/dev` | `posted/PR_SAMF_408.md` | approved; package 1 |
+| 16 | `xlamue` floor, **#414** | ufs-community/ccpp-physics | `pr1-xlamue` → `ufs/dev` | `posted/PR_XLAMUE_414.md` | approved; package 1 |
+| 14 | ufsatm package 1, **NOAA-EMC/ufsatm#1156** | NOAA-EMC/ufsatm | `pr1-sx` → `develop` | `posted/ATM_1156.md` | update held |
+| 15 | WM package 1, **ufs-community/ufs-weather-model#3408** | ufs-community/ufs-weather-model | `pr1-sx` → `develop` | `posted/WM_3408.md` | draft; update held |
+| 5 | Thompson, **#406** | ufs-community/ccpp-physics | `pr1-thompson` → `ufs/dev` | `posted/PR_TH.md` | approved; package 2 |
+| 6 | TEMPO driver, **#407** | ufs-community/ccpp-physics | `pr1-tempo` → `ufs/dev` | `posted/PR_TP_407.md` | review; package 2 |
+| 4 | GFDL MP v3, **#413** | ufs-community/ccpp-physics | `pr1-gfdlmp` → `ufs/dev` | `posted/PR_GMP_413.md` | review; package 2 |
+| 3a | Noah-MP 1, **#409** | ufs-community/ccpp-physics | `pr1-noahmp-1` → `ufs/dev` | `posted/PR_NM1_409.md` | review; package 3 |
+| 3b | Noah-MP 2 (on 3a), **#410** | ufs-community/ccpp-physics | `pr1-noahmp-2` → `ufs/dev` | `posted/PR_NM2_410.md` | review; package 3 |
+| 12 | Noah-MP v5 snow heat, **NCAR/noahmp#274** | NCAR/noahmp | `snow-layer-heat` → `develop` | `posted/PR_NCAR_noahmp_274.md` | review |
+| 13 | GFDL `sedi_heat`, issue **#430** + PR **#431** | NOAA-GFDL/GFDL_atmos_cubed_sphere | `sedi-heat-liquid` → `main` | `gfdl_sedi/issue_post.md`, `gfdl_sedi/pr_post.md` | review |
+| 7–10 | ufsatm/WM tracks 0b, 0c | — | — | `_superseded/bodies_v2/` | replaced by packages |
 
-Phase 0 holds only fixes with one definite answer: NM2 (Noah-MP once per time step) is in 1d, and TH2, TH6, TH7 in
-1e (`../pr_round1.md`, *Tracks*), so 0b has no noahmp PR.
+## Procedure
 
-Upstream overlaps: SAMF + PBL with ccpp-physics#390, TEMPO with #389 (both open). The bodies say so; rebases onto
-both are ready (`prep-samf-on390`, `prep-tempo-on389`).
+- Add each new number to `numbers.json`.
+- Before posting a body, `grep -n 'TBD\|\[RT' <file>` must print nothing.
+- In ufsatm and WM bodies, qualify every ccpp-physics reference (`ufs-community/ccpp-physics#N`): a bare `#N` links to
+  the host repository.
+- WM PRs follow the live template (`.github/pull_request_template.md`); `tools/wm_template_fix.py` rebuilds the Commit
+  Queue block. Commit the Hercules RT log and `test_changes.list` on the WM branch, never the local `rt.sh` edit.
+- A package's physics branch is a `--no-ff` merge of its PR branches on `ufs/dev`, gated on its diff equalling the sum
+  of the PRs' diffs. Later changes go on top; never force-push a posted branch.
+- Hercules has no GitHub push credentials: move commits as `git bundle` (base64 through `broker run`) and push from
+  the Mac.
+- After posting, copy the text as posted to `posted/` (or `reply_*.posted.md`).
 
-**24 Oct: cleaned bodies** in `bodies_v2/` (plain-language tables, staged tests and dependencies, NM 7 commits, WM 0b 14 fixes) supersede `bodies/` for items 02–10; placeholders listed in `bodies_v2/README.md`. 0b RT rerun with the 7-commit Noah-MP: `track_setup2.sh` with `RUN=v` → `rt_v0b`.
+## Files
+
+- `bodies_v2/`: unposted bodies only. `posted/`: texts as posted. `bodies/` and `post_bundle.py`: the older renderer.
+- `reply_*.posted.md`: replies as posted; `reply_*.md`: drafts or earlier replies.
+- `_superseded/`: older drafts and copies, listed in `MANIFEST.md`. `tools/`: local copies of the Hercules scripts.
+- `gfdl_sedi/`, `gfdl_wrap/`, `ncar_noahmp/`, `fpe/`, `thdz/`, `tempo_attr/`, `samf_returns/`: per-item drafts, tests
+  and harnesses. `fpe/pr_fms/{cp,sp,spack}/` are third-party git clones, not tracked.
+
+History, the dated log and earlier plans: [`POSTING.history.md`](POSTING.history.md).

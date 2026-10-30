@@ -1,8 +1,8 @@
 # Proposal: closing the total-water budget in UFS physics
 
 *Draft for the CCPP physics maintainers, the SAMF, Thompson and Noah-MP scheme owners, and the FV3 `dev/emc`
-maintainers. Ash Pera (NOAA GML / CIRES) with Lori Bruhwiler, 15 October 2026. Not posted as a whole; the first upstream post is
-ufs-community/ccpp-physics#401 (the SAMF overshoot). The investigation in the order it happened is in
+maintainers. Ash Pera (NOAA GML / CIRES) with Lori Bruhwiler, 15 October 2026. Not posted as a whole; upstream state:
+`post/POSTING.md`. The investigation in the order it happened is in
 `water_closure_proposal.history.md`. Submission is by owner, in rounds: `pr_round1.md` (TH1–TH7, NM1–NM6, NM8, FV1,
 09b, re-cut on current heads; SA1 held with #401) and `round2_issues.md` (TH8, NM7, NM9, NM10/17r, NM11).*
 

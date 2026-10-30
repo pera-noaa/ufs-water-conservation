@@ -12,15 +12,8 @@
 - **Open:**
   - Hercules cleanup: canopy `runs/` (288 GB) deleted 18 Oct; the regression baselines (564 GB) and canopy build trees
     (4.8 GB) are approved for deletion, pending a run by Ash.
-  - Upstream submission: round 1 = 38 commits (the 37 fixes) in five tracks, each its own WM PR
-    (`../proposal/pr_round1.md`, *Tracks*). Phase 0, fixes with one definite answer: 0a the SAMF instability issue,
-    posted as ufs-community/ccpp-physics#401; 0b global conservation (18: SAMF + PBL, Noah-MP without NM2, GFDL MP v3,
-    SAMF32 build); 0c microphysics (5: Thompson TH1, TH3, TH4, TH5, TEMPO driver). Phase 1: 1c dycore (6: FV3) and 1d
-    surface iteration, sea ice, NSST (6: NM2 + noahmp, 4 sea-ice/NSST; 0b + 1d crashes `hafs_global_1nest_atm` in 3 of
-    20 members) after the SAMF issue's answer; 1e Thompson TH2, TH6, TH7 (a second reasonable form each). The 37
-    together: answers change only, reproducibility 123/123 bitwise, 188 of 188 changed tests screened. SA1 held with
-    #401. Round-2 issues drafted (`../proposal/round2_issues.md`). Working notes public at
-    github.com/pera-noaa/ufs-water-conservation (`../publish/`); bundle for the phase-0 posts in `../proposal/post/`.
+  - Upstream submission: round 1 plan in `../proposal/pr_round1.md`; what is posted and pending, by package, in
+    `../proposal/post/POSTING.md`. Working notes public at github.com/pera-noaa/ufs-water-conservation (`../publish/`).
   - Hercules Lustre instability, to track down: `rt.sh` input staging fails with `cp: ... Input/output error` reading
     EPIC's RT input data (`/work2/noaa/epic/hercules/UFS-WM_RT/NEMSfv3gfs/input-data-20260617/`). Details and evidence:
     `../proposal/pr_round1.md`, *Known constraints*, "Lustre I/O errors".

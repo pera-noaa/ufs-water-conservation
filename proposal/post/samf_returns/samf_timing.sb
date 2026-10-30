@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -N 1 --exclusive -t 00:45:00 -J samf_timing
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/samf_timing/samf_timing.%j.log
+# SAMF deep early returns: per-column cost with and without them, UFS Intel release flags, one pinned core
+set -eu
+cd /work2/noaa/co2/ash/ufs-chem-v1/samf_timing
+module purge; module load intel-oneapi-compilers/2023.1.0
+FC="ifort -O2 -debug minimal -qoverride-limits -fp-model consistent -march=core-avx2 -fpp -fno-alias -auto -ftz -align array64byte -qno-opt-dynamic-align -diag-disable=10448"
+build() { # build <dir> <srcdeps> <samfdeepcnv.f> <driver>
+  rm -rf $1; mkdir $1; ( cd $1; S=../$2
+    $FC -c $S/machine.F; for f in mo_conv_kind.F90 physcons.F90 funcphys.f90 progsigma_calc.f90 progomega_calc.f90; do $FC -c $S/$f; done
+    $FC -c $S/samfaerosols.F; $FC -c ../$3 -o samfdeepcnv.o; $FC ../$4 *.o -o drv ) }
+build orig408 src408 src408/samfdeepcnv.f tdrvh408.f90
+build noret408 src408 var/noret408.f tdrvh408.f90
+build orig403 src403 src403/samfdeepcnv.f tdrvh.f90
+build noret403 src403 var/noret.f tdrvh.f90
+grep -c 'if(totflg) return' src408/samfdeepcnv.f var/noret408.f src403/samfdeepcnv.f var/noret.f || true
+F408=pocamgmyme; F403=cppocamgmyme
+echo "== which columns convect (orig, block of 6)"
+for v in 408 403; do f=F$v; ./orig$v/drv x ${!f%%*} 6 kc_none_$v.txt 1 >/dev/null; ./orig$v/drv ${!f} 6 kc_all_$v.txt 1 >/dev/null
+  echo "$v none: $(grep '^sc' kc_none_$v.txt | awk '{printf "%s ", $2}')  all: $(grep '^sc' kc_all_$v.txt | awk '{printf "%s ", $2}')"; done
+echo "== timing: variant flags mode us_per_column (7 interleaved rounds)"
+for r in 1 2 3 4 5 6 7; do
+  for v in 408 403; do f=F$v
+    for fl in x ${!f}; do
+      for m in c1 c2 c3 c4 c5 c6 b6; do
+        for k in orig noret; do
+          if [ $m = b6 ]; then a="6 /dev/null 20000"; else a="1 /dev/null 20000 ${m#c}"; fi
+          printf "%s%s %s %s " $k $v $fl $m; taskset -c 4 ./$k$v/drv $fl $a | awk '{print $2}'
+        done; done; done; done; done > timing_raw.txt
+/work2/noaa/co2/miniconda3/envs/tm5/bin/python -I - <<'PY'
+import collections
+d=collections.defaultdict(list)
+for l in open('timing_raw.txt'):
+    v,fl,m,t=l.split(); d[(v,fl,m)].append(float(t))
+for (v,fl,m),ts in sorted(d.items()):
+    ts.sort(); print(f"{v:9s} {fl:13s} {m:3s} min {ts[0]:9.3f} med {ts[len(ts)//2]:9.3f}")
+PY
+echo DONE

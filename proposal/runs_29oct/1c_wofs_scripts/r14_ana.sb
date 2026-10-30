@@ -1,0 +1,8 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r14_ana
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/logs/ana.%j.log
+W=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c; PY=/work2/noaa/co2/miniconda3/envs/tm5/bin/python
+for t in regional_wofs_tempo regional_wofs; do
+  $PY -I $W/scripts/r14_analyze.py $W/runs $t > $W/logs/ana_$t.txt 2>&1; echo "$t rc=$?"
+done
+echo ANA_DONE

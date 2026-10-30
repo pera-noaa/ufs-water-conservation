@@ -1,0 +1,30 @@
+== progsigma = .true., 0–18 h: members consv_te = 0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 1
+  global:
+    develop       convective 1.6378 ± 0.0001 mm/day (members 1.6371–1.6385), total 2.3062, convective share 71.0%
+    xlamue floor  convective 1.6446 ± 0.0001 mm/day (members 1.6441–1.6452), total 2.3099, convective share 71.2%
+      minus develop: +0.0068 mm/day (+0.41%), t = +42.7; area with |t| > 2.1: 23.0% (5 % by chance); rms of the mean difference 0.142 mm/day
+    2a95266       convective 1.6477 ± 0.0001 mm/day (members 1.6470–1.6482), total 2.3124, convective share 71.3%
+      minus develop: +0.0099 mm/day (+0.60%), t = +62.5; area with |t| > 2.1: 56.4% (5 % by chance); rms of the mean difference 0.194 mm/day
+    develop half vs half (null): area with |t| > 2.1 6.4%, rms mean difference 0.054 mm/day
+  nest (0.25°, 90° × 80° around Laura):
+    develop       convective 2.4058 ± 0.0002 mm/day (members 2.4048–2.4066), total 3.7894, convective share 63.5%
+    xlamue floor  convective 2.4241 ± 0.0002 mm/day (members 2.4228–2.4251), total 3.7984, convective share 63.8%
+      minus develop: +0.0183 mm/day (+0.76%), t = +61.5; area with |t| > 2.1: 35.1% (5 % by chance); rms of the mean difference 0.231 mm/day
+    2a95266       convective 2.4263 ± 0.0003 mm/day (members 2.4243–2.4277), total 3.8001, convective share 63.8%
+      minus develop: +0.0206 mm/day (+0.85%), t = +57.2; area with |t| > 2.1: 58.7% (5 % by chance); rms of the mean difference 0.275 mm/day
+    develop half vs half (null): area with |t| > 2.1 6.7%, rms mean difference 0.072 mm/day
+== progsigma = .false. (RT), 0–18 h: members consv_te = 0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993, 0.992, 0.991, 1
+  global:
+    develop       convective 1.9239 ± 0.0002 mm/day (members 1.9228–1.9249), total 2.5512, convective share 75.4%
+    xlamue floor  convective 1.9373 ± 0.0003 mm/day (members 1.9359–1.9392), total 2.5455, convective share 76.1%
+      minus develop: +0.0134 mm/day (+0.70%), t = +40.2; area with |t| > 2.1: 29.9% (5 % by chance); rms of the mean difference 0.344 mm/day
+    2a95266       convective 1.9417 ± 0.0002 mm/day (members 1.9411–1.9422), total 2.5491, convective share 76.2%
+      minus develop: +0.0178 mm/day (+0.92%), t = +68.5; area with |t| > 2.1: 57.4% (5 % by chance); rms of the mean difference 0.386 mm/day
+    develop half vs half (null): area with |t| > 2.1 6.3%, rms mean difference 0.092 mm/day
+  nest (0.25°, 90° × 80° around Laura):
+    develop       convective 3.2272 ± 0.0014 mm/day (members 3.2211–3.2363), total 4.4351, convective share 72.8%
+    xlamue floor  convective 3.3315 ± 0.0004 mm/day (members 3.3294–3.3332), total 4.4267, convective share 75.3%
+      minus develop: +0.1043 mm/day (+3.23%), t = +74.0; area with |t| > 2.1: 43.4% (5 % by chance); rms of the mean difference 1.153 mm/day
+    2a95266       convective 3.3353 ± 0.0004 mm/day (members 3.3337–3.3372), total 4.4287, convective share 75.3%
+      minus develop: +0.1081 mm/day (+3.35%), t = +76.9; area with |t| > 2.1: 61.4% (5 % by chance); rms of the mean difference 1.173 mm/day
+    develop half vs half (null): area with |t| > 2.1 6.6%, rms mean difference 0.207 mm/day

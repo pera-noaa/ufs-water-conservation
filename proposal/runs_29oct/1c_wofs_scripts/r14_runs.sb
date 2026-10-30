@@ -1,0 +1,54 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -q batch -N 12 --exclusive -t 01:30:00
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/logs/runs_%x.%j.log
+# usage: sbatch -J r14_<short> --export=ALL,TEST=<regional_wofs_tempo|regional_wofs> r14_runs.sb ; 17 runs, 6 at a time, 2 nodes each
+set -u
+W=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c; T=$W/tmpl/$TEST; RD=$W/runs/$TEST
+[ -x $W/exe/r14.exe ] || { echo "ABORT: no exe"; exit 1; }
+mkdir -p $RD
+# label A K B
+SPEC="c0 0 0 0
+c0r 0 0 0
+a+1 1 0 0
+fv2 0 0 1
+n+1 0 1 0
+n-1 0 -1 0
+a-1 -1 0 0
+a+2 2 0 0
+a-2 -2 0 0
+n+2 0 2 0
+n-2 0 -2 0
+n+3 0 3 0
+n-3 0 -3 0
+n+4 0 4 0
+n-4 0 -4 0
+n+5 0 5 0
+n-5 0 -5 0"
+while read l a k b; do
+  d=$RD/$l; [ -e $d ] && { echo "ABORT: $d exists"; exit 1; }
+  mkdir $d
+  for f in $(ls $T); do
+    case $f in input.nml|model_configure|ufs.configure|diag_table|field_table|job_card|fd_ufs.yaml|itag|module-setup.sh) cp -p $T/$f $d/$f;;
+      *) cp -al $T/$f $d/$f;;
+    esac
+  done
+  ln -s $W/exe/r14.exe $d/fv3.exe
+  echo "$a $k $b" > $d/r14_switch
+done <<< "$SPEC"
+cd $RD/c0
+set +x; MACHINE_ID=hercules; source ./module-setup.sh; module use $PWD/modulefiles; module load modules.fv3
+ulimit -s unlimited
+export OMP_STACKSIZE=512M KMP_AFFINITY=scatter OMP_NUM_THREADS=1 I_MPI_EXTRA_FILESYSTEM=ON FI_MLX_INJECT_LIMIT=0 PMI2=""
+export R14_NEND=600 R14_LAST0=500
+i=0
+while read l a k b; do
+  ( cd $RD/$l && date -Is > t0 && R14_A=$a R14_K=$k R14_B=$b \
+    srun --exact --nodes=2 --ntasks=160 --ntasks-per-node=80 --label --distribution=block:block ./fv3.exe > out 2> err; echo "rc=$?" > rc; date -Is > t1 ) &
+  i=$((i+1)); sleep 2
+  if [ $((i % 6)) = 0 ]; then wait; fi
+done <<< "$SPEC"
+wait
+while read l a k b; do
+  echo "$l $(cat $RD/$l/rc) R14:$(grep -m1 'R14 a k b' $RD/$l/out | sed 's/^[0-9]*: //') phyf006=$(ls $RD/$l/phyf006.nc 2>/dev/null | wc -l) meters=$(ls $RD/$l/r14_meter.*.bin 2>/dev/null | wc -l)"
+done <<< "$SPEC"
+echo RUNS_DONE

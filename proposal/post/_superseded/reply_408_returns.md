@@ -1,0 +1,1 @@
+@lisa-bengtsson #408 is now in the SAMF/PBL package with #405 and #414 (ufs-community/ufs-weather-model#3408), and its RT is running. To keep that package as it is, I'd do the early-return change as its own PR after #403, so it covers coldpool too. Does that work for you, or would you rather have it here?

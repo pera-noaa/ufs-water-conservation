@@ -1,6 +1,6 @@
 # Conservation follow-on: patch manifest
 
-*Companion to `conservation_proposal.md`. Draft, 18 October 2026. Posted upstream so far: ufs-community/ccpp-physics#401 (the SAMF overshoot issue). Lists every diff of the
+*Companion to `conservation_proposal.md`. Draft, 18 October 2026. Upstream state: `post/POSTING.md`. Lists every diff of the
 final tree `full14` in apply order, then the diffs that are not in it, the instrumentation, and the re-anchoring a
 replay or a PR split meets. Local paths are relative to `/Users/pera/Documents/ash-code/ufs-chem-v1/conservation/`.*
 

@@ -1,0 +1,207 @@
+--- /private/tmp/claude-33310/-Users-pera-Documents-ash-code-tm5-zoom/ee96825e-0c8b-4a26-8edc-7fcc1383da1f/scratchpad/flags/src408/samfdeepcnv.f	2026-10-28 14:41:58
++++ /private/tmp/claude-33310/-Users-pera-Documents-ash-code-tm5-zoom/ee96825e-0c8b-4a26-8edc-7fcc1383da1f/scratchpad/flags/var/proto408.f	2026-10-28 14:42:50
+@@ -301,8 +301,8 @@
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
+ !
+       logical do_aerosols, totflg, cnvflg(im), asqecflg(im), flg(im)
+-!  columns the CA trigger can turn on again
+-      logical caon(im)
++!  columns the rest of the routine still updates (CA trigger, progomega memory)
++      logical pending(im)
+ !
+ !    asqecflg: flag for the quasi-equilibrium assumption of Arakawa-Schubert
+ !
+@@ -403,9 +403,11 @@
+       wet_dep = 0.0_conv_wp
+ !
+       do i=1,im
+-        caon(i) = .false.
+-        if(do_ca .and. ca_trigger) caon(i) =
++        pending(i) = .false.
++        if(do_ca .and. ca_trigger) pending(i) =
+      &    real(ca_deep(i), kind=conv_wp) > real(nthresh, kind=conv_wp)
++        if(progomega .and. present(omegain)) pending(i) = pending(i)
++     &    .or. any(omegain(i,:) /= 0.0_kind_phys)
+          cnvflg(i) = .true.
+          shallow_veto(i) = .false.
+         if(do_mynnedmf) then
+@@ -840,15 +842,7 @@
+         if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !> - Determine the vertical pressure velocity at the LFC. After Han and Pan (2011) \cite han_and_pan_2011 , determine the maximum pressure thickness between a parcel's starting level and the LFC. If a parcel doesn't reach the LFC within the critical thickness, then the convective inhibition is deemed too great for convection to be triggered, and the subroutine returns to the calling routine without modifying the state variables.
+       do i=1,im
+@@ -905,15 +899,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !
+ ! re-define kb & kbcon
+@@ -964,15 +950,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+       do i=1,im
+         if(cnvflg(i)) then
+@@ -1016,15 +994,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ 
+ ! turbulent entrainment rate assumed to be proportional
+@@ -1443,15 +1413,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i = 1, im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  calculate convective inhibition
+@@ -1531,15 +1493,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-!  no early return while the CA trigger can turn a column on
+-            totflg = totflg .and. (.not. cnvflg(i))
+-     &               .and. (.not. caon(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  determine first guess cloud top as the level of zero buoyancy
+@@ -1582,13 +1536,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ 
+ c
+@@ -1779,13 +1727,7 @@
+         if(cnvflg(i) .and. aa1(i) <= 0.0_conv_wp) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  Estimate the convective overshooting as the level
+@@ -2359,11 +2301,7 @@
+       enddo
+ !!
+ 
+-      totflg = .true.
+-      do i=1,im
+-         totflg = totflg .and. (.not. cnvflg(i))
+-      enddo
+-      if(totflg) return
++      if (.not. any(cnvflg .or. pending)) go to 900
+       
+ !!
+ c
+@@ -3262,11 +3200,7 @@
+ !!
+ 
+ !> - If the large scale destabilization is less than zero, or the stabilization by the convection is greater than zero, then the scheme returns to the calling routine without modifying the state variables.
+-      totflg = .true.
+-      do i=1,im
+-        totflg = totflg .and. (.not. cnvflg(i))
+-      enddo
+-      if(totflg) return
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !
+ !> - For scale-aware parameterization, the updraft fraction (sigmagfm) is first computed as a function of the lateral entrainment rate at cloud base (see Han et al.'s (2017) \cite han_et_al_2017 equation 4 and 5), following the study by Grell and Freitas (2014) \cite grell_and_freitas_2014.
+@@ -3938,6 +3872,11 @@
+ !
+       endif
+ !!
++      endif ! (.not.hwrf_samfdeep)
++
++!  exit: work every column needs, convecting or not
++  900 continue
++      if(.not.hwrf_samfdeep) then
+       if(mp_phys == mp_phys_mg) then
+         do k=1,km
+           do i=1,im
+@@ -3961,8 +3900,7 @@
+           enddo
+         enddo
+       endif
+-      endif ! (.not.hwrf_samfdeep)
+-
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))

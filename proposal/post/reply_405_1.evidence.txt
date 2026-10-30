@@ -1,0 +1,90 @@
+# SA1 in-model check for #405 reply (Hercules job 10280166, 26 Oct 2026)
+# control_p8 intel, develop 5651397d (physics d9b70feb); v0 = develop + print-only instrumentation, v1 = v0 + PR405
+# Gate: v0 vs baseline develop-20261016 NOT IDENTICAL (atmf000: clwmr/icmr/rwmr only, max 1e-19/2e-18/4e-14);
+#   instrumentation writes only dbg* locals, so most likely changed vectorisation of the TVD loop. Bit-identity NOT claimed.
+# Scripts: sa1_instrument.py, sa1chk.sbatch, sa1_sum.py; Hercules /work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1/sa1chk/
+== v0.dbg.txt
+  deep: 337149 column-steps with rain (4952 lines)
+    rain 7.3340e+14 kg; created R +4.1054e+12 kg = +0.5598 % of rain; predicted P +4.1054e+12 kg
+    sum|R| 7.1649e+12 kg (0.9769 % of rain); sum|R-P| 1.275e+00 kg = 1.78e-13 of sum|R|
+    max|R-P| per column 4.266e-15 kg/m2; max|R| 8.995e-02 kg/m2
+    phi(kb): =0 1673 (0.5 %), (0,0.999) 293433 (87.0 %), >=0.999 42043 (12.5 %)
+    columns with |R| > 0.1 % of their rain: 298010 (88.4 %); kb term at phi=0: +2.7484e+11 kg (7 % of P)
+  shallow: 1791709 column-steps with rain (9246 lines)
+    rain 1.3691e+14 kg; created R +2.9034e+12 kg = +2.1206 % of rain; predicted P +2.9034e+12 kg
+    sum|R| 3.0909e+12 kg (2.2576 % of rain); sum|R-P| 2.443e+00 kg = 7.90e-13 of sum|R|
+    max|R-P| per column 2.109e-15 kg/m2; max|R| 1.873e-02 kg/m2
+    phi(kb): =0 5488 (0.3 %), (0,0.999) 1692275 (94.5 %), >=0.999 93946 (5.2 %)
+    columns with |R| > 0.1 % of their rain: 1775297 (99.1 %); kb term at phi=0: +6.0364e+10 kg (2 % of P)
+  DBGSA1DC kb=39 jmin=48 phi=1.478 q(kb)=7.28910e-03 q(kb+1)=7.16230e-03 qo(kb)=7.44050e-03 tem1=7.57360e-03 eta=0.995 xmb=2.1218e-01 dt=720 rain=2.6769e-01 R=-2.6411e-02 P=-2.6411e-02 Pkb=-2.0234e-02
+  DBGSA1DC kb=35 jmin=48 phi=0.000 q(kb)=8.59280e-03 q(kb+1)=8.64640e-03 qo(kb)=8.90380e-03 tem1=8.64640e-03 eta=0.996 xmb=1.9095e-01 dt=720 rain=4.3583e-01 R=+4.0424e-02 P=+4.0424e-02 Pkb=+3.5232e-02
+  DBGSA1DC kb=40 jmin=51 phi=1.095 q(kb)=6.08700e-03 q(kb+1)=5.81200e-03 qo(kb)=6.10160e-03 tem1=6.12920e-03 eta=0.989 xmb=1.7351e-01 dt=720 rain=5.4802e-02 R=+4.5567e-03 P=+4.5567e-03 Pkb=-3.4078e-03
+  DBGSA1DC kb=1 jmin=38 phi=0.539 q(kb)=1.11440e-02 q(kb+1)=1.03170e-02 qo(kb)=1.03730e-02 tem1=1.03470e-02 eta=0.868 xmb=9.1691e-02 dt=720 rain=1.0205e-01 R=-2.9660e-03 P=-2.9660e-03 Pkb=+1.4730e-03
+  DBGSA1DC kb=1 jmin=38 phi=0.663 q(kb)=1.15730e-02 q(kb+1)=1.08540e-02 qo(kb)=1.09140e-02 tem1=1.08940e-02 eta=0.870 xmb=8.4449e-02 dt=720 rain=1.1664e-01 R=-2.3872e-03 P=-2.3872e-03 Pkb=+1.0684e-03
+  DBGSA1DC kb=1 jmin=35 phi=0.815 q(kb)=8.90250e-03 q(kb+1)=8.56360e-03 qo(kb)=8.61130e-03 tem1=8.60250e-03 eta=0.883 xmb=6.5779e-02 dt=720 rain=6.0099e-02 R=+1.3348e-03 P=+1.3348e-03 Pkb=+3.6962e-04
+  DBGSA1SC kb=10 ktcon=27 phi=1.313 q(kb)=1.31810e-02 q(kb+1)=1.31620e-02 qo(kb)=1.32580e-02 tem1=1.32880e-02 eta=0.985 xmb=2.3537e-02 dt=720 rain=1.8374e-02 R=-5.0385e-04 P=-5.0385e-04 Pkb=-5.0385e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.835 q(kb)=6.90610e-03 q(kb+1)=6.64780e-03 qo(kb)=6.69840e-03 tem1=6.69010e-03 eta=0.663 xmb=3.1250e-02 dt=720 rain=1.0197e-03 R=+1.2446e-04 P=+1.2446e-04 Pkb=+1.2446e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.578 q(kb)=6.89680e-03 q(kb+1)=6.56470e-03 qo(kb)=6.61200e-03 tem1=6.59200e-03 eta=0.663 xmb=2.1427e-02 dt=720 rain=1.4035e-04 R=+2.0413e-04 P=+2.0413e-04 Pkb=+2.0413e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.807 q(kb)=7.28650e-03 q(kb+1)=6.98880e-03 qo(kb)=7.04120e-03 tem1=7.03110e-03 eta=0.663 xmb=3.0963e-02 dt=720 rain=1.2838e-03 R=+1.4982e-04 P=+1.4982e-04 Pkb=+1.4982e-04
+  DBGSA1SC kb=1 ktcon=28 phi=0.452 q(kb)=1.00000e-02 q(kb+1)=8.93050e-03 qo(kb)=8.98150e-03 tem1=8.95360e-03 eta=0.665 xmb=4.6064e-02 dt=720 rain=5.6408e-03 R=+6.1604e-04 P=+6.1604e-04 Pkb=+6.1604e-04
+  DBGSA1SC kb=1 ktcon=28 phi=0.634 q(kb)=1.23540e-02 q(kb+1)=1.18080e-02 qo(kb)=1.18700e-02 tem1=1.18470e-02 eta=0.675 xmb=6.9482e-02 dt=720 rain=3.1066e-02 R=+7.6722e-04 P=+7.6722e-04 Pkb=+7.6722e-04
+== v1.dbg.txt
+  deep: 335952 column-steps with rain (4943 lines)
+    rain 7.2667e+14 kg; created R +3.4876e-02 kg = +0.0000 % of rain; predicted P +4.1604e+12 kg
+    sum|R| 1.2632e+00 kg (0.0000 % of rain); sum|R-P| 7.218e+12 kg = 5.71e+12 of sum|R|
+    max|R-P| per column 7.562e-02 kg/m2; max|R| 3.719e-15 kg/m2
+    phi(kb): =0 1744 (0.5 %), (0,0.999) 290137 (86.4 %), >=0.999 44071 (13.1 %)
+    columns with |R| > 0.1 % of their rain: 128 (0.0 %); kb term at phi=0: +2.8636e+11 kg (7 % of P)
+  shallow: 1786875 column-steps with rain (9258 lines)
+    rain 1.3589e+14 kg; created R +2.7435e-03 kg = +0.0000 % of rain; predicted P +2.8778e+12 kg
+    sum|R| 2.4347e+00 kg (0.0000 % of rain); sum|R-P| 3.071e+12 kg = 1.26e+12 of sum|R|
+    max|R-P| per column 1.873e-02 kg/m2; max|R| 2.207e-15 kg/m2
+    phi(kb): =0 5474 (0.3 %), (0,0.999) 1686967 (94.4 %), >=0.999 94434 (5.3 %)
+    columns with |R| > 0.1 % of their rain: 2201 (0.1 %); kb term at phi=0: +6.0800e+10 kg (2 % of P)
+  DBGSA1DC kb=39 jmin=48 phi=1.478 q(kb)=7.28910e-03 q(kb+1)=7.16230e-03 qo(kb)=7.44050e-03 tem1=7.57360e-03 eta=0.995 xmb=2.1218e-01 dt=720 rain=2.6776e-01 R=+3.3307e-16 P=-2.6411e-02 Pkb=-2.0234e-02
+  DBGSA1DC kb=35 jmin=48 phi=0.000 q(kb)=8.59280e-03 q(kb+1)=8.64640e-03 qo(kb)=8.90380e-03 tem1=8.64640e-03 eta=0.996 xmb=1.9095e-01 dt=720 rain=4.3577e-01 R=+2.2204e-16 P=+4.0424e-02 Pkb=+3.5232e-02
+  DBGSA1DC kb=40 jmin=51 phi=1.095 q(kb)=6.08700e-03 q(kb+1)=5.81200e-03 qo(kb)=6.10160e-03 tem1=6.12920e-03 eta=0.989 xmb=1.7067e-01 dt=720 rain=5.3820e-02 R=+1.3184e-16 P=+4.4820e-03 Pkb=-3.3519e-03
+  DBGSA1DC kb=1 jmin=38 phi=0.539 q(kb)=1.11440e-02 q(kb+1)=1.03170e-02 qo(kb)=1.03730e-02 tem1=1.03470e-02 eta=0.868 xmb=9.1691e-02 dt=720 rain=1.0206e-01 R=-4.9960e-16 P=-2.9660e-03 Pkb=+1.4730e-03
+  DBGSA1DC kb=1 jmin=38 phi=0.663 q(kb)=1.15730e-02 q(kb+1)=1.08540e-02 qo(kb)=1.09140e-02 tem1=1.08940e-02 eta=0.870 xmb=8.5244e-02 dt=720 rain=1.1777e-01 R=-1.0547e-15 P=-2.4097e-03 Pkb=+1.0784e-03
+  DBGSA1DC kb=1 jmin=35 phi=0.815 q(kb)=8.90250e-03 q(kb+1)=8.56360e-03 qo(kb)=8.61130e-03 tem1=8.60250e-03 eta=0.883 xmb=6.5779e-02 dt=720 rain=6.0095e-02 R=-3.4694e-17 P=+1.3348e-03 Pkb=+3.6962e-04
+  DBGSA1SC kb=10 ktcon=27 phi=1.313 q(kb)=1.31810e-02 q(kb+1)=1.31620e-02 qo(kb)=1.32580e-02 tem1=1.32880e-02 eta=0.985 xmb=2.3537e-02 dt=720 rain=1.8374e-02 R=-5.5511e-17 P=-5.0385e-04 Pkb=-5.0385e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.835 q(kb)=6.90610e-03 q(kb+1)=6.64780e-03 qo(kb)=6.69840e-03 tem1=6.69010e-03 eta=0.663 xmb=3.1250e-02 dt=720 rain=1.0195e-03 R=-1.1948e-16 P=+1.2446e-04 Pkb=+1.2446e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.578 q(kb)=6.89680e-03 q(kb+1)=6.56470e-03 qo(kb)=6.61200e-03 tem1=6.59200e-03 eta=0.663 xmb=2.1427e-02 dt=720 rain=1.4024e-04 R=-9.1724e-17 P=+2.0413e-04 Pkb=+2.0413e-04
+  DBGSA1SC kb=1 ktcon=26 phi=0.807 q(kb)=7.28650e-03 q(kb+1)=6.98880e-03 qo(kb)=7.04120e-03 tem1=7.03110e-03 eta=0.663 xmb=3.0963e-02 dt=720 rain=1.2835e-03 R=+1.7065e-16 P=+1.4982e-04 Pkb=+1.4982e-04
+  DBGSA1SC kb=1 ktcon=28 phi=0.734 q(kb)=9.26290e-03 q(kb+1)=9.02760e-03 qo(kb)=9.09380e-03 tem1=9.07620e-03 eta=0.666 xmb=2.6222e-02 dt=720 rain=1.0532e-03 R=+3.9465e-17 P=+2.2112e-04 Pkb=+2.2112e-04
+  DBGSA1SC kb=1 ktcon=29 phi=0.543 q(kb)=8.45580e-03 q(kb+1)=7.83050e-03 qo(kb)=7.88100e-03 tem1=7.85790e-03 eta=0.664 xmb=4.7137e-02 dt=720 rain=6.5930e-03 R=+1.9255e-16 P=+5.2112e-04 Pkb=+5.2112e-04
+
+# Follow-up, job 10281007 (sa1chk2.sbatch, sa1_instrument2.py):
+#   s0 = stock develop 5651397d, control_p8 intel: PASS vs develop-20261016 (environment reproduces the baseline).
+#   v2 = meters moved out of the TVD loop (loop byte-identical; kb/jmin face recomputed in a separate loop):
+#        still NOT IDENTICAL to baseline, same 3 fields at f000; v2 bit-identical to v0 at f000 and f024.
+#        => the in-loop capture was not the cause; the shared part (end-of-routine block / declarations) is.
+#   v2/v3 meter totals equal v0/v1 to all printed digits (P via independent recomputation, |R-P| <= 4e-15 kg/m2).
+#   Intel Release flags: -O3 -fp-model precise -march=core-avx2 (FMA contraction allowed).
+#   Bisect deep-only (vd) vs shallow-only (vs): job 10282063.
+
+# Bisect, job 10282063: vd (deep meters only) NOT IDENTICAL to baseline; vs (shallow meters only) PASS.
+# FMA test, job 10282402 (sa1chk4.sbatch; DISABLE_FMA forced ON in the copied CMakeLists.txt, since line 79 sets it OFF with FORCE):
+#   vfmadd in samfdeepcnv_run: s0 175, n0 0, n2 0 (whole exe 21579 / 5220 / 5220)
+#   n0 (stock, no-FMA) vs n2 (v2 meters, no-FMA): 0 of 44 files differ  -> instrumentation passive; FMA contraction in samfdeepcnv was the perturbation
+#   n0 vs s0 (FMA on): 42 of 44 differ  -> the comparison can fail
+#   n2 exe has DBGSA1 strings, md5 differs from n0, 15296 meter lines
+#   n2 meters: deep +0.5550 % of rain (|R| 0.975 %), shallow +2.1224 % (|R| 2.260 %); max|R-P| 4.1e-15 / 1.8e-15 kg/m2
+
+== 26 Oct: tracer meters (sa1chk5, job 10283521; t0 = develop d9b70feb + meters, t1 = + PR405; control_p8 intel 24 h; n=1 ozone, n=2 TKE)
+-- t0
+== deep: ntr=2 ntk=4 (TKE is n=2)
+  n= 1      column-steps    337267  net R/gross -2.670e-04  |R|/gross 2.548e-03  net R/content -1.893e-07  R vs P: sum|R-P|/sum|R| 2.2e-13  max|R-P| 1.05e-20  max|R| 3.58e-07  mean content 1.843e+07
+  n= 2 TKE  column-steps    337267  net R/gross -1.047e-04  |R|/gross 6.400e-03  net R/content -1.331e-05  R vs P: sum|R-P|/sum|R| 1.8e-14  max|R-P| 1.61e-12  max|R| 2.06e+02  mean content 7.649e+12
+== shallow: ntr=2 ntk=4 (TKE is n=2)
+  n= 1      column-steps   1877529  net R/gross -7.926e-05  |R|/gross 3.037e-04  net R/content -2.332e-08  R vs P: sum|R-P|/sum|R| 8.5e-12  max|R-P| 4.89e-21  max|R| 6.06e-08  mean content 2.497e+06
+  n= 2 TKE  column-steps   1877529  net R/gross -9.356e-04  |R|/gross 3.571e-03  net R/content -4.950e-05  R vs P: sum|R-P|/sum|R| 2.8e-14  max|R-P| 8.10e-13  max|R| 1.15e+02  mean content 6.169e+12
+field_table tracer order: 1:sphum, 2:liq_wat, 3:ice_wat, 4:rainwat, 5:snowwat, 6:graupel, 7:water_nc, 8:ice_nc, 9:rain_nc, 10:o3mr, 11:liq_aero, 12:ice_aero, 13:sgs_tke
+-- t1
+== deep: ntr=2 ntk=4 (TKE is n=2)
+  n= 1      column-steps    336092  net R/gross -8.133e-19  |R|/gross 5.529e-16  net R/content -5.757e-22  R vs P: sum|R-P|/sum|R| 4.8e+12  max|R-P| 4.59e-07  max|R| 1.10e-20  mean content 1.842e+07
+  n= 2 TKE  column-steps    336092  net R/gross -1.659e-19  |R|/gross 1.161e-16  net R/content -2.137e-20  R vs P: sum|R-P|/sum|R| 5.2e+13  max|R-P| 2.62e+02  max|R| 1.26e-12  mean content 7.692e+12
+== shallow: ntr=2 ntk=4 (TKE is n=2)
+  n= 1      column-steps   1874986  net R/gross +4.160e-18  |R|/gross 2.537e-15  net R/content +1.222e-21  R vs P: sum|R-P|/sum|R| 1.4e+11  max|R-P| 7.16e-08  max|R| 5.22e-21  mean content 2.499e+06
+  n= 2 TKE  column-steps   1874986  net R/gross -3.161e-19  |R|/gross 9.897e-17  net R/content -1.675e-20  R vs P: sum|R-P|/sum|R| 3.4e+13  max|R-P| 1.14e+02  max|R| 7.05e-13  mean content 6.216e+12
+field_table tracer order: 1:sphum, 2:liq_wat, 3:ice_wat, 4:rainwat, 5:snowwat, 6:graupel, 7:water_nc, 8:ice_nc, 9:rain_nc, 10:o3mr, 11:liq_aero, 12:ice_aero, 13:sgs_tke

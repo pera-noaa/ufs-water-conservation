@@ -1,0 +1,9 @@
+run2_noret_1 wall 158.101488 phys0 37.698914
+run2_noret_2 wall 153.433374 phys0 37.719742
+run2_noret_3 wall 157.565910 phys0 37.722912
+run2_orig_1 wall 159.651315 phys0 37.315613
+run2_orig_2 wall 158.578544 phys0 37.198738
+run2_orig_3 wall 157.594513 phys0 37.121120
+pair 1 files 6
+pair 2 files 6
+pair 3 files 6

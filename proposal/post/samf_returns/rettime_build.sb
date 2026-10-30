@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -N 1 --exclusive -t 01:30:00 -J rettime_build
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1/rettime/build.%j.log
+# SAMF deep early returns in UFS: build develop (orig) and develop with the 10 returns disabled (noret), then stage and submit 3+3 control_p8 runs
+set -eu
+P=/work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1; R=$P/rettime/wm; WM_BASE=783f524a
+SRC=$P/rt_x0b/stmp/apera/FV3_RT/rt_2084754/control_p8_intel
+cd $R
+[ "$(git rev-parse --short=8 HEAD)" = "$WM_BASE" ] || { echo "GATE: run rettime_setup.sh first"; exit 1; }
+F=UFSATM/ccpp/physics/physics/CONV/SAMF/samfdeepcnv.f
+[ -z "$(git -C UFSATM/ccpp/physics status --porcelain)" ] || { echo "GATE: physics dirty"; exit 1; }
+[ "$(grep -cE '^ +if ?\(totflg\) return' $F)" = 10 ] || { echo "GATE: develop has $(grep -cE '^ +if ?\(totflg\) return' $F) returns"; exit 1; }
+cd tests
+./compile.sh hercules "-DAPP=ATM -DCCPP_SUITES=FV3_GFS_v17_p8_ugwpv1 -D32BIT=ON" orig intel NO NO > ../compile_orig.log 2>&1
+sed -i -E 's/^( +)if ?\(totflg\) return$/\1if(.false.) return/' ../$F
+[ "$(grep -c 'if(.false.) return' ../$F)" = 10 ] && [ "$(git -C ../UFSATM/ccpp/physics diff --numstat | awk '{print $1, $2, $3}')" = "10 10 physics/CONV/SAMF/samfdeepcnv.f" ] || { echo "GATE: noret edit"; exit 1; }
+./compile.sh hercules "-DAPP=ATM -DCCPP_SUITES=FV3_GFS_v17_p8_ugwpv1 -D32BIT=ON" noret intel NO NO > ../compile_noret.log 2>&1
+git -C ../UFSATM/ccpp/physics checkout -q -- physics/CONV/SAMF/samfdeepcnv.f
+ls -la fv3_orig.exe fv3_noret.exe
+cmp -s fv3_orig.exe fv3_noret.exe && { echo "GATE: executables identical"; exit 1; }
+
+# 3 + 3 runs, interleaved, from the 0b RT's control_p8 run directory (inputs only)
+cd $P/rettime
+for n in 1 2 3; do for v in orig noret; do
+  d=run2_${v}_$n; mkdir $d
+  rsync -a --exclude 'atmf*.nc' --exclude 'sfcf*.nc' --exclude 'GFS*.Grb*' --exclude 'PET*' --exclude 'out' --exclude 'err' \
+        --exclude 'logfile.*' --exclude 'ESMF_Profile.summary' --exclude 'RESTART/*' --exclude 'fv3.exe' $SRC/ $d/
+  cp $R/tests/fv3_$v.exe $d/fv3.exe
+  sed -i -e 's/^#SBATCH --account=.*/#SBATCH --account=co2/' -e "s/^#SBATCH --job-name=.*/#SBATCH --job-name=\"rettime2_${v}_$n\"/" $d/job_card
+  grep -q 'account=co2' $d/job_card || { echo "GATE: job_card"; exit 1; }
+  (cd $d && sbatch --parsable --exclusive job_card)
+done; done
+echo BUILD_AND_SUBMIT_DONE

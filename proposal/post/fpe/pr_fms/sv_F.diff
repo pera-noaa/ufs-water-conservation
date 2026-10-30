@@ -1,0 +1,14 @@
+diff --git a/physics/CONV/SAMF/samfdeepcnv.f b/physics/CONV/SAMF/samfdeepcnv.f
+index 8f862c9b..5b8dcd5f 100644
+--- a/physics/CONV/SAMF/samfdeepcnv.f
++++ b/physics/CONV/SAMF/samfdeepcnv.f
+@@ -1122,7 +1122,8 @@ c
+           if(cnvflg(i)) then
+             dz =zo(i,k+1) - zo(i,k)
+             xlamue(i,k) = clamt(i) / (zi(i,k) + dz)
+-            xlamue(i,k) = max(xlamue(i,k), crtlame)
++            xlamue(i,k) = max(xlamue(i,k), crtlame,
++     &                      0.001_conv_wp * clamt(i))
+           endif
+         enddo
+       enddo

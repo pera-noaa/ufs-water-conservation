@@ -1,0 +1,249 @@
+##### C1 (module_mp_tempo_main.F90)
+--- T0/module_mp_tempo_main.F90
++++ C1/module_mp_tempo_main.F90
+@@ -720,10 +720,17 @@
+     substeps_sedi = 1
+     if (any(l_qc)) then
+       call cloud_fallspeed(rhof, w1d, l_qc, rc, nc, ilamc, dz1d, vtrc, vtnc, ktop_sedi)
+-      call sedimentation(xr=rc, vt=vtrc, dz1d=dz1d, rho=rho, xten=qcten, limit=r1, &
+-        steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%cloud_precip, dt=dt)
+-      call sedimentation(xr=nc, vt=vtnc, dz1d=dz1d, rho=rho, xten=ncten, limit=r2, &
+-        steps=substeps_sedi, ktop_sedi=ktop_sedi, dt=dt)
++      ! substeps keep each layer's outflow within its content (Courant number <= 1), as for the other species
++      do k = 1, ktop_sedi
++        if (max(vtrc(k), vtnc(k)) > 0._wp) substeps_sedi = &
++          max(substeps_sedi, int(dt/(dz1d(k)/max(vtrc(k), vtnc(k))) + 1._wp))
++      enddo
++      do n = 1, substeps_sedi
++        call sedimentation(xr=rc, vt=vtrc, dz1d=dz1d, rho=rho, xten=qcten, limit=r1, &
++          steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%cloud_precip, dt=dt)
++        call sedimentation(xr=nc, vt=vtnc, dz1d=dz1d, rho=rho, xten=ncten, limit=r2, &
++          steps=substeps_sedi, ktop_sedi=ktop_sedi, dt=dt)
++      enddo
+     endif 
+ 
+     ! after sedimentation freeze all cloud water below hgfrz temperature
+@@ -781,6 +788,14 @@
+       qbten=qbten, ilamg=ilamg, mvd_g=mvd_g, dt=dt, odt=odt)
+ 
+     ! diagnostic output --------------------------------------------------------------------------
++    ! freezing rain
++    call freezing_rain(temp=temp(1), rain_precip=tempo_main_diags%rain_precip, &
++      cloud_precip=tempo_main_diags%cloud_precip, &
++      frz_rain=tempo_main_diags%frz_rain_precip)
++
++    ! cloud water settling out of the lowest layer reaches the surface: count it as precipitation
++    tempo_main_diags%rain_precip = tempo_main_diags%rain_precip + tempo_main_diags%cloud_precip
++
+     ! frozen fraction
+     tempo_main_diags%frozen_fraction = &
+       (tempo_main_diags%ice_liquid_equiv_precip + tempo_main_diags%snow_liquid_equiv_precip + &
+@@ -788,11 +803,6 @@
+       (tempo_main_diags%ice_liquid_equiv_precip + tempo_main_diags%snow_liquid_equiv_precip + &
+       tempo_main_diags%graupel_liquid_equiv_precip + tempo_main_diags%rain_precip + r1)
+ 
+-    ! freezing rain
+-    call freezing_rain(temp=temp(1), rain_precip=tempo_main_diags%rain_precip, &
+-      cloud_precip=tempo_main_diags%cloud_precip, &
+-      frz_rain=tempo_main_diags%frz_rain_precip)
+-
+     if (tempo_cfgs%cloud_number_mixing_ratio_flag) then
+       allocate(tempo_main_diags%cloud_number_mixing_ratio(nz), source=nc*rho)
+     endif 
+##### C2 (module_mp_tempo_main.F90)
+--- T0/module_mp_tempo_main.F90
++++ C2/module_mp_tempo_main.F90
+@@ -1390,6 +1390,9 @@
+         endif
+       endif
+ 
++      ! below freezing, snow cannot gain more from rain-snow collection than the rain loses to it
++      if (temp(k) < t0 .and. tend%prs_rcs(k) > -tend%prr_rcs(k)) tend%prs_rcs(k) = -tend%prr_rcs(k)
++
+       ! losses to snow include sublimation; melting; collection by rain; 
+       ! rime splintering
+       sump = tend%prs_sde(k) - tend%prs_ihm(k) - tend%prr_sml(k) + &
+@@ -1428,6 +1431,14 @@
+       tend%prr_rcg(k) = ratio * sign(1.0_dp, tend%prr_rcg(k))
+       tend%prg_rcg(k) = -tend%prr_rcg(k)
+       tend%pbg_rcg(k) = meters3_to_liters*tend%prg_rcg(k)/rho_i ! scale density change
++
++      ! graupel gains must match the (possibly limited) losses that feed them
++      tend%prg_rci(k) = tend%pri_rci(k) + tend%prr_rci(k)
++      tend%pbg_rci(k) = tend%prg_rci(k)/rho_i
++      if (temp(k) < t0) then
++        tend%prg_rcs(k) = -(tend%prr_rcs(k) + tend%prs_rcs(k))
++        tend%pbg_rcs(k) = meters3_to_liters*tend%prg_rcs(k)/rho_i
++      endif
+       ! reset total rain-snow collection amount if reduced
+       if (temp(k) > t0) then
+         ratio = min(abs(tend%prr_rcs(k)), abs(tend%prs_rcs(k)))
+##### C3 (module_mp_tempo_main.F90)
+--- T0/module_mp_tempo_main.F90
++++ C3/module_mp_tempo_main.F90
+@@ -126,6 +126,7 @@
+     ! thermodynamic variables
+     real(wp), dimension(kts:kte) :: temp, pres, qv !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: rho, rhof, rhof2 !! thermodynamic variables
++    real(wp), dimension(kts:kte) :: rhon !! density after latent heating, for fall speeds only
+     real(wp), dimension(kts:kte) :: qvs, qvsi, delqvs !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: satw, sati, ssatw, ssati !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: diffu, visco, vsc2, tcond, lvap, ocp, lvt2 !! thermodynamic variables
+@@ -456,12 +457,14 @@
+     call sum_tendencies(rho, temp, idx_bg, lvap, ocp, tend, tten, qvten, qcten, &
+       ncten, qiten, niten, qsten, qrten, nrten, qgten, ngten, qbten)
+ 
++    ! rho stays the entry density so sedimentation conserves the host's column mass; rhon is only for
++    ! fall speeds and ventilation
+     ! update after tendencies applied ------------------------------------------------------------
+     do k = 1, nz
+       temp(k) = t1d(k) + tten(k)*dt
+       tempc = temp(k) - t0
+       qv(k) = max(min_qv, qv1d(k) + qvten(k)*dt)
+-      rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++      rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       nwfaten(k) = nwfaten(k) - (tend%pna_rca(k) + tend%pna_sca(k) + tend%pna_gca(k) + &
+         tend%pni_iha(k)) / rho(k)
+       nifaten(k) = nifaten(k) - (tend%pnd_rcd(k) + tend%pnd_scd(k) + tend%pnd_gcd(k)) / rho(k)
+@@ -521,7 +524,7 @@
+       qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
+       qbten=qbten, ilamg=ilamg, mvd_g=mvd_g, dt=dt, odt=odt)
+ 
+-    call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++    call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+       satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+       supersaturated)
+ 
+@@ -551,10 +554,10 @@
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*dt)
+         temp(k) = t1d(k) + tten(k)*dt
+-        rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++        rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       enddo 
+       
+-      call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++      call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+       satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+       supersaturated)
+     endif 
+@@ -579,10 +582,10 @@
+       do k = 1, nz
+         qv(k) = max(min_qv, qv1d(k) + qvten(k)*dt)
+         temp(k) = t1d(k) + tten(k)*dt
+-        rho(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
++        rhon(k) = roverrv*pres(k)/(rdry*temp(k)*(qv(k)+roverrv))
+       enddo 
+         
+-      call thermo_vars(qv, temp, pres, rho, rhof, rhof2, qvs, delqvs, qvsi, &
++      call thermo_vars(qv, temp, pres, rhon, rhof, rhof2, qvs, delqvs, qvsi, &
+         satw, sati, ssatw, ssati, diffu, visco, vsc2, ocp, lvap, tcond, lvt2, &
+         supersaturated)
+     endif 
+##### M1 (module_mp_tempo_main.F90)
+--- T0/module_mp_tempo_main.F90
++++ M1/module_mp_tempo_main.F90
+@@ -3,7 +3,7 @@
+   use module_mp_tempo_cfgs, only : ty_tempo_cfgs
+   use module_mp_tempo_params, only : wp, sp, dp, &
+     min_qv, roverrv, rdry, r1, r2, nt_c_max, t0, nrhg, rho_g, &
+-    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default, nt_c_l, nt_c_o
++    meters3_to_liters, eps, aero_max, nwfa_default, nifa_default, nt_c_l, nt_c_o, lsub
+   use module_mp_tempo_utils, only : get_nuc, get_constant_cloud_number, snow_moments, calc_rslf, calc_rsif
+   use module_mp_tempo_diags, only : reflectivity_10cm, effective_radius, max_hail_diam, &
+     freezing_rain
+@@ -126,6 +126,7 @@
+     ! thermodynamic variables
+     real(wp), dimension(kts:kte) :: temp, pres, qv !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: rho, rhof, rhof2 !! thermodynamic variables
++    real(wp) :: xcl
+     real(wp), dimension(kts:kte) :: qvs, qvsi, delqvs !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: satw, sati, ssatw, ssati !! thermodynamic variables
+     real(wp), dimension(kts:kte) :: diffu, visco, vsc2, tcond, lvap, ocp, lvt2 !! thermodynamic variables
+@@ -734,6 +735,40 @@
+         qcten=qcten, ncten=ncten, tten=tten, ncsave=ncsave, dt=dt, odt=odt)
+     endif 
+ 
++    ! condensate the final clips would delete is exchanged with vapour (with its latent heat) instead
++    do k = 1, nz
++      xcl = qc1d(k) + qcten(k)*dt
++      if (xcl <= r1) then
++        qcten(k) = qcten(k) - xcl*odt
++        qvten(k) = qvten(k) + xcl*odt
++        tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt
++      endif
++      xcl = qr1d(k) + qrten(k)*dt
++      if (xcl <= r1) then
++        qrten(k) = qrten(k) - xcl*odt
++        qvten(k) = qvten(k) + xcl*odt
++        tten(k) = tten(k) - lvap(k)*ocp(k)*xcl*odt
++      endif
++      xcl = qi1d(k) + qiten(k)*dt
++      if (xcl <= r1) then
++        qiten(k) = qiten(k) - xcl*odt
++        qvten(k) = qvten(k) + xcl*odt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*odt
++      endif
++      xcl = qs1d(k) + qsten(k)*dt
++      if (xcl <= r1) then
++        qsten(k) = qsten(k) - xcl*odt
++        qvten(k) = qvten(k) + xcl*odt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*odt
++      endif
++      xcl = qg1d(k) + qgten(k)*dt
++      if (xcl <= r1) then
++        qgten(k) = qgten(k) - xcl*odt
++        qvten(k) = qvten(k) + xcl*odt
++        tten(k) = tten(k) - lsub*ocp(k)*xcl*odt
++      endif
++    enddo
++
+     ! final update -------------------------------------------------------------------------------
+     do k = 1, nz
+       t1d(k)  = t1d(k) + tten(k)*dt
+##### T1 (module_mp_tempo_main.F90)
+--- T0/module_mp_tempo_main.F90
++++ T1/module_mp_tempo_main.F90
+@@ -1645,7 +1645,8 @@
+       else
+         qpi(k)=qa(k)+0.5_wp*(dip+dim)*dza(k)
+         qmi(k)=2._wp*qa(k)-qpi(k)
+-        if(qpi(k) > 0._wp .or. qmi(k) < 0._wp) then
++        ! fall back to piecewise constant if either edge value is negative
++        if(qpi(k) < 0._wp .or. qmi(k) < 0._wp) then
+           qpi(k) = qa(k)
+           qmi(k) = qa(k)
+         endif
+##### TH5 (mp_tempo.F90)
+--- T0/mp_tempo.F90
++++ TH5/mp_tempo.F90
+@@ -11,7 +11,7 @@
+ 
+       !physical constants that are set from the host
+       use module_mp_tempo_params, only : pi, lvap0, lfus, lsub, rv, rdry, cp, t0, r_uni, rho_w
+-      use module_mp_tempo_params, only : roverrv, eps, naccn0, naccn1, nain0, nain1
++      use module_mp_tempo_params, only : roverrv, eps, naccn0, naccn1, nain0, nain1, min_qv
+       use module_mp_tempo_params, only : initialize_parameters
+       use module_mp_tempo_cfgs, only : ty_tempo_cfgs
+       use module_mp_tempo_driver, only : tempo_init, tempo_run, ty_tempo_driver_diags, tempo_aerosol_surface_emissions
+@@ -469,9 +469,6 @@
+            end if
+          end if
+ 
+-         !> - Layer width in m from geopotential in m2 s-2
+-         dz = (phii(:,2:nlev+1) - phii(:,1:nlev)) / con_g
+-
+          ! Set internal dimensions
+          ids = 1
+          ims = 1
+@@ -495,6 +492,10 @@
+          ! handle dt_inner < dtp
+          do it = 1, ndt
+ 
++            ! layer depth from the host's dry-air mass and TEMPO's density, every inner step
++            dz = (prsi(:,1:nlev) - prsi(:,2:nlev+1)) * (1.0_kind_phys - spechum) * rdry * new_tgrs &
++                 * (max(min_qv, qv) + roverrv) / (con_g * roverrv * prsl)
++
+             !> - Density of air in kg m-3
+             rho = roverrv*prsl/(rdry*new_tgrs*(qv+roverrv))
+ 

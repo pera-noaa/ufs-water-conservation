@@ -1,0 +1,12 @@
+fv3 staged vs HEAD (expect only atmosphere.F90 = CP1): driver/UFS/atmosphere.F90 
+UFSATM/ccpp/physics d9b70feb = attr/w_fv4 d9b70feb; tracked changes: 0
+UFSATM aa0ba81 = attr/w_fv4 aa0ba81; tracked changes: 0
+NOAHMP-interface/noahmp 2c7b3bc = attr/w_fv4 2c7b3bc; tracked changes: 0
+PATCH_OK 12 anchors: contains,decl,rdt,omp_su,tdt_old,qp,tdt_new,write,si_call,omp_si,fv2_flip,fv2_noflip
+diff lines: 80
+=== BUILD rc=0 2026-10-29T17:15:08-05:00
+G-exe: r14_setup symbols in r14.exe 2 (expect >0), in the RT exe 0 (known-bad, expect 0)
+328fde5e24bd4f49cad5b176fc6be37e  /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/exe/r14.exe
+7f683f41288b935e3b494a201a39cc71  /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/src/atmosphere.r14.F90
+4db1bfa7ac6eff526608a3c57559e780  /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/src/atmosphere.pristine.F90
+BUILD_DONE

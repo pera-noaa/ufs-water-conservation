@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -q batch -N 1 --exclusive -t 03:00:00 -J r14_build
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/logs/build.%j.log
+# r14 build: tree = rsync of pr1/attr/w_fv4 (develop pins); atmosphere.F90 = pristine pin blob + r14_patch.py; one exe
+set -u
+W=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c; P=/work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1
+PY=/work2/noaa/co2/miniconda3/envs/tm5/bin/python
+export MACHINE_ID=hercules
+export PATH=$(echo "$PATH" | tr ":" "\n" | grep -v -i conda | paste -sd:)
+unset PYTHONPATH
+[ -e $W/tree ] && { echo "ABORT: tree exists"; exit 1; }
+rsync -a --exclude=/stmp --exclude='/tests/build_*' --exclude='/tests/fv3_*.exe' --exclude='/tests/logs/log_*' --exclude=/tests/lock \
+  $P/attr/w_fv4/ $W/tree/ || { echo "GATE rsync"; exit 1; }
+FV=$W/tree/UFSATM/fv3/atmos_cubed_sphere; F=$FV/driver/UFS/atmosphere.F90
+[ "$(git -C $FV rev-parse HEAD)" = "$(git -C $P/attr/w_fv4/UFSATM/fv3/atmos_cubed_sphere rev-parse HEAD)" ] || { echo "GATE fv3 head"; exit 1; }
+[ "$(git -C $FV rev-parse HEAD:driver/UFS/atmosphere.F90)" = f2654b5e534c05ab55a10be99cde6abdd85d76e8 ] || { echo "GATE pristine blob"; exit 1; }
+echo "fv3 staged vs HEAD (expect only atmosphere.F90 = CP1): $(git -C $FV diff --cached --name-only HEAD | tr '\n' ' ')"
+for r in UFSATM/ccpp/physics UFSATM NOAHMP-interface/noahmp; do
+  echo "$r $(git -C $W/tree/$r rev-parse --short HEAD) = attr/w_fv4 $(git -C $P/attr/w_fv4/$r rev-parse --short HEAD); tracked changes: $(git -C $W/tree/$r status --porcelain --ignore-submodules=all | grep -v '^??' | wc -l)"
+done
+git -C $FV show HEAD:driver/UFS/atmosphere.F90 > $W/src/atmosphere.pristine.F90
+$PY -I $W/scripts/r14_patch.py $W/src/atmosphere.pristine.F90 $W/src/atmosphere.r14.F90 || exit 1
+cp $W/src/atmosphere.r14.F90 $F
+diff $W/src/atmosphere.pristine.F90 $F > $W/src/atmosphere.r14.diff; echo "diff lines: $(grep -c '^[<>]' $W/src/atmosphere.r14.diff)"
+cd $W/tree/tests || exit 1
+BUILD_JOBS=76 ./compile.sh hercules "-DAPP=ATM -DCCPP_SUITES=FV3_WoFS_v0,FV3_WoFS_v0_tempo -D32BIT=ON" r14 intel YES NO > $W/logs/compile.log 2>&1
+rc=$?; echo "=== BUILD rc=$rc $(date -Is)"; [ $rc = 0 ] || exit 1
+cp -p $W/tree/tests/fv3_r14.exe $W/exe/r14.exe
+n1=$(nm $W/exe/r14.exe | grep -ci 'r14_setup'); n0=$(nm $P/attr/rt_w_fv4/stmp/apera/FV3_RT/rt_390837/regional_wofs_tempo_intel/fv3.exe | grep -ci 'r14_setup')
+echo "G-exe: r14_setup symbols in r14.exe $n1 (expect >0), in the RT exe $n0 (known-bad, expect 0)"
+[ $n1 -gt 0 ] && [ $n0 = 0 ] || { echo "GATE exe"; exit 1; }
+md5sum $W/exe/r14.exe $W/src/atmosphere.r14.F90 $W/src/atmosphere.pristine.F90
+echo BUILD_DONE

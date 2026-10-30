@@ -1,8 +1,11 @@
-# Cleaned phase-0 bodies (24 Oct)
+# Unposted bodies
 
-These supersede `../bodies/` for items 02–10; `post_bundle.py` still renders the old ones. Placeholders to fill before posting:
-- `#TBD-<KEY>`: the number from `numbers.json` once that item is posted.
-- `[RT 0b]`: the result line of the 0b rerun (`rt_v0b`, with the 7-commit Noah-MP).
-- `[0b global effect …]`, `[0b hafs …]` (WM 0b only): refresh from the rerun.
+Only bodies not yet posted are kept here. Posted text is in `../posted/`; older drafts are in `../_superseded/`.
 
-Posting check: `grep -n 'TBD\|\[RT\|\[0b' bodies_v2/<file>` must print nothing.
+| File | Item | Waits on |
+|---|---|---|
+| `14_ATM_sxs.md` | NOAA-EMC/ufsatm#1156 body with #408 (package 1) | user's go-ahead; Lisa's early-return answer on #408 |
+| `15_WM_sxs.md` | ufs-community/ufs-weather-model#3408 body with #408 (package 1) | same |
+
+The ufsatm and WM PRs cite each other: post the ufsatm PR, then the WM PR with its number, then edit the ufsatm body to
+fill the WM number. Before posting, `grep -n 'TBD\|\[RT' <file>` must print only the numbers still to come.

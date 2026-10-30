@@ -408,3 +408,10 @@ reaching the ground is water reaching the ground, so we count it.
 ## Dependencies:
 ufs-community/ufs-weather-model#TBD
 
+
+
+---
+
+`pr_round1.md` *Status* row replaced 29 October 2026 (verbatim):
+
+| Posted | ccpp-physics#401 SAMF issue (20 Oct), #404 MLM issue, #405 SA1, #406 Thompson, #407 TEMPO driver, ufs-weather-model#3404 WM issue (24 Oct), ufs-weather-model#3406 FPE issue, #408 SAMF + PBL, #409 Noah-MP 1, #410 Noah-MP 2, NCAR/noahmp#274 (27 Oct). #405 approved by Han and Lisa after our answer; #406 approved by Ruiyu Sun and climbfuji (her sign question answered, her input-humidity line applied to #406 and #407); #407 no review (body corrected 27 Oct: it had said TEMPO-core fixes were already proposed to NCAR/TEMPO; that report is owed); #401: Lisa favours including the fix and asked OMD (Zhan Zhang) whether it needs skill testing. Not posted: GFDL MP v3 and the GFDL `sedi_heat` issue/PR (ready; push `pr1-gfdlmp-wc` first), track 0c ufsatm/WM (ready), track 0b ufsatm/WM (push first), the #406 owners comment (held for the density/layer-depth alternative tests, `post/thdz/`), the NCAR/TEMPO report, phase 1. Current posting state: `post/POSTING.md`. Working notes public: github.com/pera-noaa/ufs-water-conservation (`../publish/` has the recipe) |

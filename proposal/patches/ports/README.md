@@ -1,6 +1,6 @@
 # Ports of the water-closure fixes to other copies of the code
 
-**Status (17 October 2026). Nothing posted or pushed;** every series applies with `git am` to a tree identical to its
+**Status (17 October 2026). The ports are not posted** (UFS upstream state: `../../post/POSTING.md`); every series applies with `git am` to a tree identical to its
 branch. Fixes and UFS measurements: `../../water_closure_proposal.md`; references: [`references.md`](references.md);
 independent reviews: [dispositions](#review-findings-and-dispositions); verification: [where each copy stands](#where-each-copy-stands);
 old fix letters: [labels](#labels).

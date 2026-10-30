@@ -1,0 +1,62 @@
+! Drops rain or cloud water through a column with terminal_fall; checks internal + water potential energy + outflow
+program test_sedi
+  use gfdl_mp_mod
+  implicit none
+  integer, parameter :: ke = 40, r8 = selected_real_kind(15)
+  real, parameter :: g = 9.80665
+  character(len=80) :: nml(4)
+  real, dimension(ke) :: qv, ql, qr, qi, qs, qg, u, v, w, dz, dp, vt, m1, z
+  real(kind=r8), dimension(ke) :: tz
+  real(kind=r8) :: dte, e0, e1, eout
+  real :: x1
+  real, dimension(ke) :: q0
+  real(kind=r8), dimension(ke) :: t0
+  integer :: k, n, nfail
+  character(len=2) :: fl(3) = ['qr', 'ql', 'qs']
+  nml = [character(len=80) :: '&gfdl_mp_nml', ' do_sedi_w = .false.', ' do_sedi_uv = .false.', '/']
+  call gfdl_mp_init(nml, 6, .false.)
+  nfail = 0
+  do n = 1, 3
+    call column()
+    if (fl(n) == 'ql') then
+      ql = qr; qr = 0.
+    endif
+    if (fl(n) == 'qs') then
+      qs = qr; qr = 0.; vt = 1.
+    endif
+    e0 = energy(); q0 = qr + ql + qs; t0 = tz
+    x1 = 0.; dte = 0.
+    call terminal_fall(300., 1, ke, tz, qv, ql, qr, qi, qs, qg, dz, dp, vt, x1, m1, u, v, w, dte, fl(n))
+    e1 = energy()
+    print '(a,es10.2,a,es10.2,a)', '  moved: max |dq| ', maxval(abs(qr + ql + qs - q0)), ', max |dT| ', maxval(abs(tz - t0)), ' K'
+    eout = m1(ke)*(merge(c_ice, c_liq, fl(n) == 'qs')*tz(ke) + g*z(ke))
+    print '(a,a2,a,es12.4,a,es12.4,a,es11.3)', 'falling ', fl(n), ': out of the column', m1(ke)/g, ' kg/m2; energy residual ', &
+          (e1 + eout - e0)/g, ' J/m2, relative ', (e1 + eout - e0)/abs(e0)
+    if (abs(e1 + eout - e0) > 1.e-9*abs(e0)) nfail = nfail + 1
+  enddo
+  if (nfail > 0) then
+    print '(a,i0,a)', 'FAIL: ', nfail, ' case(s)'
+  else
+    print '(a)', 'PASS'
+  endif
+contains
+  subroutine column()
+    do k = 1, ke
+      dp(k) = 2500.
+      dz(k) = -(250. + 10.*k)
+      tz(k) = 220. + 2.*k
+      qv(k) = 1.e-3*k/ke
+      qr(k) = merge(2.e-3, 0., k > 10 .and. k < 25)
+      ql(k) = 0.; qi(k) = 0.; qs(k) = 0.; qg(k) = 0.
+      u(k) = 0.; v(k) = 0.; w(k) = 0.
+      vt(k) = 6.
+    enddo
+    z(ke) = -0.5*dz(ke)
+    do k = ke - 1, 1, -1
+      z(k) = z(k + 1) - 0.5*(dz(k + 1) + dz(k))
+    enddo
+  end subroutine column
+  real(kind=r8) function energy()
+    energy = sum(dp*((cv_air + qv*cv_vap + (ql + qr)*c_liq + (qi + qs + qg)*c_ice)*tz + (ql + qr + qi + qs + qg)*g*z))
+  end function energy
+end program test_sedi

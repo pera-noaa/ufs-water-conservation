@@ -1,6 +1,6 @@
 # Canonical conservation patch series for `full14`
 
-*Replay agent, 18 October 2026. Nothing has been posted. Local root `conservation/replay/`; Hercules root
+*Replay agent, 18 October 2026. Upstream state: `../../proposal/post/POSTING.md`. Local root `conservation/replay/`; Hercules root
 `$U/cons/replay` (`$U` = `/work2/noaa/co2/ash/ufs-chem-v1/upstream`, `$E` = `$U/cons/energy`). The full13 version
 of this file is [`SERIES.history.md`](SERIES.history.md), kept verbatim. Its `patches/` and `repo_diffs/` paths now
 live in `patches_full13/` and `repo_diffs_full13/`.*

@@ -1,0 +1,52 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -q batch -N 1 --exclusive -t 01:30:00 -J r14_1d_build
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/pr1/r14_1d/build.%j.log
+# 1d HAFS rerun with the #414 floor. Arm a: physics pr1-0b + #414 floor + pr1-seaice_nsst (SI1 SI2 FL1 QR1);
+# arm b: pr1-0b + #414 floor. Both carry the print-only dbg4 SAMF blocks, as q/t1a. Applied to the working tree, no commits.
+set -eu
+U=/work2/noaa/co2/ash/ufs-chem-v1/upstream; P=$U/pr1; R=$P/r14_1d; W=$R/wm; PH=$W/UFSATM/ccpp/physics; H=$P/hafs_exp
+OPT="-DAPP=HAFSW -DMOVING_NEST=ON -DCCPP_SUITES=FV3_HAFS_v1_gfdlmp_tedmf,FV3_HAFS_v1_gfdlmp_tedmf_nonsst,FV3_HAFS_v1_thompson_tedmf_gfdlsf,FV3_global_nest_v1,FV3_HAFS_v1_gfdlmpv3_tedmf -D32BIT=ON"
+F3="physics/SFC_Models/SeaIce/CICE/sfc_sice.f physics/SFC_Models/SeaIce/CICE/sfc_sice.meta physics/SFC_Layer/UFS/sfc_nst.f90"
+SD=physics/CONV/SAMF/samfdeepcnv.f; SS=physics/CONV/SAMF/samfshalcnv.f
+export PATH=$(echo "$PATH" | tr ":" "\n" | grep -v -i conda | paste -sd:); unset PYTHONPATH; export BUILD_JOBS=40
+capiter() { # count of iter= actual arguments in the generated sfc_sice_run calls of build arm $1
+  local c=$(grep -rl "call sfc_sice_run" $W/tests/build_fv3_hafs1d$1 --include='*.F90' | head -1); [ -n "$c" ] || { echo NOCAP; return; }
+  awk '/call sfc_sice_run/{p=1} p{print} p&&!/&[ ]*$/{p=0}' $c | grep -oE '[(,& ]iter *=' | wc -l; }
+pm() { grep -E '^[+-]' | grep -vE '^(\+\+\+|---) '; }
+[ "$(git -C $PH rev-parse HEAD)" = "$(git -C $PH rev-parse pr1-0b)" ] || { echo "GATE: physics HEAD != pr1-0b"; exit 1; }
+for a in a b; do
+  git -C $PH checkout -q -- physics
+  [ -z "$(git -C $PH status --porcelain)" ] || { echo "GATE: physics dirty before arm $a"; exit 1; }
+  git -C $PH diff ce5d4d04^ ce5d4d04 | git -C $PH apply
+  [ $a = a ] && git -C $PH diff d9b70feb pr1-seaice_nsst | git -C $PH apply
+  [ "$(git -C $PH diff pr1-0b -- $SD | pm)" = "$(git -C $PH diff ce5d4d04^ ce5d4d04 | pm)" ] || { echo "GATE: floor diff arm $a"; exit 1; }
+  if [ $a = a ]; then
+    git -C $PH diff --quiet pr1-seaice_nsst -- $F3 || { echo "GATE: arm a 1d files != pr1-seaice_nsst"; exit 1; }
+    ! git -C $PH diff --quiet pr1-0b -- $F3 || { echo "GATE: arm a 1d files == pr1-0b (fixes absent)"; exit 1; }
+    want="$(echo $SD $F3 | tr ' ' '\n' | sort)"
+  else
+    git -C $PH diff --quiet pr1-0b -- $F3 || { echo "GATE: arm b 1d files != pr1-0b"; exit 1; }
+    ! git -C $PH diff --quiet pr1-seaice_nsst -- $F3 || { echo "GATE: arm b carries the 1d fixes"; exit 1; }
+    want=$SD
+  fi
+  [ "$(git -C $PH diff --name-only pr1-0b | sort)" = "$want" ] || { echo "GATE: arm $a changed files: $(git -C $PH diff --name-only pr1-0b)"; exit 1; }
+  for x in deep:$SD shal:$SS; do f=$PH/${x#*:}
+    [ "$(grep -c '^! Negative moisture is set to zero after borrowing' $f)" = 1 ] || { echo "GATE: dbg anchor $f"; exit 1; }
+    awk -v s=$H/dbg4_${x%%:*}.f 'done==0 && /^! Negative moisture is set to zero after borrowing/{while((getline l < s)>0) print l; done=1} {print}' $f > $f.new && mv $f.new $f
+  done
+  [ -z "$(git -C $PH diff pr1-0b -- $SS | pm | grep '^-' || true)" ] && [ "$(git -C $PH diff pr1-0b -- $SS | pm | wc -l)" = "$(wc -l < $H/dbg4_shal.f)" ] || { echo "GATE: dbg shal not add-only"; exit 1; }
+  [ "$(git -C $PH diff pr1-0b -- $SD | pm | grep -c '^-')" = 1 ] && [ "$(git -C $PH diff pr1-0b -- $SD | pm | grep -c '^+')" = $(( 2 + $(wc -l < $H/dbg4_deep.f) )) ] || { echo "GATE: deep = floor + dbg"; exit 1; }
+  echo "arm $a source md5: $(cd $PH && md5sum $F3 $SD $SS | awk '{printf "%s:%s ", substr($2,match($2,/[^\/]*$/)), substr($1,1,8)}')"
+  [ "${DRY:-0}" = 1 ] && continue
+  ( cd $W/tests && ./compile.sh hercules "$OPT" hafs1d$a intel NO NO ) > $R/compile_$a.log 2>&1 || { echo "GATE: compile arm $a rc $?"; tail -20 $R/compile_$a.log; exit 1; }
+  x=$W/tests/fv3_hafs1d$a.exe; [ -f $x ] || { echo "GATE: no exe $a"; exit 1; }
+  echo "arm $a exe $(md5sum $x | cut -c1-8) dbg strings $(strings $x | grep -c 'DBGSAMF\|DBGSHAL')"
+  echo "arm $a sfc_sice_run iter args in caps: $(capiter $a)"
+done
+git -C $PH checkout -q -- physics
+[ "${DRY:-0}" = 1 ] && { echo DRY_GATES_PASS; exit 0; }
+cmp -s $W/tests/fv3_hafs1da.exe $W/tests/fv3_hafs1db.exe && { echo "GATE: a exe == b exe"; exit 1; }
+ca=$(capiter a); cb=$(capiter b)
+[ "$ca" -gt 0 ] && [ "$cb" = 0 ] || { echo "GATE: cap iter a=$ca b=$cb"; exit 1; }
+echo BUILD_GATES_PASS
+bash $P/r14_1d_scripts/r14_members.sh

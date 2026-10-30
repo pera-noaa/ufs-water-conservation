@@ -1,0 +1,269 @@
+--- a/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
++++ b/UFSATM/ccpp/physics/physics/MP/Thompson/module_mp_thompson.F90
+@@ -2044,7 +2044,8 @@
+       real(wp) :: r_frac, g_frac
+       real(wp) :: Ef_rw, Ef_sw, Ef_gw, Ef_rr
+       real(wp) :: Ef_ra, Ef_sa, Ef_ga
+-      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon
++      real(wp) :: dtsave, odts, odt, odzq, hgt_agl, SR, rhon, rhoo, fr
++      real(wp), dimension(kts:kte) :: dml, dzl
+       real(wp) :: msl0(kts:kte), msi0(kts:kte), fsl, fsi
+       real(wp) :: xcl
+       real(wp) :: xslw1, ygra1, zans1, eva_factor
+@@ -2253,6 +2254,8 @@
+          qv(k) = max(1.E-10, qv1d(k))
+          pres(k) = p1d(k)
+          rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
++         dml(k) = rho(k)*dzq(k)
++         dzl(k) = dzq(k)
+          nwfa(k) = max(11.1E6*rho(k), min(9999.E6*rho(k), nwfa1d(k)*rho(k)))
+          nifa(k) = max(naIN1*0.01*rho(k), min(9999.E6*rho(k), nifa1d(k)*rho(k)))
+          mvd_r(k) = D0r
+@@ -3434,9 +3437,9 @@
+          otemp = 1./temp(k)
+          tempc = temp(k) - 273.15
+          qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+-         ! rho stays the entry density so sedimentation conserves the host's column mass
+-         rhon = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
+-         rhof(k) = SQRT(RHO_NOT/rhon)
++         rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
++         dzl(k) = dml(k)/rho(k)
++         rhof(k) = SQRT(RHO_NOT/rho(k))
+          rhof2(k) = SQRT(rhof(k))
+          qvs(k) = rslf(pres(k), temp(k))
+          ssatw(k) = qv(k)/qvs(k) - 1.
+@@ -3447,7 +3450,7 @@
+          else
+             visco(k) = (1.718+0.0049*tempc-1.2E-5*tempc*tempc)*1.0E-5
+          endif
+-         vsc2(k) = SQRT(rhon/visco(k))
++         vsc2(k) = SQRT(rho(k)/visco(k))
+          lvap(k) = lvap0 + dlv*tempc
+          tcond(k) = (5.69 + 0.0168*tempc)*1.0E-5 * 418.936
+          ocp(k) = 1./(Cp*(1.+cpq*qv(k)))
+@@ -3709,6 +3712,20 @@
+             endif
+             qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+             temp(k) = t1d(k) + DT*tten(k)
++            rhoo = rho(k)
++            rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
++            fr = rho(k)/rhoo
++            if (rc(k).gt.R1) rc(k) = rc(k)*fr
++            if (ri(k).gt.R1) ri(k) = ri(k)*fr
++            if (rr(k).gt.R1) rr(k) = rr(k)*fr
++            if (rs(k).gt.R1) rs(k) = rs(k)*fr
++            if (rg(k).gt.R1) rg(k) = rg(k)*fr
++            if (is_aerosol_aware .or. merra2_aerosol_aware) nc(k) = max(2., min(nc(k)*fr, Nt_c_max))
++            ni(k) = max(R2, ni(k)*fr)
++            nr(k) = max(R2, nr(k)*fr)
++            nwfa(k) = nwfa(k)*fr
++            nifa(k) = nifa(k)*fr
++            dzl(k) = dml(k)/rho(k)
+             qvs(k) = rslf(pres(k), temp(k))
+             ssatw(k) = qv(k)/qvs(k) - 1.
+          endif
+@@ -3791,6 +3808,20 @@
+             qv(k) = max(1.E-10, qv1d(k) + DT*qvten(k))
+             nr(k) = max(R2, (nr1d(k) + DT*nrten(k))*rho(k))
+             temp(k) = t1d(k) + DT*tten(k)
++            rhoo = rho(k)
++            rho(k) = RoverRv*pres(k) / (R*temp(k)*(qv(k)+RoverRv))
++            fr = rho(k)/rhoo
++            if (rc(k).gt.R1) rc(k) = rc(k)*fr
++            if (ri(k).gt.R1) ri(k) = ri(k)*fr
++            if (rr(k).gt.R1) rr(k) = rr(k)*fr
++            if (rs(k).gt.R1) rs(k) = rs(k)*fr
++            if (rg(k).gt.R1) rg(k) = rg(k)*fr
++            if (is_aerosol_aware .or. merra2_aerosol_aware) nc(k) = max(2., min(nc(k)*fr, Nt_c_max))
++            ni(k) = max(R2, ni(k)*fr)
++            nr(k) = max(R2, nr(k)*fr)
++            nwfa(k) = nwfa(k)*fr
++            nifa(k) = nifa(k)*fr
++            dzl(k) = dml(k)/rho(k)
+          endif
+       enddo
+ #if ( WRF_CHEM == 1 )
+@@ -3854,7 +3885,7 @@
+ 
+             if (max(vtrk(k),vtnrk(k)) .gt. 1.E-3) then
+                ksed1(1) = max(ksed1(1), k)
+-               delta_tp = dzq(k)/(max(vtrk(k),vtnrk(k)))
++               delta_tp = dzl(k)/(max(vtrk(k),vtnrk(k)))
+                nstep = max(nstep, int(DT/delta_tp + 1.))
+             endif
+          enddo
+@@ -3868,7 +3899,7 @@
+          hgt_agl = 0.
+          do_loop_hgt_agl : do k = kts, kte-1
+             if (rc(k) .gt. R2) ksed1(5) = k
+-            hgt_agl = hgt_agl + dzq(k)
++            hgt_agl = hgt_agl + dzl(k)
+             if (hgt_agl .gt. 500.0) exit do_loop_hgt_agl
+          enddo do_loop_hgt_agl
+ 
+@@ -3919,7 +3950,7 @@
+ 
+             if (vtik(k) .gt. 1.E-3) then
+                ksed1(2) = max(ksed1(2), k)
+-               delta_tp = dzq(k)/vtik(k)
++               delta_tp = dzl(k)/vtik(k)
+                nstep = max(nstep, int(DT/delta_tp + 1.))
+             endif
+          enddo
+@@ -3968,7 +3999,7 @@
+ 
+             if (vtsk(k) .gt. 1.E-3) then
+                ksed1(3) = max(ksed1(3), k)
+-               delta_tp = dzq(k)/vtsk(k)
++               delta_tp = dzl(k)/vtsk(k)
+                nstep = max(nstep, int(DT/delta_tp + 1.))
+             endif
+          enddo
+@@ -3996,7 +4027,7 @@
+ 
+             if (vtgk(k) .gt. 1.E-3) then
+                ksed1(4) = max(ksed1(4), k)
+-               delta_tp = dzq(k)/vtgk(k)
++               delta_tp = dzl(k)/vtgk(k)
+                nstep = max(nstep, int(DT/delta_tp + 1.))
+             endif
+          enddo
+@@ -4012,8 +4043,8 @@
+ !+---+-----------------------------------------------------------------+
+ 
+       do k = kts, kte
+-         msl0(k) = (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzq(k)
+-         msi0(k) = (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzq(k)
++         msl0(k) = (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzl(k)
++         msi0(k) = (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzl(k)
+       enddo
+       if (ANY(L_qr .eqv. .true.)) then
+          nstep = nint(1./onstep(1))
+@@ -4025,7 +4056,7 @@
+                   sed_n(k) = vtnrk(k)*nr(k)
+                enddo
+                k = kte
+-               odzq = 1./dzq(k)
++               odzq = 1./dzl(k)
+                orho = 1./rho(k)
+                qrten(k) = qrten(k) - sed_r(k)*odzq*onstep(1)*orho
+                nrten(k) = nrten(k) - sed_n(k)*odzq*onstep(1)*orho
+@@ -4033,7 +4064,7 @@
+                nr(k) = max(R2, nr(k) - sed_n(k)*odzq*DT*onstep(1))
+                pfll1(k) = pfll1(k) + sed_r(k)*DT*onstep(1)
+                do k = ksed1(1), kts, -1
+-                  odzq = 1./dzq(k)
++                  odzq = 1./dzl(k)
+                   orho = 1./rho(k)
+                   qrten(k) = qrten(k) + (sed_r(k+1)-sed_r(k))                &
+                                                       *odzq*onstep(1)*orho
+@@ -4062,8 +4093,8 @@
+             do n = 1, niter
+                rr_tmp(:) = rr(:)
+                nr_tmp(:) = nr(:)
+-               call semi_lagrange_sedim(kte,dzq,vtrk,rr,rainsfc,pfll,dtcfl,R1)
+-               call semi_lagrange_sedim(kte,dzq,vtnrk,nr,vtr,pdummy,dtcfl,R2)
++               call semi_lagrange_sedim(kte,dzl,vtrk,rr,rainsfc,pfll,dtcfl,R1)
++               call semi_lagrange_sedim(kte,dzl,vtnrk,nr,vtr,pdummy,dtcfl,R2)
+                nr(:) = max(nr(:), R2)
+                do k = kts, kte
+                   orhodt = 1./(rho(k)*dt)
+@@ -4104,7 +4135,7 @@
+          ! substeps keep each layer's outflow within its content (Courant number <= 1), as for the other species
+          nstepc = 1
+          do k = ksed1(5), kts, -1
+-            if (vtck(k) .gt. 0.) nstepc = max(nstepc, int(DT*vtck(k)/dzq(k) + 1.))
++            if (vtck(k) .gt. 0.) nstepc = max(nstepc, int(DT*vtck(k)/dzl(k) + 1.))
+          enddo
+          onstep(5) = 1./real(nstepc, kind=wp)
+          dtsed = DT*onstep(5)
+@@ -4114,7 +4145,7 @@
+                sed_n(k) = vtnck(k)*nc(k)
+             enddo
+             do k = ksed1(5), kts, -1
+-               odzq = 1./dzq(k)
++               odzq = 1./dzl(k)
+                orho = onstep(5)/rho(k)
+                qcten(k) = qcten(k) + (sed_c(k+1)-sed_c(k)) *odzq*orho
+                ncten(k) = ncten(k) + (sed_n(k+1)-sed_n(k)) *odzq*orho
+@@ -4136,7 +4167,7 @@
+                sed_n(k) = vtnik(k)*ni(k)
+             enddo
+             k = kte
+-            odzq = 1./dzq(k)
++            odzq = 1./dzl(k)
+             orho = 1./rho(k)
+             qiten(k) = qiten(k) - sed_i(k)*odzq*onstep(2)*orho
+             niten(k) = niten(k) - sed_n(k)*odzq*onstep(2)*orho
+@@ -4144,7 +4175,7 @@
+             ni(k) = max(R2, ni(k) - sed_n(k)*odzq*DT*onstep(2))
+             pfil1(k) = pfil1(k) + sed_i(k)*DT*onstep(2)
+             do k = ksed1(2), kts, -1
+-               odzq = 1./dzq(k)
++               odzq = 1./dzl(k)
+                orho = 1./rho(k)
+                qiten(k) = qiten(k) + (sed_i(k+1)-sed_i(k))                 &
+                                                 *odzq*onstep(2)*orho
+@@ -4172,13 +4203,13 @@
+                sed_s(k) = vtsk(k)*rs(k)
+             enddo
+             k = kte
+-            odzq = 1./dzq(k)
++            odzq = 1./dzl(k)
+             orho = 1./rho(k)
+             qsten(k) = qsten(k) - sed_s(k)*odzq*onstep(3)*orho
+             rs(k) = max(R1, rs(k) - sed_s(k)*odzq*DT*onstep(3))
+             pfil1(k) = pfil1(k) + sed_s(k)*DT*onstep(3)
+             do k = ksed1(3), kts, -1
+-               odzq = 1./dzq(k)
++               odzq = 1./dzl(k)
+                orho = 1./rho(k)
+                qsten(k) = qsten(k) + (sed_s(k+1)-sed_s(k))                 &
+                                                 *odzq*onstep(3)*orho
+@@ -4203,13 +4234,13 @@
+                   sed_g(k) = vtgk(k)*rg(k)
+                enddo
+                k = kte
+-               odzq = 1./dzq(k)
++               odzq = 1./dzl(k)
+                orho = 1./rho(k)
+                qgten(k) = qgten(k) - sed_g(k)*odzq*onstep(4)*orho
+                rg(k) = max(R1, rg(k) - sed_g(k)*odzq*DT*onstep(4))
+                pfil1(k) = pfil1(k) + sed_g(k)*DT*onstep(4)
+                do k = ksed1(4), kts, -1
+-                  odzq = 1./dzq(k)
++                  odzq = 1./dzl(k)
+                   orho = 1./rho(k)
+                   qgten(k) = qgten(k) + (sed_g(k+1)-sed_g(k))                 &
+                                                 *odzq*onstep(4)*orho
+@@ -4234,7 +4265,7 @@
+ 
+             do n = 1, niter
+                rg_tmp(:) = rg(:)
+-               call semi_lagrange_sedim(kte,dzq,vtgk,rg,graulsfc,pfil,dtcfl,R1)
++               call semi_lagrange_sedim(kte,dzl,vtgk,rg,graulsfc,pfil,dtcfl,R1)
+                do k = kts, kte
+                   orhodt = 1./(rho(k)*dt)
+                   qgten(k) = qgten(k) + (rg(k) - rg_tmp(k))*orhodt
+@@ -4271,8 +4302,8 @@
+       fsl = 0.
+       fsi = 0.
+       do k = kte, kts, -1
+-         fsl = fsl + msl0(k) - (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzq(k)
+-         fsi = fsi + msi0(k) - (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzq(k)
++         fsl = fsl + msl0(k) - (qr1d(k) + qrten(k)*DT + qc1d(k) + qcten(k)*DT)*rho(k)*dzl(k)
++         fsi = fsi + msi0(k) - (qi1d(k) + qiten(k)*DT + qs1d(k) + qsten(k)*DT + qg1d(k) + qgten(k)*DT)*rho(k)*dzl(k)
+          tsf(1,k,ii) = fsl
+          tsf(2,k,ii) = fsi
+       enddo
+@@ -4440,8 +4471,8 @@
+       xdef = 0.
+       xavl = 0.
+       do k = kts, kte
+-         xdef = xdef + max(1.E-10 - qv1d(k), 0._wp)*rho(k)*dzq(k)
+-         xavl = xavl + max(qv1d(k) - 1.E-10, 0._wp)*rho(k)*dzq(k)
++         xdef = xdef + max(1.E-10 - qv1d(k), 0._wp)*rho(k)*dzl(k)
++         xavl = xavl + max(qv1d(k) - 1.E-10, 0._wp)*rho(k)*dzl(k)
+       enddo
+       if (xdef .gt. 0. .and. xavl .gt. 0.) then
+          frc = min(1._wp, xdef/xavl)

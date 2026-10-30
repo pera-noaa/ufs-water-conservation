@@ -1,6 +1,23 @@
 {
- "SAMF_ISSUE": 401,
- "RT_0c": "Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 57 tests identical, 150 change answers, 25 restart children not started (their parents change answers); none fails to run",
- "RT_0b": "Hercules, 23 October 2026, develop 5651397d, baselines 20261016: 54 compiles pass; 116 tests identical, 101 change answers, 15 restart/IAU children not started (their parents change answers); none fails to run",
- "WM_ISSUE": 3404
+  "SAMF_ISSUE": 401,
+  "RT_0c": "Hercules, 27 October 2026, develop 3e48f4cc, baselines 20261022: 54 compiles pass; 57 tests identical, 150 change answers, 25 restart children not started (their parents change answers); none fails to run",
+  "RT_0b": "Hercules, 27 October 2026, develop 3e48f4cc, baselines 20261022: 54 compiles pass; 116 tests identical, 101 change answers, 15 restart/IAU children not started (their parents change answers); none fails to run",
+  "WM_ISSUE": 3404,
+  "PR_TH": 406,
+  "PR_TP": 407,
+  "PR_SAMF": 408,
+  "PR_NM1": 409,
+  "PR_NM2": 410,
+  "PR_NCAR_NM": 274,
+  "PR_GMP": 413,
+  "GFDL_SEDI_ISSUE": 430,
+  "GFDL_SEDI_PR": 431,
+  "FMS_ISSUE": 1937,
+  "SPACK_STACK_ENV_ISSUE": 2144,
+  "SPACK_STACK_FPE_ISSUE": 2188,
+  "SPACK_PACKAGES_FMS_PR": 103,
+  "WM_FPE_ISSUE": 3406,
+  "PR_XLAMUE": 414,
+  "ATM_SX": 1156,
+  "WM_SX": 3408
 }

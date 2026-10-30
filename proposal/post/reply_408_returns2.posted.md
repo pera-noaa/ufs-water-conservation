@@ -1,0 +1,1 @@
+@lisa-bengtsson @JongilHan66 Thanks, I'll add the deletion of all 10 early returns in `samfdeepcnv` to this PR as one more commit and rerun the full RT for the SAMF/PBL package (ufs-community/ufs-weather-model#3408). For coldpool in #403, the same deletion applies; the block test above shows which of its paths depend on the blocking.

@@ -1,0 +1,77 @@
+## Commit Queue Requirements:
+- [x] This PR addresses a relevant WM issue (if not, create an issue). 
+- [ ] All subcomponent pull requests (if any) have been reviewed by their code managers. (Developers should request reviews when they believe their development and testing are complete.)
+- [x] Run the full Intel+GNU RT suite (compared to current baselines), preferably on Ursa (Hercules is also an acceptable alternative). **Exceptions:** documentation-only PRs, CI-only PRs, etc.
+   - [x] Commit log file w/full results from RT suite run (if applicable).
+   - [x] Verify that `test_changes.list` indicates which tests, if any, are changed by this PR. Commit `test_changes.list`, even if it is empty. Ensure that syncs w/develop do not overwrite this file. 
+- [ ] All CI is passing. 
+  - Note that any increase in compile warnings must be investigated and solved before a PR can be processed. 
+- Transparency in the use of generative AI is required by NOAA policy. Was GenAI used in this work?
+   - [ ] No.
+   - [x] Yes. Claude Opus 5.5 (Anthropic) was used to assist with developing this code. 
+     - [ ] The code has been reviewed, edited, and validated by NWS staff. (Note: If the code has not yet been reviewed by NWS staff, leave unchecked, and OMD CMs will review as part of the PR review process.)
+- [x] Fill out all sections of this template.
+
+## Description:
+Two answer-changing SAMF fixes. First (ufs-community/ccpp-physics#405): with TVD transport, the cloud-base double-counting correction used the limited face value where the updraft takes `qo(kb)`, so deep and shallow convection created water and tracer mass in layer `kb+1` (and at `jmin` in the deep downdraft): +0.56 % (deep) and +2.12 % (shallow) of convective rain in `control_p8`, round-off with the fix. Second (ufs-community/ccpp-physics#414): floors deep entrainment at `0.001·clamt`; without it `hafs_global_multiple_4nests_atm` crashes in about 1 of 5 runs on develop, and in this RT with #405 alone (ufs-community/ccpp-physics#401). Every suite running SAMF changes answers. One of the staged WM PRs for #3404.
+
+### Commit Message:
+```
+* UFSWM - SAMF cloud-base and entrainment fixes; update UFSATM
+  * UFSATM - update ccpp-physics
+    * ccpp-physics - SAMF: cloud-base double-counting correction must use what the updraft took
+    * ccpp-physics - SAMF: floor deep entrainment at 0.001*clamt
+```
+
+### Priority:
+- [x] Normal
+
+## Git Tracking
+
+### UFSWM:
+* Addresses #3404, with the other staged WM PRs; the last to merge closes it
+
+### Sub component Pull Requests:
+* UFSATM: NOAA-EMC/ufsatm#1156
+  * ccpp-physics: ufs-community/ccpp-physics#405
+  * ccpp-physics: ufs-community/ccpp-physics#414
+
+### UFSWM Blocking Dependencies:
+- [x] None
+
+### Documentation:
+- [x] Documentation update NOT required.
+   - Explanation: bug fixes; no new options.
+
+## Changes
+
+### Regression Test Changes (Please commit test_changes.list):
+- [x] PR Updates/Changes Baselines. Hercules, Intel and GNU: 54 of 54 compiles pass; 122 tests identical, 95 change answers, 15 restarts not started (control changed); 110 in `test_changes.list`.
+
+### Input data Changes:
+- [x] None.
+
+### Subcomponent Branch Changes
+- [x] No
+
+### Library Changes/Upgrades:
+- [x] No Updates
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+---
+<!-- STOP!!! THE FOLLOWING IS FOR CODE MANAGERS ONLY. PLEASE DO NOT FILL OUT -->
+## Testing Log:
+- RDHPCS
+  - [ ] Orion
+  - [ ] Hercules
+  - [ ] GaeaC6
+  - [ ] Ursa
+- WCOSS2
+  - [ ] Dogwood/Cactus
+- [ ] CI
+- [ ] opnReqTest (complete task if unnecessary)
+
+## Testing Remarks:
+<!-- Lead CM: List (1) testing issues that we are bypassing (e.g., failing CI due to remarks or an early-merged component PR)
+(2) Issues that have been opened based on testing results (3) any other relevant info --> -

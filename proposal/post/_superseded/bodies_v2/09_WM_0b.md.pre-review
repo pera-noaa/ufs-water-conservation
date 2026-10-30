@@ -1,0 +1,70 @@
+## Commit Queue Requirements:
+- [x] This PR addresses a relevant WM issue: #3404
+- [ ] All subcomponent pull requests (if any) have been reviewed by their code managers.
+- [x] Run the full Intel+GNU RT suite (compared to current baselines) on Hercules.
+   - [x] Commit log file w/full results from RT suite run.
+   - [x] Verify that `test_changes.list` indicates which tests, if any, are changed by this PR.
+- Transparency in the use of generative AI is required by NOAA policy. Was GenAI used in this work?
+   - [x] Yes. Claude Opus 5.5 (Anthropic) was used to assist with developing this code.
+     - [ ] The code has been reviewed, edited, and validated by NWS staff.
+- [x] Fill out all sections of this template.
+
+## Description:
+14 independent bug fixes that remove water, energy and tracer-mass errors in SAMF, the PBL, Noah-MP, GFDL MP v3 and the SAMF single-precision build. Each fix is one commit in its subcomponent, and the commit message gives the defect, the fix and the measured effect. Largest effects: SAMF drops the heat of fusion of the ice it detrains (0.42 W/m²); GFDL MP v3 creates 1.03 % of its precipitation; `control_p8_mynn` depends on the domain decomposition. [0b global effect: mean 3-D temperature and precipitation change in the global tests, from the rerun RT] `hafs_global_1nest_atm` has a pre-existing SAMF instability (ufs-community/ccpp-physics#401); [0b hafs: crash count with these fixes vs develop]. One of the staged WM PRs for #3404.
+
+### Commit Message:
+```
+* UFSWM - Round-1 conservation bug fixes, track 0b (SAMF, PBL, Noah-MP, GFDL MP v3); update UFSATM
+  * UFSATM - SAMFCNV_32BIT compiles all SAMF files single precision
+    * ccpp-physics - Bug fixes in SAMF, satmedmfvdifq, Noah-MP, GFDL MP v3
+```
+
+### Priority:
+- [x] Normal
+
+## Git Tracking
+
+### UFSWM:
+* Addresses #3404, with the other staged WM PRs; the last to merge closes it
+
+### Sub component Pull Requests:
+* UFSATM: NOAA-EMC/ufsatm#TBD-ATM_0b
+  * ccpp-physics: ufs-community/ccpp-physics#TBD-PR_SAMF (SAMF + PBL), #TBD-PR_NM1, #TBD-PR_NM2 (Noah-MP), #TBD-PR_GMP (GFDL MP v3)
+
+### UFSWM Blocking Dependencies:
+- [x] None
+
+### Documentation:
+- [x] Documentation update NOT required.
+   - Explanation: bug fixes; no new options.
+
+## Changes
+
+### Regression Test Changes (Please commit test_changes.list):
+- [x] PR Updates/Changes Baselines. Hercules, 27 October 2026, develop 3e48f4cc, baselines 20261022: 54 compiles pass; 116 tests identical, 101 change answers, 15 restart/IAU children not started (their parents change answers); none fails to run
+
+### Input data Changes:
+- [x] None.
+
+### Subcomponent Branch Changes
+- [x] No
+
+### Library Changes/Upgrades:
+- [x] No Updates
+
+---
+<!-- STOP!!! THE FOLLOWING IS FOR CODE MANAGERS ONLY. PLEASE DO NOT FILL OUT -->
+## Testing Log:
+- RDHPCS
+  - [ ] Orion
+  - [ ] Hercules
+  - [ ] GaeaC6
+  - [ ] Ursa
+- WCOSS2
+  - [ ] Dogwood/Cactus
+- [ ] CI
+- [ ] opnReqTest (complete task if unnecessary)
+
+## Testing Remarks:
+<!-- Lead CM: List (1) testing issues that we are bypassing (e.g., failing CI due to remarks or an early-merged component PR)
+(2) Issues that have been opened based on testing results (3) any other relevant info --> -

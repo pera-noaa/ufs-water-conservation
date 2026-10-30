@@ -1,0 +1,254 @@
+--- /private/tmp/claude-33310/-Users-pera-Documents-ash-code-tm5-zoom/ee96825e-0c8b-4a26-8edc-7fcc1383da1f/scratchpad/flags/src403/samfdeepcnv.f	2026-10-28 14:30:13
++++ /private/tmp/claude-33310/-Users-pera-Documents-ash-code-tm5-zoom/ee96825e-0c8b-4a26-8edc-7fcc1383da1f/scratchpad/flags/var/proto.f	2026-10-28 14:40:54
+@@ -339,6 +339,8 @@
+       real(kind=conv_wp) tsumn(im), tsump(im), rtnp(im)
+ !
+       logical do_aerosols, totflg, cnvflg(im), asqecflg(im), flg(im)
++!  columns the rest of the routine still updates (CA trigger, progomega memory)
++      logical pending(im)
+ !
+ !    asqecflg: flag for the quasi-equilibrium assumption of Arakawa-Schubert
+ !
+@@ -435,6 +437,13 @@
+       chem_pw = 0.0_conv_wp
+       wet_dep = 0.0_conv_wp
+ !
++      do i=1,im
++        pending(i) = .false.
++        if(do_ca .and. ca_trigger) pending(i) =
++     &    real(ca_deep(i), kind=conv_wp) > real(nthresh, kind=conv_wp)
++        if(progomega .and. present(omegain)) pending(i) = pending(i)
++     &    .or. any(omegain(i,:) /= 0.0_kind_phys)
++      enddo
+       do i=1,im
+         cnvflg(i) = .true.
+         if(do_mynnedmf) then
+@@ -1097,13 +1106,7 @@
+         if(kbcon(i) == kmax(i)) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !
+ !  if wgke is less than subcloud convective inhibition (cina), no cold pool trigger
+@@ -1202,13 +1205,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !
+ ! re-define kb & kbcon
+@@ -1268,13 +1265,7 @@
+          enddo
+       endif
+ 
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+       do i=1,im
+         if(cnvflg(i)) then
+@@ -1318,13 +1309,7 @@
+          enddo
+       endif
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ 
+ ! turbulent entrainment rate assumed to be proportional
+@@ -1751,13 +1736,7 @@
+          enddo
+       endif
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i = 1, im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  calculate convective inhibition
+@@ -1842,13 +1821,7 @@
+          enddo
+       endif
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  determine first guess cloud top as the level of zero buoyancy
+@@ -1887,13 +1860,7 @@
+          enddo
+       endif
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ 
+ c
+@@ -2095,13 +2062,7 @@
+         if(cnvflg(i) .and. aa1(i) <= 0.0_conv_wp) cnvflg(i) = .false.
+       enddo
+ !!
+-      if(.not.progomega .or. .not.coldpool)then
+-         totflg = .true.
+-         do i=1,im
+-            totflg = totflg .and. (.not. cnvflg(i))
+-         enddo
+-         if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c  Estimate the convective overshooting as the level
+@@ -2736,13 +2697,7 @@
+         endif
+       enddo
+ !!
+-      if(.not.coldpool)then
+-        totflg = .true.
+-        do i=1,im
+-          totflg = totflg .and. (.not. cnvflg(i))
+-        enddo
+-        if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ c
+ c--- what would the change be, that a cloud with unit mass
+@@ -3646,13 +3601,7 @@
+         endif
+       enddo
+ !!
+-      if(.not.coldpool)then
+-        totflg = .true.
+-        do i=1,im
+-          totflg = totflg .and. (.not. cnvflg(i))
+-        enddo
+-        if(totflg) return
+-      endif
++      if (.not. any(cnvflg .or. pending)) go to 900
+ !!
+ !
+ !> - For scale-aware parameterization, the updraft fraction (sigmagfm) is first computed as a function of the lateral entrainment rate at cloud base (see Han et al.'s (2017) \cite han_et_al_2017 equation 4 and 5), following the study by Grell and Freitas (2014) \cite grell_and_freitas_2014.
+@@ -4087,14 +4036,6 @@
+           enddo
+         enddo
+ !
+-        do k = 1, km1
+-          do i = 1, im
+-            tem = real(buoyexcs(i,k), kind=conv_wp) 
+-     &            + dellabu(i,k) * dt2
+-            ptem = 1. + dt2 / taucp
+-            buoyexcs(i,k) = real(tem / ptem, kind=kind_phys)
+-          enddo
+-        enddo
+ !
+       endif
+ !
+@@ -4405,6 +4346,37 @@
+ !
+       endif
+ !!
++      endif ! (.not.hwrf_samfdeep)
++!
++!     if(coldpool)then
++!       print*,'buoyexcs_max= ',maxval(real(buoyexcs, kind=conv_wp))
++!       print*,'buoyexcs_min= ',minval(real(buoyexcs, kind=conv_wp))
++!     endif
++!
++!     if(coldpool)then
++!
++!       i=im/2
++!       if(cptrig(i)) then
++!       do k = 1,kdcp(i)
++!         print*,'z:buex= ',zo(i,k),real(buoyexcs(i,k), kind=conv_wp)
++!       enddo
++!       endif
++!
++!     endif
++!
++!  exit: work every column needs, convecting or not
++  900 continue
++      if(coldpool) then
++        do k = 1, km1
++          do i = 1, im
++            tem = real(buoyexcs(i,k), kind=conv_wp) 
++     &            + dellabu(i,k) * dt2
++            ptem = 1. + dt2 / taucp
++            buoyexcs(i,k) = real(tem / ptem, kind=kind_phys)
++          enddo
++        enddo
++      endif
++      if(.not.hwrf_samfdeep) then
+       if(mp_phys == mp_phys_mg) then
+         do k=1,km
+           do i=1,im
+@@ -4428,24 +4400,7 @@
+           enddo
+         enddo
+       endif
+-      endif ! (.not.hwrf_samfdeep)
+-!
+-!     if(coldpool)then
+-!       print*,'buoyexcs_max= ',maxval(real(buoyexcs, kind=conv_wp))
+-!       print*,'buoyexcs_min= ',minval(real(buoyexcs, kind=conv_wp))
+-!     endif
+-!
+-!     if(coldpool)then
+-!
+-!       i=im/2
+-!       if(cptrig(i)) then
+-!       do k = 1,kdcp(i)
+-!         print*,'z:buex= ',zo(i,k),real(buoyexcs(i,k), kind=conv_wp)
+-!       enddo
+-!       endif
+-!
+-!     endif
+-!
++      endif
+       ten_t = real((new_t1 - real(t1, kind=conv_wp)) / real(delt,
+      &        kind=conv_wp), kind=kind_phys)
+       ten_q(:,:,1) = real((new_q1 - real(q1, kind=conv_wp))

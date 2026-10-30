@@ -17,7 +17,7 @@ energy and passive-tracer mass over a 24-h forecast, with the same standard of f
 
 The final tree is `full14` (all-on bitwise identical to `full13`). Open: the regression baselines (564 GB) and canopy
 build trees (4.8 GB) on Hercules are approved for deletion, pending a run by Ash; canopy `runs/` is deleted.
-Submission: round 1 (38 bug fixes, nothing posted) in `../proposal/pr_round1.md`. Every item, with its outcome, class and switch: `TRACKER.md`.
+Submission: round 1 (38 bug fixes) in `../proposal/pr_round1.md`; what is posted and what is pending: `../proposal/post/POSTING.md`. Every item, with its outcome, class and switch: `TRACKER.md`.
 
 ## Documents
 

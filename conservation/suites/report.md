@@ -83,7 +83,13 @@ CONSISTENCY (energy).
 Cause: `mpdrv` converts in with 1/(1 − qv_in) (dp = delp·(1 − qv_in)) and back with 1/(1 + qv_new); the CCPP driver
 keeps the returned `delp` local and the host rebuilds mass as input Δp × returned ratio, so the host's species mass is the true
 mass × 1/[(1 − qv_in)(1 + r_v,new)] — TH1. Fix (02): in the non-inline branch convert back with
-`con_r8 = 1/(1 − qv(i,k))` (input humidity). One line; the inline branch (FV3 updates delp) is untouched. Also measured
+`con_r8 = 1/(1 − qv(i,k))` (input humidity). One line; the inline branch (FV3 updates delp) is untouched. The PR carries it in the
+CCPP wrapper instead (02w, `fixes/02w_E4_gfdlmp_v3_mass_basis_wrapper_v9.diff`): rescale the returned species by
+`delp_out/delp_in`, GFDL's module unchanged. Same species to 8e-16 per call (column test, `proposal/post/gfdl_wrap/`); the
+final tz → pt conversion's heat capacity then uses GFDL's basis (≤ 2e-5 K per call). Meters: trees `gA` (02 + 07) and
+`gW` (02w + 07), runs `gA_gfdl`, `gW_gfdl` (24 h): MP water rW/P 1.6e-15 (gA), 1.5e-14 (gW); GFDL frame + water PE
+−0.0075, −0.0070 W m-2; gW vs gA against the consv_te 0.999 pair: rms ratios 0.96–1.16, means within noise. The 02 impact
+row holds for 02w. Also measured
 and clean here: rainmin zeroing and settled cloud water `water0` (not in prcp0) are 0 in this case (P before zeroing =
 P booked exactly); they would leak if active.
 
