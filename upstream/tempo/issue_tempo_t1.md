@@ -1,6 +1,7 @@
+<!-- SUPERSEDED 13 Nov 2026: NCAR fixed T1 in NCAR/TEMPO#61 (tempo_v3.3.0); do not post. -->
 <!-- DRAFT 13 Nov 2026, not posted. NCAR/TEMPO issue, cut from ncar_tempo_issue.md to T1; rows 2-4 as context.
      One-line fix ready: pera-noaa/TEMPO fallback-sign 10dc4577 (CI run 43497239698 pass). Open the PR only if asked.
-     The c62699f row waits for the Hercules runs in PREREG_tempo_port.md.
+     The c62699f row is from PREREG_tempo_port.md (Hercules runs 10468158).
      Title: "semilagrangian_sedimentation: the piecewise-constant fallback test is inverted (creates water)" -->
 
 **Describe the bug**
@@ -17,7 +18,7 @@ profile only where the upper edge is negative. Those negatives are raised to the
 which creates water.
 
 This changes forecasts, not only the budget. UFS runs `sedi_semi = .true.`, so rain and graupel use this path. With
-the test corrected they fall as they did in v2, and grid-scale precipitation is 5 % lower in the run below. Always
+the test corrected they fall as they did in v2, and grid-scale precipitation is 4–5 % lower in the runs below. Always
 falling back (`qpi = qmi = qa`) also closes the budget, with precipitation within 0.6 % of the corrected test's, so
 the 5 % comes from the cells where v3 keeps a linear profile with a negative upper edge.
 
@@ -27,7 +28,7 @@ in % of TEMPO's grid-scale precipitation:
 | TEMPO | Residual 6–24 h, as is | with the test corrected | Precipitation 6–24 h |
 |---|---|---|---|
 | 2856696 (UFS's pin in October) | creates 0.38 % | removes 0.26 % | −5 % |
-| c62699f | | | |
+| c62699f | creates 0.43 % | removes 0.33 % | −4.3 % |
 
 The fallback alone accounts for 0.58 % (6–24 h) and 0.65 % (0–6 h), measured by leaving it out of a build with every
 other fix in. Three smaller leaks make up the rest, for context; the first two are in a separate PR (#NN):

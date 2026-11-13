@@ -35,10 +35,10 @@ Expected: CFL ≤ 1 in every layer, as at `kbcon`. `samfshalcnv.f` has the same 
 
 ## Steps to Reproduce
 
-1. Insert the print-only block [`dbg4_deep.f`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposal/hafs_samf/dbg4_deep.f) in `samfdeepcnv.f` before "Negative moisture is set to zero after borrowing" (one `DBGSAMF` line per layer heated > 4 K; bitwise the official baseline) and build develop (f1d68949) with the `hafsw` compile in `rt.conf`.
+1. Insert the print-only block [`dbg4_deep.f`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/experiments/hafs_samf/dbg4_deep.f) in `samfdeepcnv.f` before "Negative moisture is set to zero after borrowing" (one `DBGSAMF` line per layer heated > 4 K; bitwise the official baseline) and build develop (f1d68949) with the `hafsw` compile in `rt.conf`.
 2. Run `hafs_global_1nest_atm` as `rt.sh` sets it up (6 h, about 2.5 min on 6 nodes); more members: `consv_te` = 0.999, 0.998, … in `input.nml`.
-3. Count the `DBGSAMF` lines ([`q_stats.py`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposal/hafs_samf/q_stats.py)): 257–351 per member on develop, up to 52 K, almost all at `kb ≤ k < kbcon` with CFL > 1.
-4. For the crash, add a small answer change, e.g. our SAMF + PBL, Noah-MP, sea-ice/NSST and GFDL MP v3 patches ([`pr_round1_patches/`](https://github.com/pera-noaa/ufs-water-conservation/tree/main/proposal/pr_round1_patches)): 3 of 20 members stop with the overflow, `consv_te` = 1 included.
+3. Count the `DBGSAMF` lines ([`q_stats.py`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/experiments/hafs_samf/q_stats.py)): 257–351 per member on develop, up to 52 K, almost all at `kb ≤ k < kbcon` with CFL > 1.
+4. For the crash, add a small answer change, e.g. our SAMF + PBL, Noah-MP, sea-ice/NSST and GFDL MP v3 patches ([`pr_round1_patches/`](https://github.com/pera-noaa/ufs-water-conservation/tree/main/patches/pr_round1_patches)): 3 of 20 members stop with the overflow, `consv_te` = 1 included.
 
 ## Additional Context
 
@@ -51,7 +51,7 @@ Expected: CFL ≤ 1 in every layer, as at `kbcon`. `samfshalcnv.f` has the same 
 
 **Fixes we are holding.** SAMF's cloud-base double-counting correction subtracts the TVD-limited value at `kb` and `jmin` instead of what the updraft took (`qo`): SAMF creates 0.8 % of convective rain and a convected tracer loses 2 %/day (C96 `control_p8_ugwpv1`, 24 h). Our fix changes the moisture flux at `kb`, where the overshoots are, and here raises the event count 1.7×; it will follow the option you choose. Our sea-ice/NSST and FV3 fixes also wait for the bound.
 
-Data, scripts and instrumentation: https://github.com/pera-noaa/ufs-water-conservation/tree/main/proposal/hafs_samf
+Data, scripts and instrumentation: https://github.com/pera-noaa/ufs-water-conservation/tree/main/experiments/hafs_samf
 
 ## Output
 

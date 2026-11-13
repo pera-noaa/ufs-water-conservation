@@ -1,6 +1,7 @@
+<!-- SUPERSEDED 13 Nov 2026: NCAR fixed C2 in NCAR/TEMPO#62 (tempo_v3.3.0); the density half is now pr_tempo_density.md; do not post. -->
 <!-- DRAFT 13 Nov 2026, not posted. NCAR/TEMPO PR, base main c62699fb, head pera-noaa:water-graupel-density db01901d
-     (ca8252d5 graupel, db01901d density). CI on the fork: run 43497234719 pass. The c62699f rows wait for the
-     Hercules runs in PREREG_tempo_port.md; fill them before posting, or post with the 2856696 rows only.
+     (ca8252d5 graupel, db01901d density). CI on the fork: run 43497234719 pass. The c62699f rows are from
+     PREREG_tempo_port.md (Hercules runs 10468158).
      Title: "Re-close graupel gains after the limiters; sedimentation with the entry density" -->
 
 @AndersJensen-NOAA These are the two scheme fixes that ufs-community/ccpp-physics#406 makes in Thompson, ported to
@@ -41,12 +42,14 @@ On `main`, the residual R/P without and with this PR:
 
 | c62699f | 0–6 h | 6–24 h | P 6–24 h |
 |---|---|---|---|
-| `main` | | | |
-| + graupel | | | |
-| + density | | | |
-| + both (this PR) | | | |
+| `main` | +1.25 % | +0.43 % | 0.808 kg/m² |
+| + graupel | +0.50 % | +0.43 % | −0.07 % |
+| + density | +1.32 % | +0.50 % | −0.37 % |
+| + both (this PR) | +0.56 % | +0.50 % | −0.35 % |
 
-Graupel leaks mostly during spin-up, as in Thompson. One case, so sizes vary. CI passes on the branch; `test/tests.F90`
+Graupel leaks mostly during spin-up, as in Thompson: the fix removes 0.75 of the 1.25 % created in the first 6 h.
+The net residual at 6–24 h rises because the density fix removes a sink that offsets part of a larger source, the
+semi-Lagrangian fallback (#NN); the gross column error falls from 0.93 to 0.88 %. One case, so sizes vary. CI passes on the branch; `test/tests.F90`
 has no stored answers, so it checks that the scheme builds and runs.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

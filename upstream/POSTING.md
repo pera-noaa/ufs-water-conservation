@@ -13,7 +13,7 @@
 - **No reviews yet:** #409, #410 (package 3), #413, NOAA-EMC/ufsatm#1156, NCAR/noahmp#274, GFDL_atmos_cubed_sphere#430/#431.
 - **Issues open, no reply:** #401; #404 (description rewritten: fix v3 with guards, RT pass, forecast impact, negative
   condensate); NCAR/ccpp-physics#1251 (untagged, not run); WM #3404, #3406. #403 answered on `diff3d` (÷ the physics' `del`).
-- **Owed:** NCAR/TEMPO PR (graupel + density, ported to c62699fb) and the T1 fallback-sign issue; plan `tempo/PLAN_tempo_upstream.md`.
+- **TEMPO scheme:** density-only PR posted 13 Nov as [NCAR/TEMPO#63](https://github.com/NCAR/TEMPO/pull/63) against `tempo_v3.3.0` (`tempo/pr_tempo_density.md`); NCAR merged T1 and graupel as NCAR/TEMPO#61, #62; plan `tempo/PLAN_tempo_upstream.md`.
 - **Owed on #406 (12 Nov replies):** open a separate issue for the base `prg_rcg` re-close in Re-enforce (same exposure as the rain-snow limit). Draft: `issues/issue_thompson_prg_rcg.md`. (`series` `pr1-thompson` fast-forwarded to abd89364 on 12 Nov; package 2 not built yet, so nothing to relink.)
 - **Build side track:** FMS#1937 answered; JCSDA/spack-packages#103 merged; JCSDA/spack-stack#2144 with EPIC.
 

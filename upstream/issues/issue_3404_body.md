@@ -15,8 +15,8 @@ We will send the fixes in stages: ccpp-physics (or FV3) PRs first, then the NOAA
 The SAMF cloud-base fix is ufs-community/ccpp-physics#405.
 
 Working notes, with each defect, its fix, the measurements and the scripts (https://github.com/pera-noaa/ufs-water-conservation):
-- Water: [`water_closure_proposal.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposal/water_closure_proposal.md)
-- Energy and tracer mass: [`conservation_proposal.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposal/conservation_proposal.md)
-- Submission plan and regression-test results: [`pr_round1.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposal/pr_round1.md)
-- The SAMF overshoot (ufs-community/ccpp-physics#401): [`hafs_samf/`](https://github.com/pera-noaa/ufs-water-conservation/tree/main/proposal/hafs_samf)
+- Water: [`water_closure_proposal.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposals/water_closure_proposal.md)
+- Energy and tracer mass: [`conservation_proposal.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposals/conservation_proposal.md)
+- Submission plan and regression-test results: [`pr_round1.md`](https://github.com/pera-noaa/ufs-water-conservation/blob/main/proposals/pr_round1.md)
+- The SAMF overshoot (ufs-community/ccpp-physics#401): [`hafs_samf/`](https://github.com/pera-noaa/ufs-water-conservation/tree/main/experiments/hafs_samf)
 

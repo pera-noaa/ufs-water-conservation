@@ -1,8 +1,10 @@
 # TEMPO upstream path (answer to Anders, #407, 13 Nov 01:38Z)
 
-**Status (13 November 2026).** Path decided, nothing built. Done = #407 carries both TEMPO driver fixes and merges
-cleanly; one NCAR/TEMPO PR carries the two scheme fixes that #406 makes in Thompson; the v3 fallback sign is reported
-on its own. Cloud settling and r1 leftovers wait for Thompson's follow-up (phase 1), as there.
+**Status (13 November 2026).** #407 carries both TEMPO driver fixes (TH5 added, RT subset passed). NCAR merged the
+fallback sign (NCAR/TEMPO#61) and its own form of the graupel re-close (#62) into `tempo_v3.3.0`, so steps 3–4 below
+are overtaken: what is left is a density-only PR against `tempo_v3.3.0` (`pr_tempo_density.md`, branch
+`entry-density-v330`, measured in `PREREG_tempo_v330.md`), posted 13 Nov as NCAR/TEMPO#63. Cloud settling and r1 leftovers
+wait for Thompson's follow-up (phase 1), as there.
 
 ## Why this split
 
