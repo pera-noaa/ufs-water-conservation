@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r15tr_setup3
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/trace/logs/setup3.%j.log
+# src_k = src_m + stage-3 probes (MLM negative qc by layer class)
+set -eu
+T=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/trace
+PY="env -u PYTHONPATH PYTHONNOUSERSITE=1 /work2/noaa/co2/micromamba/envs/ccgg/bin/python3 -I"
+[ -e $T/src_k ] && { echo "ABORT src_k exists"; exit 1; }
+md5sum $T/bin/apply_probe3.py
+rsync -a --exclude=/tests/*.exe --exclude=/tests/build_* --exclude=/build/ --exclude=/tests/logs/log_* --exclude=/tests/run_dir --exclude=/tests/modules.fv3_* --exclude=/tests/fail_test_* $T/src_m/ $T/src_k/
+$PY $T/bin/apply_probe3.py $T/src_k
+for f in mfscuq_mlm.f satmedmfvdifq.F; do diff -u $T/src_m/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/$f $T/src_k/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/$f || true; done > $T/logs/src_k_vs_m.diff
+echo "SETUP3_OK $(date -Is)"

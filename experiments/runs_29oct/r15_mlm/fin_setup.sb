@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r15_fin_setup
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/fin_setup.%j.log
+# src_fin = src_f + guard5.diff + the index fix (PREREG addendum)
+set -euo pipefail
+R=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm
+[ -e $R/src_fin ] && { echo "ABORT exists"; exit 1; }
+rsync -a --exclude='/tests/*.exe' --exclude='/tests/build_*' --exclude='/tests/logs/log_*' --exclude='/tests/run_dir' --exclude='/build/' --exclude='/tests/modules.fv3_*' $R/src_f/ $R/src_fin/
+cd $R/src_fin/UFSATM/ccpp/physics && patch -p1 --forward < $R/guard5.diff && patch -p1 --forward < $R/index_fix_ccpp-physics.diff && git diff --stat | tail -1
+cd $R/src_fin/UFSATM && patch -p1 --forward < $R/index_fix_ufsatm.diff && git diff --stat | tail -1
+grep -n 'mlm          = .true.' $R/src_fin/tests/parm/global_control.nml.IN
+echo "FIN_SETUP_OK $(date -Is)"

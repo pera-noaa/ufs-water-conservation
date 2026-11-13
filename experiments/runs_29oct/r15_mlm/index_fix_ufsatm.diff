@@ -1,0 +1,86 @@
+diff --git a/ccpp/data/CCPP_typedefs.F90 b/ccpp/data/CCPP_typedefs.F90
+index d04a4ad..5271444 100644
+--- a/ccpp/data/CCPP_typedefs.F90
++++ b/ccpp/data/CCPP_typedefs.F90
+@@ -204,8 +204,10 @@ module CCPP_typedefs
+     integer                             :: nsamftrac                     !<
+     integer                             :: nscav                         !<
+     integer                             :: ntcwx                         !<
++    integer                             :: ntincx                        !<
+     integer                             :: ntiwx                         !<
+     integer                             :: ntrwx                         !<
++    integer                             :: ntswx                         !<
+     integer                             :: ntk                           !<
+     integer                             :: ntkev                         !<
+     integer                             :: nvdiff                        !<
+@@ -1223,6 +1225,8 @@ contains
+     Interstitial%ntcwx            = 0
+     Interstitial%ntiwx            = 0
+     Interstitial%ntrwx            = 0
++    Interstitial%ntswx            = 0
++    Interstitial%ntincx           = 0
+ 
+     ! perform aerosol convective transport and PBL diffusion
+     Interstitial%trans_aero = Model%cplchm .and. Model%trans_trac
+@@ -1340,6 +1344,38 @@ contains
+ 
+     if (Model%ntke > 0) Interstitial%ntkev = Interstitial%nvdiff
+ 
++    ! snow and ice number in the vdftra order of GFS_PBL_generic_pre (final nvdiff); 0 = not diffused
++    if (Interstitial%nvdiff == Model%ntrac) then
++      Interstitial%ntswx  = Model%ntsw
++      Interstitial%ntincx = Model%ntinc
++    elseif (Model%imp_physics == Model%imp_physics_thompson) then
++      Interstitial%ntswx  = 5
++      if (Model%ltaerosol .or. Model%mraerosol) then
++        Interstitial%ntincx = 8
++      else
++        Interstitial%ntincx = 7
++      endif
++    elseif (Model%imp_physics == Model%imp_physics_tempo) then
++      Interstitial%ntswx  = 5
++      Interstitial%ntincx = 7
++    elseif (Model%imp_physics == Model%imp_physics_nssl) then
++      Interstitial%ntswx  = 5
++      if (Model%nssl_hail_on) then
++        Interstitial%ntincx = 9
++      else
++        Interstitial%ntincx = 8
++      endif
++    elseif (Model%imp_physics == Model%imp_physics_mg) then
++      Interstitial%ntswx  = 5
++      if (Model%ntgl > 0) then
++        Interstitial%ntincx = 8
++      else
++        Interstitial%ntincx = 7
++      endif
++    elseif (Model%imp_physics == Model%imp_physics_gfdl) then
++      Interstitial%ntswx  = 5
++    endif
++
+     if (Model%ntiw > 0) then
+         if (Model%ntclamt > 0 .and. Model%ntsigma > 0 .and. Model%ntomega > 0) then
+            Interstitial%nn = Model%ntrac - 4
+diff --git a/ccpp/data/CCPP_typedefs.meta b/ccpp/data/CCPP_typedefs.meta
+index 822cea6..d760601 100644
+--- a/ccpp/data/CCPP_typedefs.meta
++++ b/ccpp/data/CCPP_typedefs.meta
+@@ -1449,6 +1449,18 @@
+   units = index
+   dimensions = ()
+   type = integer
++[ntswx]
++  standard_name = index_for_snow_water_vertical_diffusion_tracer
++  long_name = tracer index for snow water in the vertically diffused tracer array
++  units = index
++  dimensions = ()
++  type = integer
++[ntincx]
++  standard_name = index_for_mass_number_concentration_of_cloud_ice_vertical_diffusion_tracer
++  long_name = tracer index for ice number concentration in the vertically diffused tracer array
++  units = index
++  dimensions = ()
++  type = integer
+ [ntk]
+   standard_name = index_for_turbulent_kinetic_energy_convective_transport_tracer
+   long_name = index for turbulent kinetic energy in the convectively transported tracer array

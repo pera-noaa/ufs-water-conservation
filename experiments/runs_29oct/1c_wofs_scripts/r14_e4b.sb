@@ -1,0 +1,9 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r14e_ana
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c/logs/e4b.%j.log
+W=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r14_1c; PY=/work2/noaa/co2/miniconda3/envs/tm5/bin/python
+export PYTHONNOUSERSITE=1; unset PYTHONPATH
+for t in regional_wofs_tempo regional_wofs; do
+  $PY -I $W/scripts/r14_e4b.py $W/runs $t > $W/logs/e4b_$t.txt 2>&1; echo "$t rc=$?"
+done
+echo E4B_DONE

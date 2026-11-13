@@ -1,0 +1,46 @@
+[ccpp-table-properties]
+  name = samf_prepare_flux_for_budget
+  type = scheme
+  dependencies = ../../hooks/machine.F
+
+[ccpp-arg-table]
+  name = samf_prepare_flux_for_budget_run
+  type = scheme
+[im]
+  standard_name = horizontal_loop_extent
+  long_name = horizontal loop extent
+  units = count
+  dimensions = ()
+  type = integer
+  intent = in
+[rainc]
+  standard_name = lwe_thickness_of_convective_precipitation_amount_on_dynamics_timestep
+  long_name = convective rain at this time step
+  units = m
+  dimensions = (horizontal_loop_extent)
+  type = real
+  kind = kind_phys
+  intent = in
+[flux]
+  standard_name = budget_declared_column_water_change_of_segment
+  long_name = declared column water change of the checked segment
+  units = kg m-2
+  dimensions = (horizontal_loop_extent)
+  type = real
+  kind = kind_phys
+  intent = inout
+[errmsg]
+  standard_name = ccpp_error_message
+  long_name = error message for error handling in CCPP
+  units = none
+  dimensions = ()
+  type = character
+  kind = len=*
+  intent = out
+[errflg]
+  standard_name = ccpp_error_code
+  long_name = error code for error handling in CCPP
+  units = 1
+  dimensions = ()
+  type = integer
+  intent = out

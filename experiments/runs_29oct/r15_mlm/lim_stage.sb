@@ -1,0 +1,11 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 00:30:00 -J r15_lim_stage
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/lim_stage.%j.log
+# after the trkl build: budget runs kL_on (probes, mlm on), kL_off (probes, mlm off); after lim_c: forecast run L
+set -euo pipefail
+R=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm; T=$R/trace
+case "$1" in
+  budget) E=$T/src_kL/tests/fv3_trkl.exe; L=$T/src_kL/tests/modules.fv3_trkl.lua; ls -l $E $L
+          bash $T/bin/stage.sh kL_on $E $L T T; bash $T/bin/stage.sh kL_off $E $L T F ;;
+  fi)     E=$R/src_lim/tests/fv3_atm_dyn32_intel.exe; ls -l $E; bash $R/fi_stage.sh L $E 1. ;;
+esac

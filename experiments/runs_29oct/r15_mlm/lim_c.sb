@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 08:00:00 -J r15_lc
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/lim_c.%j.log
+set -x
+export MACHINE_ID=hercules
+export PATH=$(echo "$PATH" | tr ":" "\n" | grep -v -i conda | paste -sd:)
+unset PYTHONPATH
+export dprefix=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/rt_lim
+mkdir -p ${dprefix}/stmp
+cd /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/src_lim/tests
+./rt.sh -a co2 -k -c -l c.conf
+echo "=== RT_EXIT rc=$? ==="

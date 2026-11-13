@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 02:00:00 -J r15tr_setup2
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/trace/logs/setup2.%j.log
+# src_m = src_p + stage-2 probes; src_d = src_m + 29-Oct dtdz1; src_tm = meterproto/src_th + fix_v2 + both probe stages
+set -eu
+U=/work2/noaa/co2/ash/ufs-chem-v1/upstream; T=$U/cons/r15_mlm/trace; R=$U/cons/r15_mlm
+PY="env -u PYTHONPATH PYTHONNOUSERSITE=1 /work2/noaa/co2/micromamba/envs/ccgg/bin/python3 -I"
+for t in src_m src_d src_tm; do [ -e $T/$t ] && { echo "ABORT $t exists"; exit 1; }; done
+md5sum $T/bin/apply_probe2.py
+X="--exclude=/tests/*.exe --exclude=/tests/build_* --exclude=/build/ --exclude=/tests/logs/log_* --exclude=/tests/run_dir --exclude=/tests/modules.fv3_* --exclude=/tests/fail_test_*"
+rsync -a $X $T/src_p/ $T/src_m/
+rsync -a $X $T/src_p/ $T/src_d/
+rsync -a $X $U/meterproto/src_th/ $T/src_tm/
+cd $T/src_tm/UFSATM/ccpp/physics && patch -p1 --forward < $R/fix_v2.diff
+$PY $T/bin/apply_probe.py $T/src_tm
+$PY $T/bin/apply_probe2.py $T/src_tm
+$PY $T/bin/apply_probe2.py $T/src_m
+$PY $T/bin/apply_probe2.py $T/src_d --old-dtdz1
+diff -r -q $T/src_m/UFSATM $T/src_d/UFSATM --exclude=.git || true
+diff -u $T/src_p/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90 $T/src_m/UFSATM/ccpp/physics/physics/MP/Thompson/mp_thompson.F90 > $T/logs/src_m_mp.diff || true
+diff -u $T/src_m/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F $T/src_d/UFSATM/ccpp/physics/physics/PBL/SATMEDMF/satmedmfvdifq.F > $T/logs/src_d_vs_m.diff || true
+(cd $T/src_tm/UFSATM/ccpp/physics && git log --oneline -1 && git status --short | grep -v '^??')
+echo "SETUP2_OK $(date -Is)"

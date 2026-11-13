@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r15_lim_setup
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/lim_setup.%j.log
+# src_lim = src_fin + apply_lim.py; trace/src_kL = trace/src_k + apply_lim.py (PREREG_lim.md)
+set -euo pipefail
+R=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm; T=$R/trace
+PY="env -u PYTHONPATH PYTHONNOUSERSITE=1 /work2/noaa/co2/micromamba/envs/ccgg/bin/python3 -I"
+for d in $R/src_lim $T/src_kL; do [ -e $d ] && { echo "ABORT $d exists"; exit 1; }; done
+md5sum $R/apply_lim.py
+X=(--exclude='/tests/*.exe' --exclude='/tests/build_*' --exclude='/tests/logs/log_*' --exclude='/tests/run_dir' --exclude='/build/' --exclude='/tests/modules.fv3_*' --exclude='/tests/fail_test_*')
+rsync -a "${X[@]}" $R/src_fin/ $R/src_lim/
+rsync -a "${X[@]}" $T/src_k/ $T/src_kL/
+$PY $R/apply_lim.py $R/src_lim
+$PY $R/apply_lim.py $T/src_kL
+M=UFSATM/ccpp/physics/physics/PBL/SATMEDMF
+for f in mfscuq_mlm.f satmedmfvdifq.F; do diff -u $R/src_fin/$M/$f $R/src_lim/$M/$f || true; done > $R/logs/src_lim.diff
+for f in mfscuq_mlm.f satmedmfvdifq.F; do diff -u $T/src_k/$M/$f $T/src_kL/$M/$f || true; done > $R/logs/src_kL.diff
+cmp $R/logs/src_lim.diff /dev/null && { echo "ABORT empty diff"; exit 1; } || true
+grep -c mlm_flxlim $R/src_lim/$M/mfscuq_mlm.f $T/src_kL/$M/mfscuq_mlm.f
+grep -n 'mlm          = .true.' $R/src_lim/tests/parm/global_control.nml.IN
+ls $R/src_lim/tests/c.conf $R/src_lim/tests/m.conf
+echo "LIM_SETUP_OK $(date -Is)"

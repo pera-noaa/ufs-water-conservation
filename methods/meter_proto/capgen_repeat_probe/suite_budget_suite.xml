@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suite name="budget_suite" version="2.0">
+  <group name="physics">
+    <subcycle loop="1">
+      <scheme>budget_probe</scheme>
+      <scheme>wet_step</scheme>
+      <scheme>budget_probe</scheme>
+      <scheme>wet_step</scheme>
+      <scheme>budget_probe</scheme>
+    </subcycle>
+  </group>
+</suite>

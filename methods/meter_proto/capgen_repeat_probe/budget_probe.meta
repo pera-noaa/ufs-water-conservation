@@ -1,0 +1,62 @@
+[ccpp-table-properties]
+  name = budget_probe
+  type = scheme
+  dependencies = ccpp_kinds.F90
+[ccpp-arg-table]
+  name = budget_probe_run
+  type = scheme
+[nlev]
+  standard_name = vertical_layer_dimension
+  long_name = number of layers
+  units = count
+  dimensions = ()
+  type = integer
+  intent = in
+[q]
+  standard_name = toy_water_mixing_ratio
+  long_name = toy water
+  units = kg kg-1
+  dimensions = (horizontal_dimension, vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  intent = in
+[dp]
+  standard_name = toy_layer_mass
+  long_name = toy layer mass per area
+  units = kg m-2
+  dimensions = (horizontal_dimension, vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  intent = in
+[budget_col]
+  standard_name = budget_column_water_per_slot
+  long_name = column water at each probe slot
+  units = kg m-2
+  dimensions = (horizontal_dimension, number_of_budget_slots)
+  type = real
+  kind = kind_phys
+  intent = inout
+  optional = True
+[budget_slot]
+  standard_name = budget_slot_counter
+  long_name = probe calls so far this step per column
+  units = count
+  dimensions = (horizontal_dimension)
+  type = integer
+  intent = inout
+  optional = True
+[errmsg]
+  standard_name = ccpp_error_message
+  long_name = error message
+  units = none
+  dimensions = ()
+  type = character
+  kind = len=*
+  intent = out
+[errflg]
+  standard_name = ccpp_error_code
+  long_name = error flag
+  units = 1
+  dimensions = ()
+  type = integer
+  intent = out

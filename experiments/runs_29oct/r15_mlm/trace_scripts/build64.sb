@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH -J r15tr_b64 -A co2 -p hercules -q batch -N 1 --ntasks=1 --cpus-per-task=40 -t 03:00:00
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/trace/logs/build.%j.log
+# usage: sbatch --export=ALL,TREE=src_p,CID=trp build.sb
+set -x
+export MACHINE_ID=hercules
+export PATH=$(echo $PATH | tr : "\n" | grep -v -i conda | paste -sd:)
+unset PYTHONPATH
+cd /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/trace/$TREE/tests
+export BUILD_JOBS=40
+date -Is
+./compile.sh hercules "-DAPP=ATM -DCCPP_SUITES=FV3_GFS_v17_p8_ugwpv1" $CID intel YES NO
+echo "BUILD_RC=$? $(date -Is)"
+ls -l fv3_$CID.exe modules.fv3_$CID.lua

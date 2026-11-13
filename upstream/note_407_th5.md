@@ -1,0 +1,1 @@
+Merged `ufs/dev` in and added the layer depth (1c664a4f). On Hercules (WM develop 517e02c9, `atm_dyn32` oneapi), `control_p8_ugwpv1` is identical to the develop baseline, and `control_p8_ugwpv1_tempo`, `control_p8_ugwpv1_tempo_aerosol` and `regional_wofs_tempo` run to completion with changed answers.

@@ -1,0 +1,24 @@
+diff --git a/physics/PBL/SATMEDMF/satmedmfvdifq.meta b/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+index ffe36ddf..d4f295fd 100644
+--- a/physics/PBL/SATMEDMF/satmedmfvdifq.meta
++++ b/physics/PBL/SATMEDMF/satmedmfvdifq.meta
+@@ -185,15 +185,15 @@
+   type = logical
+   intent = in
+ [ntsw]
+-  standard_name = index_of_snow_mixing_ratio_in_tracer_concentration_array
+-  long_name = tracer index for snow water
++  standard_name = index_for_snow_water_vertical_diffusion_tracer
++  long_name = tracer index for snow water in the vertically diffused tracer array
+   units = index
+   dimensions = ()
+   type = integer
+   intent = in
+ [ntinc]
+-  standard_name = index_of_mass_number_concentration_of_cloud_ice_in_tracer_concentration_array
+-  long_name = tracer index for ice number concentration
++  standard_name = index_for_mass_number_concentration_of_cloud_ice_vertical_diffusion_tracer
++  long_name = tracer index for ice number concentration in the vertically diffused tracer array
+   units = index
+   dimensions = ()
+   type = integer

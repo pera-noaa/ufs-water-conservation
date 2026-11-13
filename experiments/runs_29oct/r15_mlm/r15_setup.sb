@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH -A co2 -p service -n 1 -t 01:00:00 -J r15_setup
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/setup.%j.log
+# r15: #404 checks (PREREG.md). Trees from meterproto/src_plain; src_f = + fix_v2.diff (+ mlm in the p8 template), src_g = + guards_only.diff
+set -euo pipefail
+R=/work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm; B=/work2/noaa/co2/ash/ufs-chem-v1/upstream/meterproto/src_plain
+for t in src_f src_g; do [ -e $R/$t ] && { echo "ABORT $t exists"; exit 1; }; done
+for t in src_f src_g; do
+  rsync -a --exclude='/tests/*.exe' --exclude='/tests/build_*' --exclude='/tests/logs/log_*' --exclude='/tests/run_dir' --exclude='/build/' --exclude='/tests/modules.fv3_*' $B/ $R/$t/
+done
+cd $R/src_f/UFSATM/ccpp/physics && patch -p1 --forward < $R/fix_v2.diff && git diff --stat | tail -1
+cd $R/src_g/UFSATM/ccpp/physics && patch -p1 --forward < $R/guards_only.diff && git diff --stat | tail -1
+N=$R/src_f/tests/parm/global_control.nml.IN
+grep -q '^  isatmedmf    = @\[ISATMEDMF\]$' $N && sed -i 's/^  isatmedmf    = @\[ISATMEDMF\]$/&\n  mlm          = .true./' $N && grep -n -A1 'isatmedmf' $N
+cp $R/c.conf $R/m.conf $R/src_f/tests/
+echo "SETUP_OK $(date -Is)"

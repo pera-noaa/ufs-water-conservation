@@ -1,0 +1,11 @@
+#!/bin/bash
+#SBATCH -A co2 -p hercules -q batch -N 1 --ntasks=1 --cpus-per-task=40 -t 02:00:00 -J r15_build_g
+#SBATCH -o /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/logs/build_g.%j.log
+set -x
+export MACHINE_ID=hercules
+export PATH=$(echo $PATH | tr : "\n" | grep -v -i conda | paste -sd:)
+unset PYTHONPATH
+cd /work2/noaa/co2/ash/ufs-chem-v1/upstream/cons/r15_mlm/src_g/tests
+export BUILD_JOBS=40
+./compile.sh hercules "-DAPP=ATM -DCCPP_SUITES=FV3_GFS_v17_p8,FV3_GFS_v17_p8_ugwpv1 -D32BIT=ON" mlmg intel YES NO
+echo "BUILD_RC=$?"; ls -l fv3_mlmg.exe

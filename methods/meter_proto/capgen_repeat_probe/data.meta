@@ -1,0 +1,60 @@
+[ccpp-table-properties]
+  name = data
+  type = host
+  dependencies = ccpp_kinds.F90
+[ccpp-arg-table]
+  name = data
+  type = host
+[ncols]
+  standard_name = horizontal_dimension
+  long_name = horizontal dimension
+  units = count
+  dimensions = ()
+  type = integer
+[nlev]
+  standard_name = vertical_layer_dimension
+  long_name = number of layers
+  units = count
+  dimensions = ()
+  type = integer
+[nslot]
+  standard_name = number_of_budget_slots
+  long_name = number of budget probe slots
+  units = count
+  dimensions = ()
+  type = integer
+[q]
+  standard_name = toy_water_mixing_ratio
+  long_name = toy water
+  units = kg kg-1
+  dimensions = (horizontal_dimension, vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+[dp]
+  standard_name = toy_layer_mass
+  long_name = toy layer mass per area
+  units = kg m-2
+  dimensions = (horizontal_dimension, vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+[budget_on]
+  standard_name = flag_for_budget_meter
+  long_name = flag for budget meter
+  units = flag
+  dimensions = ()
+  type = logical
+[budget_col]
+  standard_name = budget_column_water_per_slot
+  long_name = column water at each probe slot
+  units = kg m-2
+  dimensions = (horizontal_dimension, number_of_budget_slots)
+  type = real
+  kind = kind_phys
+  active = (flag_for_budget_meter)
+[budget_slot]
+  standard_name = budget_slot_counter
+  long_name = probe calls so far this step per column
+  units = count
+  dimensions = (horizontal_dimension)
+  type = integer
+  active = (flag_for_budget_meter)

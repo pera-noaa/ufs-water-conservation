@@ -1,0 +1,21 @@
+--- a/physics/PBL/SATMEDMF/mfscuq_mlm.f
++++ b/physics/PBL/SATMEDMF/mfscuq_mlm.f
+@@ -305,8 +305,9 @@
+          enddo
+       enddo
+ 
+-!mixed-layer mean values
++!mixed-layer mean values (levs can be 0 in inactive columns)
+       do i = 1, im
++         if (cnvflg(i)) then
+          levs = mlmt(i)-mlmb(i)+1
+          u_mean(i)   = u_mean(i)/levs
+          v_mean(i)   = v_mean(i)/levs
+@@ -315,6 +316,7 @@
+          qni_mean(i) = qni_mean(i)/levs
+          mse_mean(i) = mse_mean(i)/levs
+          qtx_mean(i) = qtx_mean(i)/levs
++         endif
+       enddo
+ 
+       do k = 1, km

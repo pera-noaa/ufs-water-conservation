@@ -1,0 +1,25 @@
+--- a/physics/PBL/SATMEDMF/mfscuq_mlm.f
++++ b/physics/PBL/SATMEDMF/mfscuq_mlm.f
+@@ -198,6 +198,13 @@
+          buopa(i)     = 0.0
+       enddo
+ 
++!     b is read at mlmb-1 and mlmt+1, outside the loop below: set it everywhere
++      do k = 1, km
++         do i = 1, im
++         b(i,k)    = t1(i,k)*(1.0 + 0.61*q1(i,k,1) - qcloud(i,k) -
++     $        qsnow(i,k) - qice(i,k))
++         enddo
++      enddo
+       do k = klim-1, km-2
+          do i = 1, im
+          dmse(i,k) = ((mse(i,k+1)-mse(i,k))/(zm(i,k+1)-zm(i,k))/cp)
+@@ -267,7 +274,7 @@
+       enddo
+ 
+       do i = 1, im
+-         if (mlmb(i).eq.1)  cnvflg(i) = .false.
++         if (mlmb(i).le.1)  cnvflg(i) = .false.
+          if (mlmb(i).ge.mlmt(i)) cnvflg(i) = .false.
+       enddo
+ 
